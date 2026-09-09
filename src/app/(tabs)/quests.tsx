@@ -127,9 +127,7 @@ export default function QuestsScreen() {
             <Ionicons name="chevron-forward" size={18} color="#BEBEBE" />
           </View>
 
-          {isAuthenticated && (
-            <>
-              {/* Category Filter Pills */}
+          {/* Category Filter Pills */}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -174,8 +172,6 @@ export default function QuestsScreen() {
                 </ThemedText>
                 <ThemedText style={styles.resultCount}>{visibleQuests.length} showing</ThemedText>
               </View>
-            </>
-          )}
 
           {/* List Content States */}
           {isLoading && (
@@ -185,17 +181,7 @@ export default function QuestsScreen() {
             </View>
           )}
 
-          {!isLoading && !isAuthenticated && (
-            <EmptyState
-              icon="log-in-outline"
-              title="Your quest board is waiting"
-              subtitle="Sign in or create an account to save your quests and track progress."
-              actionLabel="Sign in"
-              onPress={() => router.push('/auth')}
-            />
-          )}
-
-          {!isLoading && isAuthenticated && loadError && (
+          {!isLoading && loadError && (
             <EmptyState
               icon="alert-circle-outline"
               title="Could not load quests"
@@ -206,7 +192,6 @@ export default function QuestsScreen() {
           )}
 
           {!isLoading &&
-            isAuthenticated &&
             !loadError &&
             visibleQuests.map((quest) => (
               <QuestCard
@@ -217,7 +202,7 @@ export default function QuestsScreen() {
               />
             ))}
 
-          {!isLoading && isAuthenticated && !loadError && visibleQuests.length === 0 && (
+          {!isLoading && !loadError && visibleQuests.length === 0 && (
             <EmptyState
               icon="sparkles-outline"
               title="No quests in this view"

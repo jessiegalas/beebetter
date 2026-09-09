@@ -90,7 +90,7 @@ export default function ProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           await signOut();
-          router.replace('/(tabs)');
+          router.replace('/auth');
         },
       },
     ]);
@@ -112,21 +112,12 @@ export default function ProfileScreen() {
               </ThemedText>
             )}
           </View>
-          {user ? (
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={handleSignOut}
-              accessibilityLabel="Sign Out">
-              <Ionicons name="log-out-outline" size={19} color={COLORS.danger} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={() => router.push('/auth')}
-              accessibilityLabel="Sign In">
-              <Ionicons name="log-in-outline" size={19} color={COLORS.ink} />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={handleSignOut}
+            accessibilityLabel="Sign Out">
+            <Ionicons name="log-out-outline" size={19} color={COLORS.danger} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView
@@ -219,20 +210,10 @@ export default function ProfileScreen() {
 
           {/* Account Actions */}
           <View style={styles.actionSection}>
-            {user ? (
-              <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} activeOpacity={0.8}>
-                <Ionicons name="log-out-outline" size={17} color={COLORS.danger} />
-                <ThemedText style={styles.signOutButtonText}>Sign Out</ThemedText>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.signInButton}
-                onPress={() => router.push('/auth')}
-                activeOpacity={0.8}>
-                <Ionicons name="log-in-outline" size={17} color="#FFFFFF" />
-                <ThemedText style={styles.signInButtonText}>Sign In / Register</ThemedText>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} activeOpacity={0.8}>
+              <Ionicons name="log-out-outline" size={17} color={COLORS.danger} />
+              <ThemedText style={styles.signOutButtonText}>Sign Out</ThemedText>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </SafeAreaView>

@@ -66,24 +66,6 @@ export default function HomeScreen() {
               tintColor={COLORS.honeyDark}
             />
           }>
-          {/* Sign In Banner if unauthenticated */}
-          {!user && !isLoading && (
-            <View style={styles.guestBanner}>
-              <View style={styles.guestBannerCopy}>
-                <ThemedText style={styles.guestBannerTitle}>Track your journey</ThemedText>
-                <ThemedText style={styles.guestBannerSubtitle}>
-                  Sign in or create an account to save quests, earn XP, and build your skill tree.
-                </ThemedText>
-              </View>
-              <TouchableOpacity
-                style={styles.guestSignInButton}
-                onPress={() => router.push('/auth')}
-                activeOpacity={0.8}>
-                <ThemedText style={styles.guestSignInButtonText}>Sign in</ThemedText>
-              </TouchableOpacity>
-            </View>
-          )}
-
           {/* Today's Progress Card */}
           <View style={styles.todayCard}>
             <View style={styles.todayTopRow}>

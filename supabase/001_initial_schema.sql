@@ -1,4 +1,4 @@
-﻿-- BeeBetter minimum end-to-end transaction schema.
+-- BeeBetter minimum end-to-end transaction schema.
 -- Run this once in Supabase Dashboard > SQL Editor.
 
 create extension if not exists "pgcrypto";
@@ -53,6 +53,11 @@ create policy "Users can view their own profile"
   on public.profiles for select
   to authenticated
   using (auth.uid() = id);
+
+create policy "Users can insert their own profile"
+  on public.profiles for insert
+  to authenticated
+  with check (auth.uid() = id);
 
 create policy "Users can update their own profile"
   on public.profiles for update
