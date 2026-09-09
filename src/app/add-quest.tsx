@@ -1,0 +1,295 @@
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Switch,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+
+import { ThemedText } from '@/components/themed-text';
+import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { useUserData, Category } from '@/hooks/use-user-data';
+
+type QuestDraft = {
+  title: string;
+  description?: string;
+  category: Category;
+  xp: number;
+  is_nearby?: boolean;
+};
+
+const categories: Category[] = ['Academics', 'Habits', 'Social', 'Health'];
+
+const templates: (QuestDraft & { id: number; icon: keyof typeof Ionicons.glyphMap })[] = [
+  { id: 1, title: 'Morning Run', category: 'Health', xp: 50, icon: 'walk-outline', is_nearby: true },
+  { id: 2, title: 'Read a Chapter', category: 'Academics', xp: 30, icon: 'book-outline', is_nearby: false },
+  { id: 3, title: 'Call a Friend', category: 'Social', xp: 20, icon: 'call-outline', is_nearby: false },
+  { id: 4, title: 'Drink Water', category: 'Health', xp: 10, icon: 'water-outline', is_nearby: false },
+  { id: 5, title: 'Study Session', category: 'Academics', xp: 40, icon: 'school-outline', is_nearby: true },
+  { id: 6, title: 'Tidy Room', category: 'Habits', xp: 25, icon: 'home-outline', is_nearby: false },
+];
+
+export default function AddQuestScreen() {
+  const { user, addQuest } = useUserData();
+  const [mode, setMode] = useState<'templates' | 'custom'>('templates');
+  const [customTitle, setCustomTitle] = useState('');
+  const [customDesc, setCustomDesc] = useState('');
+  const [category, setCategory] = useState<Category>('Habits');
+  const [isNearby, setIsNearby] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savingTemplateId, setSavingTemplateId] = useState<number | null>(null);
+
+  const saveQuest = async (quest: QuestDraft, templateId?: number) => {
+    if (!quest.title.trim()) {
+      setFeedback('Give your quest a title first.');
+      return;
+    }
+
+    if (!user) {
+      setFeedback('Sign in first so this quest can be saved to your account.');
+      router.push('/auth');
+      return;
+    }
+
+    setFeedback(null);
+    setIsSaving(true);
+    setSavingTemplateId(templateId ?? null);
+
+    try {
+      const result = await addQuest({
+        title: quest.title.trim(),
+        description: quest.description?.trim() || undefined,
+        category: quest.category,
+        xp: quest.xp,
+        is_nearby: quest.is_nearby ?? false,
+      });
+
+      if (!result.success) {
+        setFeedback(result.error || 'Failed to save quest. Please try again.');
+        return;
+      }
+
+      router.back();
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Quest could not be saved. Please try again.');
+    } finally {
+      setIsSaving(false);
+      setSavingTemplateId(null);
+    }
+  };
+
+  const createCustomQuest = () =>
+    saveQuest({
+      title: customTitle,
+      description: customDesc,
+      category,
+      xp: 25,
+      is_nearby: isNearby,
+    });
+
+  return (
+    <View style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <ThemedText style={styles.headerTitle}>New quest</ThemedText>
+            <ThemedText style={styles.headerSubtitle}>Make a small promise to yourself.</ThemedText>
+          </View>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}>
+            <Ionicons name="close" size={20} color={COLORS.ink} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Mode Toggle */}
+        <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={[styles.toggleButton, mode === 'templates' && styles.toggleButtonActive]}
+            onPress={() => {
+              setMode('templates');
+              setFeedback(null);
+            }}>
+            <ThemedText style={[styles.toggleText, mode === 'templates' && styles.toggleTextActive]}>
+              Quick start
+            </ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleButton, mode === 'custom' && styles.toggleButtonActive]}
+            onPress={() => {
+              setMode('custom');
+              setFeedback(null);
+            }}>
+            <ThemedText style={[styles.toggleText, mode === 'custom' && styles.toggleTextActive]}>
+              Custom
+            </ThemedText>
+          </TouchableOpacity>
+        </View>
+
+        {feedback && <ThemedText style={styles.feedback}>{feedback}</ThemedText>}
+
+        {mode === 'templates' ? (
+          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ThemedText style={styles.sectionLabel}>PICK A READY-MADE QUEST</ThemedText>
+            {templates.map((template) => (
+              <TouchableOpacity
+                key={template.id}
+                style={styles.templateCard}
+                onPress={() => saveQuest(template, template.id)}
+                disabled={isSaving}
+                activeOpacity={0.78}>
+                <View style={styles.iconWrap}>
+                  {savingTemplateId === template.id ? (
+                    <ActivityIndicator color={COLORS.honeyDark} />
+                  ) : (
+                    <Ionicons name={template.icon} size={20} color={COLORS.honeyDark} />
+                  )}
+                </View>
+                <View style={styles.templateInfo}>
+                  <View style={styles.templateTitleRow}>
+                    <ThemedText style={styles.templateTitle}>{template.title}</ThemedText>
+                    {template.is_nearby && (
+                      <Ionicons name="location" size={12} color={COLORS.honeyDark} />
+                    )}
+                  </View>
+                  <ThemedText style={styles.templateCategory}>{template.category}</ThemedText>
+                </View>
+                <View style={styles.xpTag}>
+                  <ThemedText style={styles.xpTagText}>+{template.xp} XP</ThemedText>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled">
+            <ThemedText style={styles.label}>Quest title</ThemedText>
+            <TextInput
+              style={styles.input}
+              placeholder="For example, clean my desk"
+              placeholderTextColor={COLORS.muted}
+              value={customTitle}
+              onChangeText={setCustomTitle}
+              maxLength={100}
+            />
+
+            <ThemedText style={styles.label}>Description (optional)</ThemedText>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="What does completing this quest involve?"
+              placeholderTextColor={COLORS.muted}
+              multiline
+              value={customDesc}
+              onChangeText={setCustomDesc}
+              textAlignVertical="top"
+            />
+
+            <ThemedText style={styles.label}>Category</ThemedText>
+            <View style={styles.categoryRow}>
+              {categories.map((item) => (
+                <TouchableOpacity
+                  key={item}
+                  style={[styles.categoryPill, category === item && styles.categoryPillActive]}
+                  onPress={() => setCategory(item)}>
+                  <ThemedText
+                    style={[
+                      styles.categoryPillText,
+                      category === item && styles.categoryPillTextActive,
+                    ]}>
+                    {item}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Nearby Quest Toggle */}
+            <View style={styles.locationToggleCard}>
+              <View style={styles.locationToggleCopy}>
+                <ThemedText style={styles.locationToggleTitle}>Tag as nearby quest</ThemedText>
+                <ThemedText style={styles.locationToggleSubtitle}>
+                  Flags this quest as tied to a physical place or location
+                </ThemedText>
+              </View>
+              <Switch
+                value={isNearby}
+                onValueChange={setIsNearby}
+                trackColor={{ false: COLORS.surfaceMuted, true: COLORS.honey }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+
+            <View style={styles.xpHint}>
+              <Ionicons name="sparkles" size={16} color={COLORS.honeyDark} />
+              <ThemedText style={styles.xpHintText}>Custom quests are worth 25 XP.</ThemedText>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.createButton, isSaving && styles.createButtonDisabled]}
+              onPress={createCustomQuest}
+              disabled={isSaving}
+              activeOpacity={0.8}>
+              {isSaving ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <ThemedText style={styles.createButtonText}>Create quest</ThemedText>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        )}
+      </SafeAreaView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.background },
+  safeArea: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 15 },
+  headerTitle: { color: COLORS.ink, fontSize: 19, fontWeight: '800' },
+  headerSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
+  closeButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', ...BeeBetterShadow },
+  toggleRow: { flexDirection: 'row', marginHorizontal: 20, backgroundColor: COLORS.surfaceMuted, borderRadius: 13, padding: 4, marginBottom: 10 },
+  toggleButton: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10 },
+  toggleButtonActive: { backgroundColor: COLORS.card, ...BeeBetterShadow },
+  toggleText: { color: COLORS.muted, fontSize: 12, fontWeight: '800' },
+  toggleTextActive: { color: COLORS.ink },
+  feedback: { color: COLORS.danger, fontSize: 12, lineHeight: 17, marginHorizontal: 20, marginBottom: 4 },
+  content: { paddingHorizontal: 20, paddingBottom: 44, gap: 11 },
+  sectionLabel: { color: COLORS.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginTop: 4, marginBottom: 2 },
+  templateCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.card, borderRadius: 16, padding: 12, ...BeeBetterShadow },
+  iconWrap: { width: 42, height: 42, borderRadius: 13, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
+  templateInfo: { flex: 1 },
+  templateTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  templateTitle: { color: COLORS.ink, fontSize: 14, fontWeight: '800' },
+  templateCategory: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
+  xpTag: { backgroundColor: COLORS.honey, borderRadius: 14, paddingHorizontal: 9, paddingVertical: 6 },
+  xpTagText: { color: COLORS.ink, fontSize: 10, fontWeight: '800' },
+  label: { color: COLORS.ink, fontSize: 12, fontWeight: '800', marginTop: 5 },
+  input: { backgroundColor: COLORS.card, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: COLORS.ink, ...BeeBetterShadow },
+  textArea: { height: 96 },
+  categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  categoryPill: { borderRadius: 18, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: COLORS.card, ...BeeBetterShadow },
+  categoryPillActive: { backgroundColor: COLORS.honey },
+  categoryPillText: { color: COLORS.muted, fontSize: 11, fontWeight: '800' },
+  categoryPillTextActive: { color: COLORS.ink },
+  locationToggleCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.card, borderRadius: 14, padding: 12, marginTop: 4, ...BeeBetterShadow },
+  locationToggleCopy: { flex: 1 },
+  locationToggleTitle: { fontSize: 13, fontWeight: '800', color: COLORS.ink },
+  locationToggleSubtitle: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
+  xpHint: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: COLORS.honeySoft, borderRadius: 13, padding: 12, marginTop: 3 },
+  xpHintText: { color: COLORS.ink, fontSize: 12, fontWeight: '700' },
+  createButton: { minHeight: 48, borderRadius: 13, backgroundColor: COLORS.ink, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
+  createButtonDisabled: { opacity: 0.65 },
+  createButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+});
