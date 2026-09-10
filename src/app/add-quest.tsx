@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -15,6 +15,8 @@ import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
 import { useUserData, Category } from '@/hooks/use-user-data';
+import { getSmartSuggestions, SuggestedQuest } from '@/lib/quest-suggestions';
+import { useLocationContext } from '@/context/location-context';
 
 type QuestDraft = {
   title: string;
@@ -26,17 +28,9 @@ type QuestDraft = {
 
 const categories: Category[] = ['Academics', 'Habits', 'Social', 'Health'];
 
-const templates: (QuestDraft & { id: number; icon: keyof typeof Ionicons.glyphMap })[] = [
-  { id: 1, title: 'Morning Run', category: 'Health', xp: 50, icon: 'walk-outline', is_nearby: true },
-  { id: 2, title: 'Read a Chapter', category: 'Academics', xp: 30, icon: 'book-outline', is_nearby: false },
-  { id: 3, title: 'Call a Friend', category: 'Social', xp: 20, icon: 'call-outline', is_nearby: false },
-  { id: 4, title: 'Drink Water', category: 'Health', xp: 10, icon: 'water-outline', is_nearby: false },
-  { id: 5, title: 'Study Session', category: 'Academics', xp: 40, icon: 'school-outline', is_nearby: true },
-  { id: 6, title: 'Tidy Room', category: 'Habits', xp: 25, icon: 'home-outline', is_nearby: false },
-];
-
 export default function AddQuestScreen() {
-  const { user, addQuest } = useUserData();
+  const { user, addQuest, quests } = useUserData();
+  const { currentLocationName } = useLocationContext();
   const [mode, setMode] = useState<'templates' | 'custom'>('templates');
   const [customTitle, setCustomTitle] = useState('');
   const [customDesc, setCustomDesc] = useState('');
@@ -44,9 +38,13 @@ export default function AddQuestScreen() {
   const [isNearby, setIsNearby] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [savingTemplateId, setSavingTemplateId] = useState<number | null>(null);
+  const [savingTemplateId, setSavingTemplateId] = useState<string | number | null>(null);
 
-  const saveQuest = async (quest: QuestDraft, templateId?: number) => {
+  const smartSuggestions = useMemo(() => {
+    return getSmartSuggestions(quests, currentLocationName);
+  }, [quests, currentLocationName]);
+
+  const saveQuest = async (quest: QuestDraft | SuggestedQuest, templateId?: string | number) => {
     if (!quest.title.trim()) {
       setFeedback('Give your quest a title first.');
       return;
@@ -139,8 +137,8 @@ export default function AddQuestScreen() {
 
         {mode === 'templates' ? (
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <ThemedText style={styles.sectionLabel}>PICK A READY-MADE QUEST</ThemedText>
-            {templates.map((template) => (
+            <ThemedText style={styles.sectionLabel}>RECOMMENDED FOR YOU</ThemedText>
+            {smartSuggestions.map((template) => (
               <TouchableOpacity
                 key={template.id}
                 style={styles.templateCard}
@@ -161,7 +159,10 @@ export default function AddQuestScreen() {
                       <Ionicons name="location" size={12} color={COLORS.honeyDark} />
                     )}
                   </View>
-                  <ThemedText style={styles.templateCategory}>{template.category}</ThemedText>
+                  <View style={styles.reasonRow}>
+                    <Ionicons name={template.reason.icon} size={10} color={COLORS.muted} />
+                    <ThemedText style={styles.templateReason}>{template.reason.text}</ThemedText>
+                  </View>
                 </View>
                 <View style={styles.xpTag}>
                   <ThemedText style={styles.xpTagText}>+{template.xp} XP</ThemedText>
@@ -272,7 +273,8 @@ const styles = StyleSheet.create({
   templateInfo: { flex: 1 },
   templateTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   templateTitle: { color: COLORS.ink, fontSize: 14, fontWeight: '800' },
-  templateCategory: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
+  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  templateReason: { color: COLORS.muted, fontSize: 11 },
   xpTag: { backgroundColor: COLORS.honey, borderRadius: 14, paddingHorizontal: 9, paddingVertical: 6 },
   xpTagText: { color: COLORS.ink, fontSize: 10, fontWeight: '800' },
   label: { color: COLORS.ink, fontSize: 12, fontWeight: '800', marginTop: 5 },
@@ -293,3 +295,4 @@ const styles = StyleSheet.create({
   createButtonDisabled: { opacity: 0.65 },
   createButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
 });
+

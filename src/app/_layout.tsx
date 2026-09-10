@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { UserDataProvider, useUserData } from '@/context/user-data-context';
+import { LocationProvider } from '@/context/location-context';
 import { BeeBetterColors as COLORS } from '@/constants/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -43,6 +44,7 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   return (
     <UserDataProvider>
+      <LocationProvider>
       <AuthGuard>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <AnimatedSplashOverlay />
@@ -51,9 +53,11 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="notifications" options={{ presentation: 'modal' }} />
             <Stack.Screen name="add-quest" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="manage-locations" />
           </Stack>
         </ThemeProvider>
       </AuthGuard>
+      </LocationProvider>
     </UserDataProvider>
   );
 }
@@ -66,3 +70,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+

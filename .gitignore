@@ -33,6 +33,36 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Sensitive / Secrets (extra safety for public API usage)
+*.pem
+*.key
+*.crt
+*.p12
+*.mobileprovision
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
+supabase/config.toml
+*.secret
+*.credentials
+
+# IDE / Editor sensitive files
+.vscode/launch.json
+.vscode/settings.json
+.idea/workspace.xml
+*.swp
+*.swo
+
+# Logs and local DB
+*.log
+*.sqlite
+*.db
+
+# Test / Coverage (may contain tokens in snapshots)
+coverage/
+.nyc_output/
+
 # typescript
 *.tsbuildinfo
 

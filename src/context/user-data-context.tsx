@@ -15,6 +15,7 @@ export type Quest = {
   status: QuestStatus;
   is_nearby: boolean;
   created_at: string;
+  completed_at?: string | null;
   updated_at: string;
 };
 

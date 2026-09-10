@@ -208,6 +208,23 @@ export default function ProfileScreen() {
             ))}
           </View>
 
+          {/* Places / Geofencing */}
+          <View style={styles.sectionCard}>
+            <TouchableOpacity
+              style={styles.settingsRow}
+              onPress={() => router.push('/manage-locations' as any)}
+              activeOpacity={0.8}>
+              <View style={styles.settingsIcon}>
+                <Ionicons name="location-outline" size={20} color={COLORS.honeyDark} />
+              </View>
+              <View style={styles.settingsInfo}>
+                <ThemedText style={styles.settingsLabel}>My Places</ThemedText>
+                <ThemedText style={styles.settingsDesc}>Manage gym, school, home for smart quests</ThemedText>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.muted} />
+            </TouchableOpacity>
+          </View>
+
           {/* Account Actions */}
           <View style={styles.actionSection}>
             <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} activeOpacity={0.8}>
@@ -387,6 +404,38 @@ const styles = StyleSheet.create({
   actionSection: {
     marginTop: 8,
   },
+  sectionCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 14,
+    ...BeeBetterShadow,
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  settingsIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: COLORS.honeySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  settingsLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.ink,
+  },
+  settingsDesc: {
+    fontSize: 11,
+    color: COLORS.muted,
+  },
   signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -416,3 +465,4 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
+

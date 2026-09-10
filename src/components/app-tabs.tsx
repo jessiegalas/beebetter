@@ -1,14 +1,19 @@
-﻿import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 
-import { BeeBetterColors } from '@/constants/theme';
+const COLORS = {
+  bg: '#FFF9E8',
+  honey: '#FFC530',
+  black: '#1A1A1A',
+  gray: '#8A8A8A',
+};
 
 export default function AppTabs() {
   return (
     <NativeTabs
-      backgroundColor={BeeBetterColors.background}
-      indicatorColor={BeeBetterColors.honey}
-      tintColor={BeeBetterColors.ink}
-      labelStyle={{ selected: { color: BeeBetterColors.ink } }}>
+      backgroundColor={COLORS.bg}
+      indicatorColor={COLORS.honey}
+      tintColor={COLORS.black}
+      labelStyle={{ default: { color: COLORS.gray }, selected: { color: COLORS.black } }}>
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="house" drawable="ic_menu_view" />
