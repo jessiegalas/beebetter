@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 import { UserLocation } from './use-user-locations';
 
@@ -28,6 +29,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
 
   const watchIdRef = useRef<Location.LocationSubscription | null>(null);
   const activeLocationsRef = useRef<UserLocation[]>([]);
+  const isTrackingRef = useRef(false);
 
   // Keep reference to latest locations for geofence checks
   useEffect(() => {
@@ -72,6 +74,11 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
       const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
       if (fgStatus !== 'granted') {
         setState((prev) => ({ ...prev, permissionStatus: fgStatus, error: 'Location permission denied' }));
+        return fgStatus;
+      }
+
+      if (!(await TaskManager.isAvailableAsync())) {
+        setState((prev) => ({ ...prev, permissionStatus: fgStatus, error: null }));
         return fgStatus;
       }
 
@@ -123,7 +130,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
 
   // Start watching position (foreground)
   const startTracking = useCallback(async () => {
-    if (state.isTracking) return;
+    if (isTrackingRef.current) return;
 
     const status = await requestPermissions();
     setState((prev) => ({ ...prev, permissionStatus: status }));
@@ -135,6 +142,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
 
     try {
       setState((prev) => ({ ...prev, error: null, isTracking: true }));
+      isTrackingRef.current = true;
 
       const subscription = await Location.watchPositionAsync(
         {
@@ -166,9 +174,10 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
 
       watchIdRef.current = subscription;
     } catch (err) {
+      isTrackingRef.current = false;
       setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : 'Failed to start tracking', isTracking: false }));
     }
-  }, [state.isTracking, requestPermissions, findNearestLocation]);
+  }, [requestPermissions, findNearestLocation]);
 
   // Stop watching
   const stopTracking = useCallback(async () => {
@@ -176,6 +185,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
       watchIdRef.current.remove();
       watchIdRef.current = null;
     }
+    isTrackingRef.current = false;
     setState((prev) => ({ ...prev, isTracking: false }));
   }, []);
 

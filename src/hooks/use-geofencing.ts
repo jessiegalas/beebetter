@@ -26,6 +26,10 @@ export interface GeofenceRegion extends Location.LocationRegion {
 
 export async function registerGeofences(locations: UserLocation[]): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!(await TaskManager.isAvailableAsync())) {
+      return { success: false, error: 'Background geofencing is unavailable in this app environment' };
+    }
+
     const isAvailable = await Location.hasServicesEnabledAsync();
     if (!isAvailable) {
       return { success: false, error: 'Location services disabled' };

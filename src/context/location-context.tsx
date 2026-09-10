@@ -62,7 +62,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
   const [hasInitialized, setHasInitialized] = useState(false);
 
-  // Initialize: fetch locations, request permissions, start tracking, register geofences
+  // Initialize the location watcher once per signed-in user.
   useEffect(() => {
     let mounted = true;
 
@@ -72,17 +72,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 1. Fetch user locations
+      // Load locations before enabling location features.
       await refreshLocations();
-
-      // 2. Request permissions
       await requestPermissions();
-
-      // 3. Start foreground tracking
       await startTracking();
-
-      // 4. Register background geofences
-      await registerGeofences(activeLocations);
 
       if (mounted) {
         setHasInitialized(true);
@@ -94,12 +87,12 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [user, activeLocations, refreshLocations, requestPermissions, startTracking]);
+  }, [user, refreshLocations, requestPermissions, startTracking]);
 
-  // Re-sync geofences when active locations change (but not on initial mount)
+  // Register the latest regions after locations load or change.
   useEffect(() => {
     if (!hasInitialized || !user) return;
-    syncGeofences(activeLocations);
+    void syncGeofences(activeLocations);
   }, [activeLocations, hasInitialized, user]);
 
   // Stop tracking on unmount
