@@ -321,23 +321,30 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     if (!user) return { success: false, error: 'User is not signed in.' };
 
     try {
+      const questInsert = {
+        owner_id: user.id,
+        title: questData.title.trim(),
+        description: questData.description?.trim() || null,
+        category: questData.category,
+        xp: questData.xp,
+        is_nearby: Boolean(questData.is_nearby),
+        location_id: questData.location_id ?? null,
+        status: 'active' as const,
+        ...(questData.requires_proof ? { requires_proof: true } : {}),
+      };
+
       const { data, error: insertError } = await supabase
         .from('quests')
-        .insert({
-          owner_id: user.id,
-          title: questData.title.trim(),
-          description: questData.description?.trim() || null,
-          category: questData.category,
-          xp: questData.xp,
-          is_nearby: Boolean(questData.is_nearby),
-          location_id: questData.location_id ?? null,
-          requires_proof: Boolean(questData.requires_proof),
-          status: 'active',
-        })
+        .insert(questInsert)
         .select('*')
         .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        if (questData.requires_proof && insertError.message.toLowerCase().includes('requires_proof')) {
+          throw new Error('Proof quests are not enabled in Supabase yet. Run supabase/003_quest_proofs.sql first.');
+        }
+        throw insertError;
+      }
       if (data) {
         setQuests((prev) => [data as Quest, ...prev]);
       }
