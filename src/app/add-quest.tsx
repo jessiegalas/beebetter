@@ -25,6 +25,7 @@ type QuestDraft = {
   xp: number;
   is_nearby?: boolean;
   location_id?: string | null;
+  requires_proof?: boolean;
 };
 
 const categories: Category[] = ['Academics', 'Habits', 'Social', 'Health'];
@@ -41,6 +42,7 @@ export default function AddQuestScreen() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [savingTemplateId, setSavingTemplateId] = useState<string | number | null>(null);
+  const [requiresProof, setRequiresProof] = useState(false);
 
   const smartSuggestions = useMemo(() => {
     return getSmartSuggestions(quests, currentLocationName);
@@ -78,6 +80,7 @@ export default function AddQuestScreen() {
         xp: quest.xp,
         is_nearby: quest.is_nearby ?? false,
         location_id: selectedLocationId,
+        requires_proof: (quest as QuestDraft).requires_proof ?? false,
       });
 
       if (!result.success) {
@@ -101,7 +104,8 @@ export default function AddQuestScreen() {
       category,
       xp: 25,
       is_nearby: isNearby,
-        location_id: locationId,
+      location_id: locationId,
+      requires_proof: requiresProof,
     });
 
   return (
@@ -259,6 +263,21 @@ export default function AddQuestScreen() {
                 ))}
               </View>
             )}
+
+            <View style={styles.locationToggleCard}>
+              <View style={styles.locationToggleCopy}>
+                <ThemedText style={styles.locationToggleTitle}>Require proof to complete</ThemedText>
+                <ThemedText style={styles.locationToggleSubtitle}>
+                  Ask for a photo, video, or file before XP is awarded
+                </ThemedText>
+              </View>
+              <Switch
+                value={requiresProof}
+                onValueChange={setRequiresProof}
+                trackColor={{ false: COLORS.surfaceMuted, true: COLORS.honey }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
 
             <View style={styles.xpHint}>
               <Ionicons name="sparkles" size={16} color={COLORS.honeyDark} />

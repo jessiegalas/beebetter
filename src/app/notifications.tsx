@@ -1,4 +1,4 @@
-import { StyleSheet, View, ScrollView, TouchableOpacity } from 'react-native';
+import { Alert, StyleSheet, View, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -6,9 +6,36 @@ import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
+import { useLocationContext } from '@/context/location-context';
 
 export default function NotificationsScreen() {
-  const { completedQuests, levelProgress, activeQuests } = useUserData();
+  const { completedQuests, levelProgress, activeQuests, completeQuest } = useUserData();
+  const { currentLocationId } = useLocationContext();
+
+  const handleQuickComplete = async (quest: (typeof activeQuests)[number]) => {
+    if (quest.requires_proof) {
+      Alert.alert('Proof required', 'Open the quest board to attach proof before completing this quest.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Open quests', onPress: () => router.replace('/quests') },
+      ]);
+      return;
+    }
+
+    if (quest.location_id && quest.location_id !== currentLocationId) {
+      Alert.alert('Visit the place first', 'This nearby quest can be completed when you are inside its saved location.', [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Open quests', onPress: () => router.replace('/quests') },
+      ]);
+      return;
+    }
+
+    const result = await completeQuest(quest.id);
+    if (result.success) {
+      Alert.alert('Quest complete!', `+${quest.xp} XP earned. Nice work.`);
+    } else {
+      Alert.alert('Could not complete quest', result.error || 'Please try again.');
+    }
+  };
 
   const dynamicNotifications = [
     ...(levelProgress.level > 1
@@ -59,6 +86,30 @@ export default function NotificationsScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {activeQuests.length > 0 && (
+            <View style={styles.actionSection}>
+              <View style={styles.sectionHeading}>
+                <ThemedText style={styles.sectionTitle}>Ready when you are</ThemedText>
+                <ThemedText style={styles.sectionHint}>One-tap progress</ThemedText>
+              </View>
+              {activeQuests.slice(0, 3).map((quest) => (
+                <View key={`action-${quest.id}`} style={styles.actionCard}>
+                  <View style={styles.actionIcon}>
+                    <Ionicons name={quest.requires_proof ? 'attach-outline' : 'checkmark'} size={19} color={COLORS.honeyDark} />
+                  </View>
+                  <View style={styles.actionCopy}>
+                    <ThemedText style={styles.actionTitle} numberOfLines={1}>{quest.title}</ThemedText>
+                    <ThemedText style={styles.actionSubtitle}>
+                      {quest.requires_proof ? 'Attach proof on the quest board' : `Complete for +${quest.xp} XP`}
+                    </ThemedText>
+                  </View>
+                  <TouchableOpacity style={styles.quickButton} onPress={() => void handleQuickComplete(quest)} activeOpacity={0.8}>
+                    <ThemedText style={styles.quickButtonText}>{quest.requires_proof ? 'Open' : 'Done'}</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
           {dynamicNotifications.map((n) => (
             <View key={n.id} style={styles.notifCard}>
               <View style={styles.iconWrap}>
@@ -102,6 +153,17 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 10,
   },
+  actionSection: { gap: 8, marginBottom: 5 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 2 },
+  sectionTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '800' },
+  sectionHint: { color: COLORS.muted, fontSize: 10, fontWeight: '700' },
+  actionCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.ink, borderRadius: 16, padding: 12, ...BeeBetterShadow },
+  actionIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
+  actionCopy: { flex: 1 },
+  actionTitle: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  actionSubtitle: { color: '#D4D4D4', fontSize: 10, marginTop: 2 },
+  quickButton: { backgroundColor: COLORS.honey, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 8 },
+  quickButtonText: { color: COLORS.ink, fontSize: 11, fontWeight: '800' },
   notifCard: {
     flexDirection: 'row',
     alignItems: 'center',

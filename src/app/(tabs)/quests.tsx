@@ -12,10 +12,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
-import { useUserData, Quest, Category, QuestStatus } from '@/hooks/use-user-data';
+import { useUserData, Quest, Category, QuestStatus, ProofFile } from '@/hooks/use-user-data';
 import { useLocationContext } from '@/context/location-context';
 
 const filters = ['All', 'Academics', 'Habits', 'Social', 'Health'] as const;
@@ -78,6 +80,17 @@ export default function QuestsScreen() {
         },
       ]
     );
+  };
+
+  const handleComplete = async (quest: Quest, proof?: ProofFile) => {
+    if (quest.location_id && quest.location_id !== currentLocationId) return;
+
+    const result = await completeQuest(quest.id, proof);
+    if (result.success) {
+      Alert.alert('Quest complete!', `+${quest.xp} XP earned. Keep the momentum going.`);
+    } else {
+      Alert.alert('Could not complete quest', result.error || 'Please try again.');
+    }
   };
 
   return (
@@ -200,9 +213,7 @@ export default function QuestsScreen() {
                 key={quest.id}
                 quest={quest}
                 canComplete={!quest.location_id || quest.location_id === currentLocationId}
-                onComplete={() => {
-                  if (!quest.location_id || quest.location_id === currentLocationId) void completeQuest(quest.id);
-                }}
+                onComplete={(proof) => void handleComplete(quest, proof)}
                 onDelete={() => handleConfirmDelete(quest)}
               />
             ))}
@@ -234,12 +245,47 @@ function QuestCard({
 }: {
   quest: Quest;
   canComplete: boolean;
-  onComplete: () => void;
+  onComplete: (proof?: ProofFile) => void;
   onDelete: () => void;
 }) {
+  const [proof, setProof] = useState<ProofFile | undefined>();
+  const [isPickingProof, setIsPickingProof] = useState(false);
   const visual = categoryVisuals[quest.category] || categoryVisuals.Habits;
   const status = statusCopy[quest.status] || statusCopy.active;
   const isCompleted = quest.status === 'completed';
+
+  const chooseMediaProof = async () => {
+    setIsPickingProof(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setProof({
+          uri: asset.uri,
+          name: asset.fileName || `quest-proof-${Date.now()}`,
+          mimeType: asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
+        });
+      }
+    } finally {
+      setIsPickingProof(false);
+    }
+  };
+
+  const chooseFileProof = async () => {
+    setIsPickingProof(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setProof({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream' });
+      }
+    } finally {
+      setIsPickingProof(false);
+    }
+  };
 
   return (
     <View style={[styles.questCard, isCompleted && styles.completedQuestCard]}>
@@ -272,10 +318,32 @@ function QuestCard({
       <View style={styles.questActions}>
         {!isCompleted ? (
           <>
+            {quest.requires_proof && (
+              <View style={styles.proofActions}>
+                <ThemedText style={styles.proofRequiredText}>Proof required</ThemedText>
+                {proof ? (
+                  <TouchableOpacity style={styles.proofSelected} onPress={() => setProof(undefined)}>
+                    <Ionicons name="checkmark-circle" size={15} color={COLORS.success} />
+                    <ThemedText style={styles.proofSelectedText} numberOfLines={1}>{proof.name}</ThemedText>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.proofPickerRow}>
+                    <TouchableOpacity style={styles.proofPickerButton} onPress={chooseMediaProof} disabled={isPickingProof}>
+                      <Ionicons name="image-outline" size={14} color={COLORS.ink} />
+                      <ThemedText style={styles.proofPickerText}>Photo/video</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.proofPickerButton} onPress={chooseFileProof} disabled={isPickingProof}>
+                      <Ionicons name="document-attach-outline" size={14} color={COLORS.ink} />
+                      <ThemedText style={styles.proofPickerText}>File</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
             <TouchableOpacity
-              style={[styles.xpBadge, !canComplete && styles.xpBadgeDisabled]}
-              onPress={onComplete}
-              disabled={!canComplete}
+              style={[styles.xpBadge, (!canComplete || (quest.requires_proof && !proof)) && styles.xpBadgeDisabled]}
+              onPress={() => onComplete(proof)}
+              disabled={!canComplete || (quest.requires_proof && !proof)}
               activeOpacity={0.7}
               accessibilityLabel={`Complete quest and earn ${quest.xp} XP`}>
               <ThemedText style={styles.xpText}>+{quest.xp}</ThemedText>
@@ -367,6 +435,13 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 10, fontWeight: '800' },
   categoryText: { fontSize: 10, color: COLORS.muted, marginLeft: 3 },
   questActions: { alignItems: 'center', gap: 6 },
+  proofActions: { width: 150, alignItems: 'flex-end', gap: 5, marginBottom: 2 },
+  proofRequiredText: { color: COLORS.danger, fontSize: 9, fontWeight: '800' },
+  proofPickerRow: { flexDirection: 'row', gap: 4 },
+  proofPickerButton: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: COLORS.honeySoft, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 5 },
+  proofPickerText: { color: COLORS.ink, fontSize: 9, fontWeight: '800' },
+  proofSelected: { maxWidth: 150, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#E9F7EB', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 5 },
+  proofSelectedText: { flexShrink: 1, color: COLORS.success, fontSize: 9, fontWeight: '800' },
   xpBadge: { minWidth: 46, alignItems: 'center', borderRadius: 13, backgroundColor: COLORS.honey, paddingHorizontal: 9, paddingVertical: 7 },
   xpBadgeDisabled: { backgroundColor: COLORS.surfaceMuted },
   xpText: { color: COLORS.ink, fontSize: 11, fontWeight: '800' },

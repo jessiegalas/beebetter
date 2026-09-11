@@ -18,6 +18,16 @@ export type Quest = {
   created_at: string;
   completed_at?: string | null;
   updated_at: string;
+  requires_proof: boolean;
+  proof_path: string | null;
+  proof_mime_type: string | null;
+  proof_submitted_at: string | null;
+};
+
+export type ProofFile = {
+  uri: string;
+  name: string;
+  mimeType: string;
 };
 
 export type UserProfile = {
@@ -57,7 +67,7 @@ interface UserDataContextType {
   error: string | null;
   levelProgress: LevelProgress;
   refresh: () => Promise<void>;
-  completeQuest: (questId: string) => Promise<{ success: boolean; error?: string }>;
+  completeQuest: (questId: string, proof?: ProofFile) => Promise<{ success: boolean; error?: string }>;
   deleteQuest: (questId: string) => Promise<{ success: boolean; error?: string }>;
   addQuest: (quest: {
     title: string;
@@ -66,6 +76,7 @@ interface UserDataContextType {
     xp: number;
     is_nearby?: boolean;
     location_id?: string | null;
+    requires_proof?: boolean;
   }) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 }
@@ -177,7 +188,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     await fetchUserData(session?.user ?? null, false);
   }, [fetchUserData]);
 
-  const completeQuest = useCallback(async (questId: string): Promise<{ success: boolean; error?: string }> => {
+  const completeQuest = useCallback(async (questId: string, proof?: ProofFile): Promise<{ success: boolean; error?: string }> => {
     if (!user) {
       return { success: false, error: 'User is not signed in.' };
     }
@@ -191,10 +202,28 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       return { success: true };
     }
 
+    if (targetQuest.requires_proof && !proof) {
+      return { success: false, error: 'Attach a photo, video, or file as proof before completing this quest.' };
+    }
+
     const previousQuests = [...quests];
     const previousProfile = profile ? { ...profile } : null;
 
-    // Calculate updated XP and Level
+    let proofPath: string | null = null;
+
+    try {
+      if (proof) {
+        const extension = proof.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
+        proofPath = `${user.id}/${questId}/${Date.now()}.${extension}`;
+        const response = await fetch(proof.uri);
+        const fileBuffer = await response.arrayBuffer();
+        const { error: uploadError } = await supabase.storage
+          .from('quest-proofs')
+          .upload(proofPath, fileBuffer, { contentType: proof.mimeType, upsert: false });
+        if (uploadError) throw uploadError;
+      }
+
+      // Calculate updated XP and Level
     const earnedXp = targetQuest.xp || 25;
     const currentXp = profile?.total_xp ?? 0;
     const newTotalXp = currentXp + earnedXp;
@@ -218,11 +247,17 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
-    try {
       // 1. Mark quest completed in Supabase
       const { error: questError } = await supabase
         .from('quests')
-        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          proof_path: proofPath,
+          proof_mime_type: proof?.mimeType ?? null,
+          proof_submitted_at: proof ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', questId);
 
       if (questError) throw questError;
@@ -244,6 +279,9 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       // Revert optimistic updates on failure
       setQuests(previousQuests);
       setProfile(previousProfile);
+      if (proofPath) {
+        await supabase.storage.from('quest-proofs').remove([proofPath]);
+      }
       return {
         success: false,
         error: err instanceof Error ? err.message : 'Failed to complete quest.',
@@ -278,6 +316,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     xp: number;
     is_nearby?: boolean;
     location_id?: string | null;
+    requires_proof?: boolean;
   }): Promise<{ success: boolean; error?: string }> => {
     if (!user) return { success: false, error: 'User is not signed in.' };
 
@@ -292,6 +331,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
           xp: questData.xp,
           is_nearby: Boolean(questData.is_nearby),
           location_id: questData.location_id ?? null,
+          requires_proof: Boolean(questData.requires_proof),
           status: 'active',
         })
         .select('*')
