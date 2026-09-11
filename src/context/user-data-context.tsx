@@ -14,6 +14,7 @@ export type Quest = {
   xp: number;
   status: QuestStatus;
   is_nearby: boolean;
+  location_id: string | null;
   created_at: string;
   completed_at?: string | null;
   updated_at: string;
@@ -64,6 +65,7 @@ interface UserDataContextType {
     category: Category;
     xp: number;
     is_nearby?: boolean;
+    location_id?: string | null;
   }) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 }
@@ -275,6 +277,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     category: Category;
     xp: number;
     is_nearby?: boolean;
+    location_id?: string | null;
   }): Promise<{ success: boolean; error?: string }> => {
     if (!user) return { success: false, error: 'User is not signed in.' };
 
@@ -288,6 +291,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
           category: questData.category,
           xp: questData.xp,
           is_nearby: Boolean(questData.is_nearby),
+          location_id: questData.location_id ?? null,
           status: 'active',
         })
         .select('*')

@@ -98,7 +98,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
   }, []);
 
   // Get current position once
-  const getCurrentPosition = useCallback(async () => {
+  const getCurrentPosition = useCallback(async (): Promise<Location.LocationObjectCoords | null> => {
     try {
       setState((prev) => ({ ...prev, error: null }));
       const location = await Location.getCurrentPositionAsync({
@@ -123,8 +123,10 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
           isInsideGeofence: false,
         }));
       }
+      return location.coords;
     } catch (err) {
       setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : 'Failed to get location' }));
+      return null;
     }
   }, [findNearestLocation]);
 

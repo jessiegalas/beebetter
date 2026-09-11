@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import MapView, { Marker, type MapPressEvent } from 'react-native-maps';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
@@ -102,22 +103,20 @@ export default function ManageLocationsScreen() {
     setFeedback(null);
     try {
       await requestPermissions();
-      await getCurrentPosition();
-      // Wait a bit for coords to update
-      setTimeout(() => {
-        if (coords) {
-          setForm((prev) => ({
-            ...prev,
-            latitude: String(coords.latitude),
-            longitude: String(coords.longitude),
-          }));
-        } else {
-          setFeedback('Could not get current location. Try again.');
-        }
-      }, 500);
+      const currentCoords = await getCurrentPosition();
+      if (currentCoords) {
+        setForm((prev) => ({ ...prev, latitude: String(currentCoords.latitude), longitude: String(currentCoords.longitude) }));
+      } else setFeedback('Could not get current location. Try again.');
     } catch {
       setFeedback('Failed to get location');
     }
+  };
+
+  const mapLatitude = Number(form.latitude) || coords?.latitude || 14.5995;
+  const mapLongitude = Number(form.longitude) || coords?.longitude || 120.9842;
+  const handleMapPress = (event: MapPressEvent) => {
+    const { latitude, longitude } = event.nativeEvent.coordinate;
+    setForm((prev) => ({ ...prev, latitude: latitude.toFixed(6), longitude: longitude.toFixed(6) }));
   };
 
   const validateForm = (): { lat: number; lng: number; rad: number } | null => {
@@ -315,6 +314,18 @@ export default function ManageLocationsScreen() {
               </View>
             </View>
 
+            <ThemedText style={styles.label}>Choose on map</ThemedText>
+            <MapView
+              style={styles.map}
+              region={{ latitude: mapLatitude, longitude: mapLongitude, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
+              onPress={handleMapPress}
+              showsUserLocation
+              showsMyLocationButton>
+              {form.latitude && form.longitude && (
+                <Marker coordinate={{ latitude: mapLatitude, longitude: mapLongitude }} title={form.name || 'Saved place'} />
+              )}
+            </MapView>
+
             <TouchableOpacity style={styles.currentLocationButton} onPress={useCurrentLocation} activeOpacity={0.8}>
               <Ionicons name="navigate-outline" size={16} color={COLORS.honeyDark} />
               <ThemedText style={styles.currentLocationButtonText}>Use Current Location</ThemedText>
@@ -403,6 +414,7 @@ const styles = StyleSheet.create({
   feedbackWarning: { color: COLORS.honeyDark },
   label: { fontSize: 12, fontWeight: '800', color: COLORS.ink, marginTop: 4 },
   input: { backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: COLORS.ink },
+  map: { height: 190, borderRadius: 14, overflow: 'hidden' },
   coordsRow: { flexDirection: 'row', gap: 10 },
   coordInputWrapper: { flex: 1 },
   currentLocationButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: COLORS.honeySoft, borderRadius: 12 },

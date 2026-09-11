@@ -26,7 +26,7 @@ interface LocationContextType {
 
   // Actions
   requestPermissions: () => Promise<Location.PermissionStatus>;
-  getCurrentPosition: () => Promise<void>;
+  getCurrentPosition: () => Promise<Location.LocationObjectCoords | null>;
   startTracking: () => Promise<void>;
   stopTracking: () => Promise<void>;
 }

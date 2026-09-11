@@ -67,7 +67,9 @@ export async function registerGeofences(locations: UserLocation[]): Promise<{ su
 
 export async function unregisterAllGeofences(): Promise<void> {
   try {
-    await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+    if (await Location.hasStartedGeofencingAsync(GEOFENCE_TASK_NAME)) {
+      await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+    }
     console.log('All geofences unregistered');
   } catch (err) {
     console.warn('Error unregistering geofences:', err);
@@ -85,5 +87,8 @@ export async function getRegisteredGeofences(): Promise<GeofenceRegion[]> {
 }
 
 export async function syncGeofences(locations: UserLocation[]): Promise<void> {
-  await registerGeofences(locations);
+  const result = await registerGeofences(locations);
+  if (!result.success && result.error !== 'Background geofencing is unavailable in this app environment') {
+    console.warn('Geofence sync skipped:', result.error);
+  }
 }

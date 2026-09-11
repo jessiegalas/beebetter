@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
 import { useUserData, Quest, Category, QuestStatus } from '@/hooks/use-user-data';
+import { useLocationContext } from '@/context/location-context';
 
 const filters = ['All', 'Academics', 'Habits', 'Social', 'Health'] as const;
 
@@ -44,6 +45,7 @@ export default function QuestsScreen() {
     completeQuest,
     deleteQuest,
   } = useUserData();
+  const { currentLocationId } = useLocationContext();
 
   const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]>('All');
   const [locationOnly, setLocationOnly] = useState(false);
@@ -197,7 +199,10 @@ export default function QuestsScreen() {
               <QuestCard
                 key={quest.id}
                 quest={quest}
-                onComplete={() => completeQuest(quest.id)}
+                canComplete={!quest.location_id || quest.location_id === currentLocationId}
+                onComplete={() => {
+                  if (!quest.location_id || quest.location_id === currentLocationId) void completeQuest(quest.id);
+                }}
                 onDelete={() => handleConfirmDelete(quest)}
               />
             ))}
@@ -223,10 +228,12 @@ export default function QuestsScreen() {
 
 function QuestCard({
   quest,
+  canComplete,
   onComplete,
   onDelete,
 }: {
   quest: Quest;
+  canComplete: boolean;
   onComplete: () => void;
   onDelete: () => void;
 }) {
@@ -266,12 +273,13 @@ function QuestCard({
         {!isCompleted ? (
           <>
             <TouchableOpacity
-              style={styles.xpBadge}
+              style={[styles.xpBadge, !canComplete && styles.xpBadgeDisabled]}
               onPress={onComplete}
+              disabled={!canComplete}
               activeOpacity={0.7}
               accessibilityLabel={`Complete quest and earn ${quest.xp} XP`}>
               <ThemedText style={styles.xpText}>+{quest.xp}</ThemedText>
-              <ThemedText style={styles.xpUnit}>XP</ThemedText>
+              <ThemedText style={styles.xpUnit}>{canComplete ? 'XP' : 'HERE'}</ThemedText>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -360,6 +368,7 @@ const styles = StyleSheet.create({
   categoryText: { fontSize: 10, color: COLORS.muted, marginLeft: 3 },
   questActions: { alignItems: 'center', gap: 6 },
   xpBadge: { minWidth: 46, alignItems: 'center', borderRadius: 13, backgroundColor: COLORS.honey, paddingHorizontal: 9, paddingVertical: 7 },
+  xpBadgeDisabled: { backgroundColor: COLORS.surfaceMuted },
   xpText: { color: COLORS.ink, fontSize: 11, fontWeight: '800' },
   xpUnit: { color: COLORS.ink, fontSize: 8, fontWeight: '800', marginTop: 1 },
   deleteIconButton: { padding: 4 },

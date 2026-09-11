@@ -24,18 +24,20 @@ type QuestDraft = {
   category: Category;
   xp: number;
   is_nearby?: boolean;
+  location_id?: string | null;
 };
 
 const categories: Category[] = ['Academics', 'Habits', 'Social', 'Health'];
 
 export default function AddQuestScreen() {
   const { user, addQuest, quests } = useUserData();
-  const { currentLocationName } = useLocationContext();
+  const { currentLocationName, activeLocations } = useLocationContext();
   const [mode, setMode] = useState<'templates' | 'custom'>('templates');
   const [customTitle, setCustomTitle] = useState('');
   const [customDesc, setCustomDesc] = useState('');
   const [category, setCategory] = useState<Category>('Habits');
   const [isNearby, setIsNearby] = useState(false);
+  const [locationId, setLocationId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [savingTemplateId, setSavingTemplateId] = useState<string | number | null>(null);
@@ -56,6 +58,14 @@ export default function AddQuestScreen() {
       return;
     }
 
+    const draftLocationId = 'location_id' in quest ? quest.location_id : null;
+    const selectedLocationId = draftLocationId ?? (quest.is_nearby ? locationId : null);
+
+    if (quest.is_nearby && !selectedLocationId) {
+      setFeedback('Choose a saved place for this nearby quest.');
+      return;
+    }
+
     setFeedback(null);
     setIsSaving(true);
     setSavingTemplateId(templateId ?? null);
@@ -67,6 +77,7 @@ export default function AddQuestScreen() {
         category: quest.category,
         xp: quest.xp,
         is_nearby: quest.is_nearby ?? false,
+        location_id: selectedLocationId,
       });
 
       if (!result.success) {
@@ -90,6 +101,7 @@ export default function AddQuestScreen() {
       category,
       xp: 25,
       is_nearby: isNearby,
+        location_id: locationId,
     });
 
   return (
@@ -230,6 +242,24 @@ export default function AddQuestScreen() {
               />
             </View>
 
+            {isNearby && (
+              <View style={styles.placePicker}>
+                <ThemedText style={styles.label}>Quest place</ThemedText>
+                {activeLocations.length === 0 ? (
+                  <ThemedText style={styles.placeHint}>Add an active place in My Places first.</ThemedText>
+                ) : activeLocations.map((place) => (
+                  <TouchableOpacity
+                    key={place.id}
+                    style={[styles.placeOption, locationId === place.id && styles.placeOptionActive]}
+                    onPress={() => setLocationId(place.id)}>
+                    <Ionicons name="location-outline" size={16} color={COLORS.honeyDark} />
+                    <ThemedText style={styles.placeOptionText}>{place.name}</ThemedText>
+                    {locationId === place.id && <Ionicons name="checkmark-circle" size={17} color={COLORS.honeyDark} />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             <View style={styles.xpHint}>
               <Ionicons name="sparkles" size={16} color={COLORS.honeyDark} />
               <ThemedText style={styles.xpHintText}>Custom quests are worth 25 XP.</ThemedText>
@@ -289,6 +319,11 @@ const styles = StyleSheet.create({
   locationToggleCopy: { flex: 1 },
   locationToggleTitle: { fontSize: 13, fontWeight: '800', color: COLORS.ink },
   locationToggleSubtitle: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
+  placePicker: { gap: 8 },
+  placeHint: { color: COLORS.muted, fontSize: 12 },
+  placeOption: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 12, backgroundColor: COLORS.card },
+  placeOptionActive: { backgroundColor: COLORS.honeySoft, borderWidth: 1, borderColor: COLORS.honey },
+  placeOptionText: { flex: 1, color: COLORS.ink, fontSize: 13, fontWeight: '700' },
   xpHint: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: COLORS.honeySoft, borderRadius: 13, padding: 12, marginTop: 3 },
   xpHintText: { color: COLORS.ink, fontSize: 12, fontWeight: '700' },
   createButton: { minHeight: 48, borderRadius: 13, backgroundColor: COLORS.ink, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
