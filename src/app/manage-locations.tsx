@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, type MapPressEvent } from 'react-native-maps';
+import MapView, { Circle, Marker, type MapPressEvent } from 'react-native-maps';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
@@ -28,6 +28,7 @@ type LocationForm = {
 };
 
 const DEFAULT_RADIUS = 100;
+const RADIUS_STEP = 10;
 
 export default function ManageLocationsScreen() {
   const {
@@ -114,6 +115,16 @@ export default function ManageLocationsScreen() {
 
   const mapLatitude = Number(form.latitude) || coords?.latitude || 14.5995;
   const mapLongitude = Number(form.longitude) || coords?.longitude || 120.9842;
+  const mapRadius = Math.min(5000, Math.max(10, Number(form.radius) || DEFAULT_RADIUS));
+
+  const adjustRadius = (change: number) => {
+    setForm((prev) => {
+      const currentRadius = Number(prev.radius) || DEFAULT_RADIUS;
+      const nextRadius = Math.min(5000, Math.max(10, currentRadius + change));
+      return { ...prev, radius: String(nextRadius) };
+    });
+  };
+
   const handleMapPress = (event: MapPressEvent) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
     setForm((prev) => ({ ...prev, latitude: latitude.toFixed(6), longitude: longitude.toFixed(6) }));
@@ -322,24 +333,56 @@ export default function ManageLocationsScreen() {
               showsUserLocation
               showsMyLocationButton>
               {form.latitude && form.longitude && (
-                <Marker coordinate={{ latitude: mapLatitude, longitude: mapLongitude }} title={form.name || 'Saved place'} />
+                <>
+                  <Circle
+                    center={{ latitude: mapLatitude, longitude: mapLongitude }}
+                    radius={mapRadius}
+                    strokeColor="#2E9B62"
+                    fillColor="rgba(46, 155, 98, 0.22)"
+                    strokeWidth={2}
+                  />
+                  <Marker coordinate={{ latitude: mapLatitude, longitude: mapLongitude }} title={form.name || 'Saved place'} />
+                </>
               )}
             </MapView>
 
             <TouchableOpacity style={styles.currentLocationButton} onPress={useCurrentLocation} activeOpacity={0.8}>
-              <Ionicons name="navigate-outline" size={16} color={COLORS.honeyDark} />
               <ThemedText style={styles.currentLocationButtonText}>Use Current Location</ThemedText>
             </TouchableOpacity>
 
             <ThemedText style={styles.label}>Radius (meters) *</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="100"
-              value={form.radius}
-              onChangeText={(v) => setForm((p) => ({ ...p, radius: v }))}
-              keyboardType="numeric"
-              maxLength={4}
-            />
+            <View style={styles.radiusControl}>
+              <TouchableOpacity
+                style={styles.radiusButton}
+                onPress={() => adjustRadius(-RADIUS_STEP)}
+                accessibilityLabel="Decrease radius"
+                activeOpacity={0.75}>
+                <Ionicons name="remove" size={20} color={COLORS.ink} />
+              </TouchableOpacity>
+              <TextInput
+                style={styles.radiusInput}
+                placeholder="100"
+                value={form.radius}
+                onChangeText={(v) => setForm((p) => ({ ...p, radius: v.replace(/[^0-9]/g, '') }))}
+                keyboardType="numeric"
+                maxLength={4}
+                textAlign="center"
+              />
+              <TouchableOpacity
+                style={styles.radiusButton}
+                onPress={() => adjustRadius(RADIUS_STEP)}
+                accessibilityLabel="Increase radius"
+                activeOpacity={0.75}>
+                <Ionicons name="add" size={20} color={COLORS.ink} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.radiusHintRow}>
+              <View style={styles.radiusLegend}>
+                <View style={styles.radiusLegendDot} />
+                <ThemedText style={styles.radiusHint}>Green area: {mapRadius}m coverage</ThemedText>
+              </View>
+              <ThemedText style={styles.radiusHint}>10–5000m</ThemedText>
+            </View>
 
             <View style={styles.formActions}>
               {editingId && (
@@ -415,6 +458,13 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontWeight: '800', color: COLORS.ink, marginTop: 4 },
   input: { backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: COLORS.ink },
   map: { height: 190, borderRadius: 14, overflow: 'hidden' },
+  radiusControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  radiusButton: { width: 42, height: 42, borderRadius: 12, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
+  radiusInput: { flex: 1, backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, fontWeight: '800', color: COLORS.ink },
+  radiusHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -6 },
+  radiusLegend: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  radiusLegendDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2E9B62' },
+  radiusHint: { fontSize: 11, color: COLORS.muted },
   coordsRow: { flexDirection: 'row', gap: 10 },
   coordInputWrapper: { flex: 1 },
   currentLocationButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: COLORS.honeySoft, borderRadius: 12 },
