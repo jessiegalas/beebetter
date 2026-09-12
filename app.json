@@ -43,6 +43,12 @@
       ],
       "expo-status-bar",
       [
+        "expo-notifications",
+        {
+          "defaultChannel": "quests"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Allow BeeBetter to access your location to detect nearby places and smart quests.",

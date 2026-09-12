@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/supabase';
+import * as Notifications from 'expo-notifications';
+import {
+  COMPLETE_QUEST_ACTION,
+  configureQuestNotifications,
+  scheduleQuestNotifications,
+} from '@/lib/quest-notifications';
 
 export type Category = 'Academics' | 'Habits' | 'Social' | 'Health';
 export type QuestStatus = 'active' | 'completed' | 'rejected' | 'pending';
@@ -288,6 +294,31 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       };
     }
   }, [user, quests, profile]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let isMounted = true;
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const action = response.actionIdentifier;
+      const data = response.notification.request.content.data as { questId?: unknown };
+      if (action === COMPLETE_QUEST_ACTION && typeof data.questId === 'string') {
+        void completeQuest(data.questId);
+      }
+    });
+
+    void configureQuestNotifications().then((configured) => {
+      if (isMounted && configured) {
+        return scheduleQuestNotifications(quests);
+      }
+      return undefined;
+    });
+
+    return () => {
+      isMounted = false;
+      responseSubscription.remove();
+    };
+  }, [user, quests, completeQuest]);
 
   const deleteQuest = useCallback(async (questId: string): Promise<{ success: boolean; error?: string }> => {
     if (!user) return { success: false, error: 'User is not signed in.' };
