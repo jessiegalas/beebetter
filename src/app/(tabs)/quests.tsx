@@ -340,15 +340,29 @@ function QuestCard({
                 )}
               </View>
             )}
-            <TouchableOpacity
-              style={[styles.xpBadge, (!canComplete || (quest.requires_proof && !proof)) && styles.xpBadgeDisabled]}
-              onPress={() => onComplete(proof)}
-              disabled={!canComplete || (quest.requires_proof && !proof)}
-              activeOpacity={0.7}
-              accessibilityLabel={`Complete quest and earn ${quest.xp} XP`}>
-              <ThemedText style={styles.xpText}>+{quest.xp}</ThemedText>
-              <ThemedText style={styles.xpUnit}>{canComplete ? 'XP' : 'HERE'}</ThemedText>
-            </TouchableOpacity>
+            {quest.requires_proof ? (
+              <TouchableOpacity
+                style={[styles.proofSubmitButton, (!canComplete || !proof) && styles.xpBadgeDisabled]}
+                onPress={() => onComplete(proof)}
+                disabled={!canComplete || !proof}
+                activeOpacity={0.7}
+                accessibilityLabel={`Submit proof and complete quest for ${quest.xp} XP`}>
+                <Ionicons name="cloud-upload-outline" size={14} color={COLORS.ink} />
+                <ThemedText style={styles.proofSubmitText}>
+                  {!canComplete ? 'Go there first' : proof ? 'Submit proof' : 'Choose proof'}
+                </ThemedText>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.xpBadge, !canComplete && styles.xpBadgeDisabled]}
+                onPress={() => onComplete()}
+                disabled={!canComplete}
+                activeOpacity={0.7}
+                accessibilityLabel={`Complete quest and earn ${quest.xp} XP`}>
+                <ThemedText style={styles.xpText}>+{quest.xp}</ThemedText>
+                <ThemedText style={styles.xpUnit}>{canComplete ? 'XP' : 'HERE'}</ThemedText>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.deleteIconButton}
@@ -442,6 +456,8 @@ const styles = StyleSheet.create({
   proofPickerText: { color: COLORS.ink, fontSize: 9, fontWeight: '800' },
   proofSelected: { maxWidth: 150, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#E9F7EB', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 5 },
   proofSelectedText: { flexShrink: 1, color: COLORS.success, fontSize: 9, fontWeight: '800' },
+  proofSubmitButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, minWidth: 104, borderRadius: 10, backgroundColor: COLORS.honey, paddingHorizontal: 8, paddingVertical: 8 },
+  proofSubmitText: { color: COLORS.ink, fontSize: 10, fontWeight: '800' },
   xpBadge: { minWidth: 46, alignItems: 'center', borderRadius: 13, backgroundColor: COLORS.honey, paddingHorizontal: 9, paddingVertical: 7 },
   xpBadgeDisabled: { backgroundColor: COLORS.surfaceMuted },
   xpText: { color: COLORS.ink, fontSize: 11, fontWeight: '800' },
