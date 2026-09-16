@@ -11,6 +11,13 @@ import { supabase } from '@/supabase';
 export default function AuthScreen() {
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [name, setName] = useState('');
+  const [studentNumber, setStudentNumber] = useState('');
+  const [course, setCourse] = useState('');
+  const [yearLevel, setYearLevel] = useState('');
+  const [section, setSection] = useState('');
+  const [campus, setCampus] = useState('');
+  const [goal, setGoal] = useState('');
+  const [customGoal, setCustomGoal] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -68,6 +75,11 @@ export default function AuthScreen() {
       return;
     }
 
+    if (mode === 'sign-up' && (!studentNumber.trim() || !course.trim() || !yearLevel.trim() || !section.trim() || !campus.trim() || !goal.trim())) {
+      setMessage('Complete your student information and choose a goal to continue.');
+      return;
+    }
+
     if (password.length < 6) {
       setMessage('Your password must have at least 6 characters.');
       return;
@@ -84,6 +96,13 @@ export default function AuthScreen() {
           options: {
             data: {
               display_name: name.trim() || undefined,
+              name: name.trim(),
+              student_number: studentNumber.trim(),
+              course: course.trim(),
+              year_level: yearLevel.trim(),
+              section: section.trim(),
+              campus: campus.trim(),
+              goal: goal.trim(),
             },
             emailRedirectTo: 'beebetter://auth',
           },
@@ -196,6 +215,34 @@ export default function AuthScreen() {
                 placeholderTextColor={COLORS.muted}
                 autoCapitalize="words"
               />
+              <ThemedText style={styles.label}>Student Number</ThemedText>
+              <TextInput style={styles.input} value={studentNumber} onChangeText={setStudentNumber} placeholder="e.g. 2024-00001" placeholderTextColor={COLORS.muted} autoCapitalize="characters" />
+              <ThemedText style={styles.label}>Course</ThemedText>
+              <TextInput style={styles.input} value={course} onChangeText={setCourse} placeholder="e.g. BS Computer Science" placeholderTextColor={COLORS.muted} autoCapitalize="words" />
+              <View style={styles.inlineFields}>
+                <View style={styles.inlineField}>
+                  <ThemedText style={styles.label}>Year Level</ThemedText>
+                  <TextInput style={styles.input} value={yearLevel} onChangeText={setYearLevel} placeholder="4" placeholderTextColor={COLORS.muted} keyboardType="number-pad" />
+                </View>
+                <View style={styles.inlineField}>
+                  <ThemedText style={styles.label}>Section</ThemedText>
+                  <TextInput style={styles.input} value={section} onChangeText={setSection} placeholder="A" placeholderTextColor={COLORS.muted} autoCapitalize="characters" />
+                </View>
+              </View>
+              <ThemedText style={styles.label}>Campus</ThemedText>
+              <TextInput style={styles.input} value={campus} onChangeText={setCampus} placeholder="Main campus" placeholderTextColor={COLORS.muted} autoCapitalize="words" />
+              <ThemedText style={styles.label}>Your Goal</ThemedText>
+              <View style={styles.goalOptions}>
+                {['Improve my study habits', 'Build healthier routines', 'Grow my confidence'].map((option) => (
+                  <TouchableOpacity key={option} style={[styles.goalOption, goal === option && !customGoal && styles.goalOptionActive]} onPress={() => { setGoal(option); setCustomGoal(false); }}>
+                    <ThemedText style={[styles.goalOptionText, goal === option && !customGoal && styles.goalOptionTextActive]}>{option}</ThemedText>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity style={[styles.goalOption, customGoal && styles.goalOptionActive]} onPress={() => { setCustomGoal(true); setGoal(''); }}>
+                  <ThemedText style={[styles.goalOptionText, customGoal && styles.goalOptionTextActive]}>Custom goal</ThemedText>
+                </TouchableOpacity>
+              </View>
+              {customGoal && <TextInput style={styles.input} value={goal} onChangeText={setGoal} placeholder="Write your personal goal" placeholderTextColor={COLORS.muted} />}
             </>
           )}
 
@@ -301,6 +348,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     ...BeeBetterShadow,
   },
+  inlineFields: { flexDirection: 'row', gap: 10 },
+  inlineField: { flex: 1 },
+  goalOptions: { gap: 8, marginBottom: 16 },
+  goalOption: { backgroundColor: COLORS.card, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 12, ...BeeBetterShadow },
+  goalOptionActive: { backgroundColor: COLORS.honey },
+  goalOptionText: { color: COLORS.muted, fontSize: 13 },
+  goalOptionTextActive: { color: COLORS.ink, fontWeight: '800' },
   feedback: { color: COLORS.danger, fontSize: 12, lineHeight: 17, marginBottom: 14 },
   successFeedback: { color: COLORS.success },
   passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: 13, marginBottom: 16, ...BeeBetterShadow },

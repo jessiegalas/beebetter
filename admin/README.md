@@ -7,7 +7,7 @@
 3. Create or use an auth account, then approve it by inserting its auth user UUID into `public.admin_users`.
 4. Start the app with `npm run dev`.
 
-The Users screen reads student profiles through the guarded `admin_list_students()` RPC. It currently displays the fields already present in the mobile schema: display name, email, join date, level progress, XP, and streak. Additional student data can be planned before expanding the schema.
+The Users screen reads student records through the guarded `admin_list_students()` RPC. Student information is stored in `public.students`, while `public.profiles` continues to hold level, XP, and streak progress. Apply `supabase/005_students.sql` after the existing migrations to backfill current accounts and enable student editing through `admin_update_student()`.
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 

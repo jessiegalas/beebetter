@@ -39,6 +39,15 @@ export type ProofFile = {
 export type UserProfile = {
   id: string;
   display_name: string | null;
+  student_number: string;
+  name: string;
+  email: string;
+  course: string;
+  year_level: string;
+  section: string;
+  campus: string;
+  goal: string;
+  status: 'Active' | 'Inactive';
   level: number;
   total_xp: number;
   current_streak: number;
@@ -72,6 +81,7 @@ interface UserDataContextType {
   isRefreshing: boolean;
   error: string | null;
   levelProgress: LevelProgress;
+  updateProfile: (updates: StudentProfileUpdates) => Promise<{ success: boolean; error?: string }>;
   refresh: () => Promise<void>;
   completeQuest: (questId: string, proof?: ProofFile) => Promise<{ success: boolean; error?: string }>;
   deleteQuest: (questId: string) => Promise<{ success: boolean; error?: string }>;
@@ -86,6 +96,11 @@ interface UserDataContextType {
   }) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 }
+
+export type StudentProfileUpdates = Pick<
+  UserProfile,
+  'student_number' | 'name' | 'course' | 'year_level' | 'section' | 'campus' | 'goal'
+>;
 
 const UserDataContext = createContext<UserDataContextType | undefined>(undefined);
 
@@ -123,13 +138,49 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         console.warn('Could not fetch profile:', profileErr.message);
       }
 
-      if (profileData) {
-        setProfile(profileData as UserProfile);
+      const { data: studentData, error: studentErr } = await supabase
+        .from('students')
+        .select('*')
+        .eq('id', currentUser.id)
+        .maybeSingle();
+
+      if (studentErr) {
+        console.warn('Could not fetch student information:', studentErr.message);
+      }
+
+      if (profileData || studentData) {
+        setProfile({
+          id: currentUser.id,
+          display_name: profileData?.display_name ?? studentData?.name ?? null,
+          student_number: studentData?.student_number ?? `LEGACY-${currentUser.id.replaceAll('-', '').slice(0, 8).toUpperCase()}`,
+          name: studentData?.name ?? profileData?.display_name ?? currentUser.email?.split('@')[0] ?? 'Bee Explorer',
+          email: studentData?.email ?? currentUser.email ?? '',
+          course: studentData?.course ?? 'Undeclared',
+          year_level: studentData?.year_level ?? 'Not specified',
+          section: studentData?.section ?? 'Not specified',
+          campus: studentData?.campus ?? 'Not specified',
+          goal: studentData?.goal ?? '',
+          status: studentData?.status ?? 'Active',
+          level: profileData?.level ?? 1,
+          total_xp: profileData?.total_xp ?? 0,
+          current_streak: profileData?.current_streak ?? 1,
+          created_at: profileData?.created_at ?? studentData?.created_at ?? new Date().toISOString(),
+          updated_at: profileData?.updated_at ?? studentData?.updated_at ?? new Date().toISOString(),
+        });
       } else {
         // Fallback default profile if trigger hasn't fired yet
         const defaultProfile: UserProfile = {
           id: currentUser.id,
           display_name: currentUser.user_metadata?.display_name || currentUser.email?.split('@')[0] || 'Bee Explorer',
+          student_number: `LEGACY-${currentUser.id.replaceAll('-', '').slice(0, 8).toUpperCase()}`,
+          name: currentUser.user_metadata?.name || currentUser.user_metadata?.display_name || 'Bee Explorer',
+          email: currentUser.email || '',
+          course: 'Undeclared',
+          year_level: 'Not specified',
+          section: 'Not specified',
+          campus: 'Not specified',
+          goal: '',
+          status: 'Active',
           level: 1,
           total_xp: 0,
           current_streak: 1,
@@ -166,6 +217,25 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       setIsRefreshing(false);
     }
   }, []);
+
+  const updateProfile = useCallback(async (updates: StudentProfileUpdates) => {
+    if (!user) return { success: false, error: 'User is not signed in.' };
+
+    const { data, error: studentError } = await supabase
+      .from('students')
+      .update({ ...updates, email: profile?.email ?? user.email ?? '', updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .select('*')
+      .single();
+
+    if (studentError) {
+      return { success: false, error: studentError.message };
+    }
+
+    setProfile((current) => current ? { ...current, ...data, display_name: data.name } : current);
+    await supabase.from('profiles').update({ display_name: data.name, updated_at: new Date().toISOString() }).eq('id', user.id);
+    return { success: true };
+  }, [profile?.email, user]);
 
   useEffect(() => {
     let isMounted = true;
@@ -413,6 +483,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       isRefreshing,
       error,
       levelProgress,
+      updateProfile,
       refresh,
       completeQuest,
       deleteQuest,
@@ -429,6 +500,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       isRefreshing,
       error,
       levelProgress,
+      updateProfile,
       refresh,
       completeQuest,
       deleteQuest,

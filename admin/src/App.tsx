@@ -4,7 +4,7 @@ import './App.css'
 import { supabase } from './supabase'
 
 type Section = 'Overview' | 'Users' | 'Quests' | 'Leaderboard'
-type User = { id: string; name: string; email: string; joined: string; quests: string; status: 'Active' | 'Inactive' }
+type User = { id: string; studentNumber: string; name: string; email: string; course: string; yearLevel: string; section: string; campus: string; goal: string; joined: string; quests: string; status: 'Active' | 'Inactive' }
 type Quest = { title: string; category: string; difficulty: string; completions: string; status: 'Published' | 'Draft'; assignee: string }
 
 const initialQuests: Quest[] = [
@@ -33,6 +33,7 @@ function App() {
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null)
   const [messageUser, setMessageUser] = useState<User | null>(null)
   const [activityUser, setActivityUser] = useState<User | null>(null)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
 
   const loadUsers = async () => {
     setUsersLoading(true)
@@ -43,13 +44,19 @@ function App() {
       setUsers([])
     } else {
       setUsers(
-        (data ?? []).map((student: { id: string; email: string | null; display_name: string | null; created_at: string; quests_completed: number }) => ({
+        (data ?? []).map((student: { id: string; student_number: string; name: string; email: string | null; course: string; year_level: string; section: string; campus: string; goal: string; status: 'Active' | 'Inactive'; created_at: string; quests_completed: number }) => ({
           id: student.id,
-          name: student.display_name || student.email?.split('@')[0] || 'Bee Explorer',
+          studentNumber: student.student_number,
+          name: student.name || student.email?.split('@')[0] || 'Bee Explorer',
           email: student.email || 'No email',
+          course: student.course,
+          yearLevel: student.year_level,
+          section: student.section,
+          campus: student.campus,
+          goal: student.goal,
           joined: new Date(student.created_at).toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' }),
           quests: String(student.quests_completed),
-          status: 'Active',
+          status: student.status,
         }))
       )
     }
@@ -85,6 +92,30 @@ function App() {
     setProfileOpen(false)
   }
 
+  const saveStudent = async (student: User) => {
+    const { data, error } = await supabase.rpc('admin_update_student', {
+      student_id: student.id,
+      student_number_value: student.studentNumber,
+      name_value: student.name,
+      email_value: student.email,
+      course_value: student.course,
+      year_level_value: student.yearLevel,
+      section_value: student.section,
+      campus_value: student.campus,
+      goal_value: student.goal,
+      status_value: student.status,
+    })
+    if (error) {
+      setNotice(`Could not save ${student.name}: ${error.message}`)
+      return
+    }
+    const saved = { ...student, status: data?.status || student.status }
+    setUsers((current) => current.map((item) => item.id === saved.id ? saved : item))
+    setSelectedUser(null)
+    setEditingUser(null)
+    setNotice(`${saved.name}'s student information was updated.`)
+  }
+
   if (authChecking) return <div className="auth-shell"><div className="auth-card"><p>Checking admin session...</p></div></div>
   if (!authenticated) return <AuthScreen onSuccess={() => setAuthenticated(true)} dark={dark} onToggleTheme={toggleTheme} />
 
@@ -118,11 +149,12 @@ function App() {
         </div>
       </main>
       {(newQuestOpen || editingQuest) && <QuestModal initialQuest={editingQuest} users={users} onClose={() => { setNewQuestOpen(false); setEditingQuest(null) }} onSave={(quest) => { setQuests((current) => editingQuest ? current.map((item) => item.title === editingQuest.title ? quest : item) : [...current, quest]); setNewQuestOpen(false); setEditingQuest(null); setNotice(editingQuest ? 'Quest updated successfully.' : 'Quest saved as a draft.') }} />}
-      {selectedUser && <UserDetails user={selectedUser} onClose={() => setSelectedUser(null)} onMessage={() => { setMessageUser(selectedUser); setSelectedUser(null) }} onActivity={() => { setActivityUser(selectedUser); setSelectedUser(null) }} onToggleStatus={() => { const nextStatus = selectedUser.status === 'Active' ? 'Inactive' : 'Active'; setUsers((current) => current.map((item) => item.email === selectedUser.email ? { ...item, status: nextStatus } : item)); setSelectedUser({ ...selectedUser, status: nextStatus }); setNotice(`${selectedUser.name} is now ${nextStatus.toLowerCase()}.`) }} />}
+      {selectedUser && <UserDetails user={selectedUser} onClose={() => setSelectedUser(null)} onEdit={() => { setEditingUser(selectedUser); setSelectedUser(null) }} onMessage={() => { setMessageUser(selectedUser); setSelectedUser(null) }} onActivity={() => { setActivityUser(selectedUser); setSelectedUser(null) }} onToggleStatus={() => { void saveStudent({ ...selectedUser, status: selectedUser.status === 'Active' ? 'Inactive' : 'Active' }) }} />}
       {selectedQuest && <QuestDetails quest={selectedQuest} onClose={() => setSelectedQuest(null)} onNotice={setNotice} onEdit={() => { setEditingQuest(selectedQuest); setSelectedQuest(null) }} onArchive={() => { setQuests((current) => current.filter((item) => item.title !== selectedQuest.title)); setSelectedQuest(null); setNotice(`"${selectedQuest.title}" was archived.`) }} />}
-      {userActions && <UserActions user={userActions} onClose={() => setUserActions(null)} onOpenProfile={() => { setSelectedUser(userActions); setUserActions(null) }} onMessage={() => { setMessageUser(userActions); setUserActions(null) }} onToggleStatus={() => { const nextStatus = userActions.status === 'Active' ? 'Inactive' : 'Active'; setUsers((current) => current.map((item) => item.email === userActions.email ? { ...item, status: nextStatus } : item)); setUserActions(null); setNotice(`${userActions.name} is now ${nextStatus.toLowerCase()}.`) }} />}
+      {userActions && <UserActions user={userActions} onClose={() => setUserActions(null)} onOpenProfile={() => { setSelectedUser(userActions); setUserActions(null) }} onMessage={() => { setMessageUser(userActions); setUserActions(null) }} onToggleStatus={() => { void saveStudent({ ...userActions, status: userActions.status === 'Active' ? 'Inactive' : 'Active' }) }} />}
       {messageUser && <MessageModal user={messageUser} onClose={() => setMessageUser(null)} onSend={(message) => { setMessageUser(null); setNotice(`Message sent to ${messageUser.name}: "${message}"`) }} />}
       {activityUser && <ActivityModal user={activityUser} onClose={() => setActivityUser(null)} />}
+      {editingUser && <StudentModal user={editingUser} onClose={() => setEditingUser(null)} onSave={(user) => { void saveStudent(user) }} />}
       {notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')}>×</button></div>}
     </div>
   )
@@ -173,7 +205,7 @@ function DataTable({ kind, users = [], quests = [], loading = false, error = '',
   const isUsers = kind === 'users'
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('All')
-  const filteredUsers = useMemo(() => users.filter((user) => `${user.name} ${user.email}`.toLowerCase().includes(search.toLowerCase()) && (filter === 'All' || user.status === filter)), [users, search, filter])
+  const filteredUsers = useMemo(() => users.filter((user) => `${user.studentNumber} ${user.name} ${user.email} ${user.course} ${user.goal}`.toLowerCase().includes(search.toLowerCase()) && (filter === 'All' || user.status === filter)), [users, search, filter])
   const filteredQuests = useMemo(() => quests.filter((quest) => `${quest.title} ${quest.category}`.toLowerCase().includes(search.toLowerCase()) && (filter === 'All' || quest.status === filter || quest.difficulty === filter)), [quests, search, filter])
   return (
     <section className="panel table-panel">
@@ -193,7 +225,7 @@ function DataTable({ kind, users = [], quests = [], loading = false, error = '',
 
 function UserRows({ users, search, onUserClick, onUserActions }: { users: User[]; search: string; onUserClick?: (user: User) => void; onUserActions?: (user: User) => void }) {
   if (users.length === 0) return <div className="empty-state">No users match “{search}”. Try another search.</div>
-  return <div className="table-scroll"><div className="table-row table-header">{['USER', 'JOINED', 'QUESTS', 'STATUS', ''].map((head) => <span key={head}>{head}</span>)}</div>{users.map((row) => <div className="table-row" key={row.email}><UserRow user={row} onClick={() => onUserClick?.(row)} /><span>{row.joined}</span><span>{row.quests}</span><Status status={row.status} /><button className="row-menu" onClick={() => onUserActions?.(row)}>•••</button></div>)}</div>
+  return <div className="table-scroll"><div className="table-row table-header">{['STUDENT', 'COURSE', 'GOAL', 'JOINED', 'STATUS', ''].map((head) => <span key={head}>{head}</span>)}</div>{users.map((row) => <div className="table-row" key={row.email}><UserRow user={row} onClick={() => onUserClick?.(row)} /><span>{row.course}</span><span>{row.goal || 'No goal set'}</span><span>{row.joined}</span><Status status={row.status} /><button className="row-menu" onClick={() => onUserActions?.(row)}>•••</button></div>)}</div>
 }
 
 function QuestRows({ quests, search, onQuestClick }: { quests: Quest[]; search: string; onQuestClick?: (quest: Quest) => void }) {
@@ -211,8 +243,8 @@ function Drawer({ children, onClose }: { children: ReactNode; onClose: () => voi
   return <div className="drawer-backdrop" onClick={onClose}><aside className="drawer" onClick={(event) => event.stopPropagation()}><button className="drawer-close" onClick={onClose}>×</button>{children}</aside></div>
 }
 
-function UserDetails({ user, onClose, onMessage, onActivity, onToggleStatus }: { user: User; onClose: () => void; onMessage: () => void; onActivity: () => void; onToggleStatus: () => void }) {
-  return <Drawer onClose={onClose}><span className="eyebrow">USER PROFILE</span><div className="drawer-avatar">{user.name.split(' ').map((name) => name[0]).join('')}</div><h2>{user.name}</h2><p className="drawer-muted">{user.email}</p><Status status={user.status} /><div className="detail-grid"><div><small>QUESTS COMPLETED</small><b>{user.quests}</b></div><div><small>JOINED</small><b>{user.joined}</b></div></div><h3>Admin actions</h3><button className="drawer-action" onClick={onMessage}>✉ Send message</button><button className="drawer-action" onClick={onActivity}>◉ View activity</button><button className="drawer-action danger" onClick={onToggleStatus}>{user.status === 'Active' ? '⊘ Suspend account' : '◉ Unsuspend account'}</button></Drawer>
+function UserDetails({ user, onClose, onEdit, onMessage, onActivity, onToggleStatus }: { user: User; onClose: () => void; onEdit: () => void; onMessage: () => void; onActivity: () => void; onToggleStatus: () => void }) {
+  return <Drawer onClose={onClose}><span className="eyebrow">STUDENT PROFILE</span><div className="drawer-avatar">{user.name.split(' ').map((name) => name[0]).join('')}</div><h2>{user.name}</h2><p className="drawer-muted">{user.email}</p><Status status={user.status} /><div className="detail-grid"><div><small>STUDENT NUMBER</small><b>{user.studentNumber}</b></div><div><small>COURSE</small><b>{user.course}</b></div><div><small>YEAR / SECTION</small><b>{user.yearLevel} / {user.section}</b></div><div><small>CAMPUS</small><b>{user.campus}</b></div><div><small>GOAL</small><b>{user.goal || 'No goal set'}</b></div><div><small>QUESTS COMPLETED</small><b>{user.quests}</b></div></div><h3>Admin actions</h3><button className="drawer-action" onClick={onEdit}>✎ Edit student information</button><button className="drawer-action" onClick={onMessage}>✉ Send message</button><button className="drawer-action" onClick={onActivity}>◉ View activity</button><button className="drawer-action danger" onClick={onToggleStatus}>{user.status === 'Active' ? '⊘ Suspend account' : '◉ Unsuspend account'}</button></Drawer>
 }
 
 function QuestDetails({ quest, onClose, onNotice, onEdit, onArchive }: { quest: Quest; onClose: () => void; onNotice: (notice: string) => void; onEdit: () => void; onArchive: () => void }) {
@@ -237,6 +269,26 @@ function QuestModal({ initialQuest, users, onClose, onSave }: { initialQuest: Qu
     })
   }
   return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">QUEST STUDIO</span><h2>{initialQuest ? 'Edit quest' : 'Create a new quest'}</h2><p>Draft a meaningful challenge for the BeeBetter community.</p><form onSubmit={submit}><label>Quest title<input name="title" required defaultValue={initialQuest?.title} placeholder="e.g. Take a mindful break" /></label><label>Send this quest to<select name="assignee" defaultValue={initialQuest?.assignee || 'Everyone'}><option>Everyone</option>{users.filter((user) => user.status === 'Active').map((user) => <option key={user.email}>{user.name}</option>)}</select></label><label>Category<select name="category" defaultValue={initialQuest?.category || 'Wellness'}><option>Wellness</option><option>Growth</option><option>Lifestyle</option><option>Relationships</option></select></label><label>Difficulty<select name="difficulty" defaultValue={initialQuest?.difficulty || 'Easy'}><option>Easy</option><option>Medium</option><option>Hard</option></select></label><div className="assignment-note">✦ Choose Everyone or a specific active user for this quest.</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">{initialQuest ? 'Save changes' : 'Create quest'}</button></div></form></div></div>
+}
+
+function StudentModal({ user, onClose, onSave }: { user: User; onClose: () => void; onSave: (user: User) => void }) {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    onSave({
+      ...user,
+      studentNumber: String(data.get('studentNumber') || '').trim(),
+      name: String(data.get('name') || '').trim(),
+      email: String(data.get('email') || '').trim().toLowerCase(),
+      course: String(data.get('course') || '').trim(),
+      yearLevel: String(data.get('yearLevel') || '').trim(),
+      section: String(data.get('section') || '').trim(),
+      campus: String(data.get('campus') || '').trim(),
+      goal: String(data.get('goal') || '').trim(),
+      status: String(data.get('status') || 'Active') as User['status'],
+    })
+  }
+  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">STUDENT RECORD</span><h2>Edit student information</h2><form onSubmit={submit}><label>Student number<input name="studentNumber" required defaultValue={user.studentNumber} /></label><label>Name<input name="name" required defaultValue={user.name} /></label><label>Email<input name="email" required type="email" defaultValue={user.email} readOnly /></label><label>Course<input name="course" required defaultValue={user.course} /></label><label>Year level<input name="yearLevel" required defaultValue={user.yearLevel} /></label><label>Section<input name="section" required defaultValue={user.section} /></label><label>Campus<input name="campus" required defaultValue={user.campus} /></label><label>Goal<input name="goal" required defaultValue={user.goal} placeholder="Predefined or custom goal" /></label><label>Status<select name="status" defaultValue={user.status}><option>Active</option><option>Inactive</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Save student</button></div></form></div></div>
 }
 
 function MessageModal({ user, onClose, onSend }: { user: User; onClose: () => void; onSend: (message: string) => void }) {

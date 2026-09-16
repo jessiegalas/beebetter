@@ -3,16 +3,18 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
-import { useUserData } from '@/hooks/use-user-data';
+import { useUserData, StudentProfileUpdates } from '@/hooks/use-user-data';
 
 export default function ProfileScreen() {
   const {
@@ -22,8 +24,12 @@ export default function ProfileScreen() {
     levelProgress,
     isRefreshing,
     refresh,
+    updateProfile,
     signOut,
   } = useUserData();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<StudentProfileUpdates | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const displayName =
     profile?.display_name ||
@@ -33,6 +39,37 @@ export default function ProfileScreen() {
   const streakDays = profile?.current_streak ?? 0;
   const totalXp = profile?.total_xp ?? 0;
   const questsDone = completedQuests.length;
+
+  const startEditing = () => {
+    if (!profile) return;
+    setDraft({
+      student_number: profile.student_number,
+      name: profile.name,
+      course: profile.course,
+      year_level: profile.year_level,
+      section: profile.section,
+      campus: profile.campus,
+      goal: profile.goal,
+    });
+    setEditing(true);
+  };
+
+  const saveProfile = async () => {
+    if (!draft) return;
+    if (Object.values(draft).some((value) => !value.trim())) {
+      Alert.alert('Complete your profile', 'Student number, name, course, year level, section, campus, and goal are required.');
+      return;
+    }
+    setSaving(true);
+    const result = await updateProfile(draft);
+    setSaving(false);
+    if (!result.success) {
+      Alert.alert('Could not save profile', result.error || 'Please try again.');
+      return;
+    }
+    setEditing(false);
+    setDraft(null);
+  };
 
   // Dynamic achievement badges based on player milestones
   const badges = [
@@ -133,6 +170,47 @@ export default function ProfileScreen() {
           }>
           {/* Profile Card */}
           <View style={styles.profileCard}>
+
+                      <View style={styles.sectionCard}>
+                        <View style={styles.sectionHeaderRow}>
+                          <ThemedText style={styles.sectionTitle}>Student Information</ThemedText>
+                          <TouchableOpacity onPress={editing ? saveProfile : startEditing} disabled={saving}>
+                            <ThemedText style={styles.editText}>{saving ? 'Saving...' : editing ? 'Save' : 'Edit'}</ThemedText>
+                          </TouchableOpacity>
+                        </View>
+                        {editing && draft ? (
+                          <View style={styles.formGrid}>
+                            {([
+                              ['student_number', 'Student Number'],
+                              ['name', 'Name'],
+                              ['course', 'Course'],
+                              ['year_level', 'Year Level'],
+                              ['section', 'Section'],
+                              ['campus', 'Campus'],
+                              ['goal', 'Goal'],
+                            ] as const).map(([field, label]) => (
+                              <View key={field}>
+                                <ThemedText style={styles.fieldLabel}>{label}</ThemedText>
+                                <TextInput
+                                  style={styles.profileInput}
+                                  value={draft[field]}
+                                  onChangeText={(value) => setDraft((current: StudentProfileUpdates | null) => current ? { ...current, [field]: value } : current)}
+                                  placeholder={label}
+                                  placeholderTextColor={COLORS.muted}
+                                />
+                              </View>
+                            ))}
+                          </View>
+                        ) : (
+                          <View style={styles.infoList}>
+                            <InfoRow label="Student Number" value={profile?.student_number || 'Not provided'} />
+                            <InfoRow label="Course" value={profile?.course || 'Not provided'} />
+                            <InfoRow label="Year / Section" value={`${profile?.year_level || 'Not provided'} · ${profile?.section || 'Not provided'}`} />
+                            <InfoRow label="Campus" value={profile?.campus || 'Not provided'} />
+                            <InfoRow label="Goal" value={profile?.goal || 'No goal set'} />
+                          </View>
+                        )}
+                      </View>
             <View style={styles.profileTop}>
               <Ionicons name="star" size={22} color={COLORS.honeyDark} />
               <ThemedText style={styles.profileName}>{displayName}</ThemedText>
@@ -238,6 +316,10 @@ export default function ProfileScreen() {
   );
 }
 
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return <View style={styles.infoRow}><ThemedText style={styles.fieldLabel}>{label}</ThemedText><ThemedText style={styles.infoValue}>{value}</ThemedText></View>;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
@@ -287,6 +369,14 @@ const styles = StyleSheet.create({
   },
   profileName: { fontSize: 17, fontWeight: '800', color: COLORS.ink },
   profileLevel: { fontSize: 12, color: COLORS.muted },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  editText: { color: COLORS.honeyDark, fontSize: 12, fontWeight: '800' },
+  formGrid: { gap: 10 },
+  fieldLabel: { color: COLORS.muted, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4 },
+  profileInput: { backgroundColor: COLORS.surfaceMuted, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 10, color: COLORS.ink, fontSize: 13 },
+  infoList: { gap: 12 },
+  infoRow: { gap: 3 },
+  infoValue: { color: COLORS.ink, fontSize: 13 },
   progressTrack: {
     height: 8,
     backgroundColor: COLORS.surfaceMuted,
