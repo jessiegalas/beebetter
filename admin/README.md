@@ -1,4 +1,13 @@
-# React + TypeScript + Vite
+# BeeBetter Admin
+
+## Setup
+
+1. Copy `.env.example` to `.env.local` and fill in the Supabase project URL and publishable key.
+2. Run `supabase/004_admin_student_access.sql` in the Supabase SQL Editor.
+3. Create or use an auth account, then approve it by inserting its auth user UUID into `public.admin_users`.
+4. Start the app with `npm run dev`.
+
+The Users screen reads student profiles through the guarded `admin_list_students()` RPC. It currently displays the fields already present in the mobile schema: display name, email, join date, level progress, XP, and streak. Additional student data can be planned before expanding the schema.
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 

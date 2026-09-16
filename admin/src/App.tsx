@@ -1,18 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
+import { supabase } from './supabase'
 
 type Section = 'Overview' | 'Users' | 'Quests' | 'Leaderboard'
-type User = { name: string; email: string; joined: string; quests: string; status: 'Active' | 'Inactive' }
+type User = { id: string; name: string; email: string; joined: string; quests: string; status: 'Active' | 'Inactive' }
 type Quest = { title: string; category: string; difficulty: string; completions: string; status: 'Published' | 'Draft'; assignee: string }
 
-const initialUsers: User[] = [
-  { name: 'Mia Santos', email: 'mia.santos@email.com', joined: 'Sep 12, 2026', quests: '24', status: 'Active' },
-  { name: 'James Wu', email: 'james.wu@email.com', joined: 'Sep 11, 2026', quests: '18', status: 'Active' },
-  { name: 'Leah Garcia', email: 'leah.garcia@email.com', joined: 'Sep 10, 2026', quests: '9', status: 'Inactive' },
-  { name: 'Noah Kim', email: 'noah.kim@email.com', joined: 'Sep 09, 2026', quests: '31', status: 'Active' },
-  { name: 'Ava Reyes', email: 'ava.reyes@email.com', joined: 'Sep 08, 2026', quests: '14', status: 'Active' },
-]
 const initialQuests: Quest[] = [
   { title: 'Take a mindful walk', category: 'Wellness', difficulty: 'Easy', completions: '238', status: 'Published', assignee: 'Everyone' },
   { title: 'Learn something new', category: 'Growth', difficulty: 'Medium', completions: '184', status: 'Published', assignee: 'Everyone' },
@@ -22,9 +16,12 @@ const initialQuests: Quest[] = [
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false)
+  const [authChecking, setAuthChecking] = useState(true)
   const [section, setSection] = useState<Section>('Overview')
   const [dark, setDark] = useState(() => localStorage.getItem('beebetter-theme') === 'dark')
-  const [users, setUsers] = useState(initialUsers)
+  const [users, setUsers] = useState<User[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [usersError, setUsersError] = useState('')
   const [quests, setQuests] = useState(initialQuests)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -36,6 +33,45 @@ function App() {
   const [editingQuest, setEditingQuest] = useState<Quest | null>(null)
   const [messageUser, setMessageUser] = useState<User | null>(null)
   const [activityUser, setActivityUser] = useState<User | null>(null)
+
+  const loadUsers = async () => {
+    setUsersLoading(true)
+    setUsersError('')
+    const { data, error } = await supabase.rpc('admin_list_students')
+    if (error) {
+      setUsersError(error.message)
+      setUsers([])
+    } else {
+      setUsers(
+        (data ?? []).map((student: { id: string; email: string | null; display_name: string | null; created_at: string; quests_completed: number }) => ({
+          id: student.id,
+          name: student.display_name || student.email?.split('@')[0] || 'Bee Explorer',
+          email: student.email || 'No email',
+          joined: new Date(student.created_at).toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' }),
+          quests: String(student.quests_completed),
+          status: 'Active',
+        }))
+      )
+    }
+    setUsersLoading(false)
+  }
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthenticated(Boolean(session))
+      setAuthChecking(false)
+      if (session) void loadUsers()
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(Boolean(session))
+      setAuthChecking(false)
+      if (session) void loadUsers()
+      else setUsers([])
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   const toggleTheme = () => {
     setDark((value) => {
@@ -49,6 +85,7 @@ function App() {
     setProfileOpen(false)
   }
 
+  if (authChecking) return <div className="auth-shell"><div className="auth-card"><p>Checking admin session...</p></div></div>
   if (!authenticated) return <AuthScreen onSuccess={() => setAuthenticated(true)} dark={dark} onToggleTheme={toggleTheme} />
 
   return (
@@ -57,7 +94,7 @@ function App() {
         <Brand />
         <span className="admin-label">ADMIN CONSOLE</span>
         <nav>{(['Overview', 'Users', 'Quests', 'Leaderboard'] as Section[]).map((item) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item}><span>{item === 'Overview' ? '▦' : item === 'Users' ? '♙' : item === 'Quests' ? '⚑' : '♛'}</span>{item}</button>)}</nav>
-        <div className="sidebar-tools"><button onClick={toggleTheme}>◐ <span>{dark ? 'Light mode' : 'Dark mode'}</span></button><button onClick={() => setAuthenticated(false)}>↪ <span>Sign out</span></button></div>
+        <div className="sidebar-tools"><button onClick={toggleTheme}>◐ <span>{dark ? 'Light mode' : 'Dark mode'}</span></button><button onClick={() => void supabase.auth.signOut()}>↪ <span>Sign out</span></button></div>
         <ProfileBadge onClick={() => setProfileOpen((value) => !value)} />
       </aside>
       <main className="main">
@@ -69,13 +106,13 @@ function App() {
             <button className="avatar-button" onClick={() => setProfileOpen((value) => !value)}><span className="avatar">JD</span></button>
           </div>
           {notificationsOpen && <div className="popover notification-popover"><b>Notifications</b><p><span className="notification-dot">✦</span> New quest submitted for review</p><p><span className="notification-dot">♙</span> 12 new users joined today</p><button className="link-button" onClick={() => setNotificationsOpen(false)}>Mark all as read</button></div>}
-          {profileOpen && <div className="popover profile-popover"><b>Jessie Dela Cruz</b><small>Administrator</small><button onClick={toggleTheme}>◐ {dark ? 'Switch to light mode' : 'Switch to dark mode'}</button><button onClick={() => setAuthenticated(false)}>↪ Sign out</button></div>}
+          {profileOpen && <div className="popover profile-popover"><b>Administrator</b><small>Supabase admin account</small><button onClick={toggleTheme}>◐ {dark ? 'Switch to light mode' : 'Switch to dark mode'}</button><button onClick={() => void supabase.auth.signOut()}>↪ Sign out</button></div>}
         </header>
         <nav className="mobile-nav">{(['Overview', 'Users', 'Quests', 'Leaderboard'] as Section[]).map((item) => <button className={section === item ? 'mobile-nav-item active' : 'mobile-nav-item'} onClick={() => navigate(item)} key={item}>{item}</button>)}</nav>
         <div className="content">
           <div className="heading-row"><div><span className="eyebrow">TUESDAY, SEPTEMBER 15, 2026</span><h1>{section === 'Overview' ? 'Good evening, Jessie' : section}</h1><p>{section === 'Overview' ? 'Here is what is happening in BeeBetter today.' : `Manage and monitor ${section.toLowerCase()} in your app.`}</p></div>{section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}</div>
           {section === 'Overview' && <Overview navigate={navigate} users={users} quests={quests} onUserClick={setSelectedUser} onQuestClick={setSelectedQuest} />}
-          {section === 'Users' && <DataTable kind="users" users={users} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
+          {section === 'Users' && <DataTable kind="users" users={users} loading={usersLoading} error={usersError} onRefresh={loadUsers} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
           {section === 'Quests' && <DataTable kind="quests" quests={quests} onQuestClick={setSelectedQuest} />}
           {section === 'Leaderboard' && <Leaderboard users={users} />}
         </div>
@@ -97,8 +134,29 @@ function ProfileBadge({ onClick }: { onClick: () => void }) { return <button cla
 function AuthScreen({ onSuccess, dark, onToggleTheme }: { onSuccess: () => void; dark: boolean; onToggleTheme: () => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [error, setError] = useState('')
-  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setError(''); onSuccess() }
-  return <div className={dark ? 'auth-shell dark' : 'auth-shell'}><button className="auth-theme" onClick={onToggleTheme}>{dark ? '☀ Light mode' : '☾ Dark mode'}</button><div className="auth-art"><Brand /><div className="orb orb-one" /><div className="orb orb-two" /><div className="art-copy"><span className="eyebrow">THE BETTER WAY TO GROW</span><h1>Make every day<br /><em>a little better.</em></h1><p>One mindful action at a time, powered by a community that cares.</p><div className="mini-stat"><b>✦ 3,642</b><span>positive moments created this week</span></div></div></div><div className="auth-card"><div className="auth-heading"><span className="eyebrow">WELCOME BACK</span><h2>{mode === 'login' ? 'Welcome back, Jessie' : 'Create your admin account'}</h2><p>{mode === 'login' ? 'Sign in to continue to your console.' : 'Start managing your BeeBetter community.'}</p></div><form onSubmit={submit}>{mode === 'signup' && <label>Full name<input required placeholder="Jessie Dela Cruz" /></label>}<label>Email address<input required type="email" placeholder="you@beebetter.app" /></label><label>Password<input required type="password" placeholder="••••••••" /></label>{mode === 'login' && <button type="button" className="forgot" onClick={() => setError('Password reset is available after database connection. For demo mode, use any password.')}>Forgot password?</button>}{error && <p className="form-error">{error}</p>}<button className="auth-submit" type="submit">{mode === 'login' ? 'Sign in →' : 'Create account →'}</button></form><p className="switch-auth">{mode === 'login' ? 'New to BeeBetter?' : 'Already have an account?'} <button onClick={() => { setError(''); setMode(mode === 'login' ? 'signup' : 'login') }}>{mode === 'login' ? 'Create an account' : 'Sign in'}</button></p><div className="demo-note">Demo mode · any valid email and password works</div></div></div>
+  const [loading, setLoading] = useState(false)
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    setLoading(true)
+    const data = new FormData(event.currentTarget)
+    const email = String(data.get('email') || '').trim().toLowerCase()
+    const password = String(data.get('password') || '')
+    const result = mode === 'login'
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : await supabase.auth.signUp({ email, password, options: { data: { display_name: String(data.get('name') || '').trim() } } })
+    setLoading(false)
+    if (result.error) {
+      setError(result.error.message)
+      return
+    }
+    if (mode === 'signup' && !result.data.session) {
+      setError('Account created. Confirm the email before signing in.')
+      return
+    }
+    onSuccess()
+  }
+  return <div className={dark ? 'auth-shell dark' : 'auth-shell'}><button className="auth-theme" onClick={onToggleTheme}>{dark ? '☀ Light mode' : '☾ Dark mode'}</button><div className="auth-art"><Brand /><div className="orb orb-one" /><div className="orb orb-two" /><div className="art-copy"><span className="eyebrow">THE BETTER WAY TO GROW</span><h1>Make every day<br /><em>a little better.</em></h1><p>One mindful action at a time, powered by a community that cares.</p><div className="mini-stat"><b>✦ Student data</b><span>securely managed through Supabase</span></div></div></div><div className="auth-card"><div className="auth-heading"><span className="eyebrow">ADMIN ACCESS</span><h2>{mode === 'login' ? 'Sign in to BeeBetter' : 'Create an admin account'}</h2><p>{mode === 'login' ? 'Use an approved Supabase admin account.' : 'An existing admin must approve this account in Supabase.'}</p></div><form onSubmit={submit}>{mode === 'signup' && <label>Full name<input name="name" required placeholder="Admin name" /></label>}<label>Email address<input name="email" required type="email" placeholder="admin@beebetter.app" /></label><label>Password<input name="password" required type="password" placeholder="••••••••" /></label>{error && <p className="form-error">{error}</p>}<button className="auth-submit" type="submit" disabled={loading}>{loading ? 'Connecting...' : mode === 'login' ? 'Sign in →' : 'Create account →'}</button></form><p className="switch-auth">{mode === 'login' ? 'Need an admin account?' : 'Already have an account?'} <button onClick={() => { setError(''); setMode(mode === 'login' ? 'signup' : 'login') }}>{mode === 'login' ? 'Create one' : 'Sign in'}</button></p></div></div>
 }
 
 function Overview({ navigate, users, quests, onUserClick, onQuestClick }: { navigate: (section: Section) => void; users: User[]; quests: Quest[]; onUserClick: (user: User) => void; onQuestClick: (quest: Quest) => void }) {
@@ -111,7 +169,7 @@ function UserRow({ user, onClick }: { user: User; onClick?: () => void }) { retu
 function QuestRow({ quest, onClick }: { quest: Quest; onClick?: () => void }) { return <button className="recent-row clickable-row" onClick={onClick}><span className="quest-icon">✦</span><div className="row-copy"><b>{quest.title}</b><small>{quest.completions} completions</small></div><span>›</span></button> }
 function Status({ status }: { status: string }) { return <span className={`status ${status.toLowerCase()}`}><i />{status}</span> }
 
-function DataTable({ kind, users = [], quests = [], onUserClick, onUserActions, onQuestClick }: { kind: 'users' | 'quests'; users?: User[]; quests?: Quest[]; onUserClick?: (user: User) => void; onUserActions?: (user: User) => void; onQuestClick?: (quest: Quest) => void }) {
+function DataTable({ kind, users = [], quests = [], loading = false, error = '', onRefresh, onUserClick, onUserActions, onQuestClick }: { kind: 'users' | 'quests'; users?: User[]; quests?: Quest[]; loading?: boolean; error?: string; onRefresh?: () => void; onUserClick?: (user: User) => void; onUserActions?: (user: User) => void; onQuestClick?: (quest: Quest) => void }) {
   const isUsers = kind === 'users'
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('All')
@@ -125,8 +183,10 @@ function DataTable({ kind, users = [], quests = [], onUserClick, onUserActions, 
           <option>All</option>
           {isUsers ? <><option>Active</option><option>Inactive</option></> : <><option>Published</option><option>Draft</option><option>Easy</option><option>Medium</option></>}
         </select>
+        {onRefresh && <button className="secondary-button" onClick={onRefresh}>Refresh</button>}
       </div>
-      {isUsers ? <UserRows users={filteredUsers} search={search} onUserClick={onUserClick} onUserActions={onUserActions} /> : <QuestRows quests={filteredQuests} search={search} onQuestClick={onQuestClick} />}
+      {error && <div className="empty-state">{error}</div>}
+      {loading ? <div className="empty-state">Loading students...</div> : isUsers ? <UserRows users={filteredUsers} search={search} onUserClick={onUserClick} onUserActions={onUserActions} /> : <QuestRows quests={filteredQuests} search={search} onQuestClick={onQuestClick} />}
     </section>
   )
 }
