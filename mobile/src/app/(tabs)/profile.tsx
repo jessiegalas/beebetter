@@ -35,6 +35,12 @@ export default function ProfileScreen() {
     profile?.display_name ||
     user?.email?.split('@')[0] ||
     (user ? 'Bee Explorer' : 'Guest Explorer');
+  const initials = displayName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
 
   const streakDays = profile?.current_streak ?? 0;
   const totalXp = profile?.total_xp ?? 0;
@@ -71,43 +77,12 @@ export default function ProfileScreen() {
     setDraft(null);
   };
 
-  // Dynamic achievement badges based on player milestones
   const badges = [
-    {
-      id: 'first_quest',
-      title: 'First Flight',
-      desc: 'Complete 1 quest',
-      unlocked: questsDone >= 1,
-      icon: 'sparkles' as const,
-    },
-    {
-      id: 'five_quests',
-      title: 'Busy Worker',
-      desc: 'Complete 5 quests',
-      unlocked: questsDone >= 5,
-      icon: 'trophy' as const,
-    },
-    {
-      id: 'level_2',
-      title: 'Hive Rising',
-      desc: 'Reach Level 2',
-      unlocked: levelProgress.level >= 2,
-      icon: 'star' as const,
-    },
-    {
-      id: 'streak_3',
-      title: 'On A Roll',
-      desc: 'Reach a 3-day streak',
-      unlocked: streakDays >= 3,
-      icon: 'flame' as const,
-    },
-    {
-      id: 'level_5',
-      title: 'Master Pollinator',
-      desc: 'Reach Level 5',
-      unlocked: levelProgress.level >= 5,
-      icon: 'ribbon' as const,
-    },
+    { id: 'first_quest', title: 'First Flight', desc: 'Complete 1 quest', unlocked: questsDone >= 1, icon: 'sparkles' as const },
+    { id: 'five_quests', title: 'Busy Worker', desc: 'Complete 5 quests', unlocked: questsDone >= 5, icon: 'trophy' as const },
+    { id: 'level_2', title: 'Hive Rising', desc: 'Reach Level 2', unlocked: levelProgress.level >= 2, icon: 'star' as const },
+    { id: 'streak_3', title: 'On A Roll', desc: 'Reach a 3-day streak', unlocked: streakDays >= 3, icon: 'flame' as const },
+    { id: 'level_5', title: 'Master Pollinator', desc: 'Reach Level 5', unlocked: levelProgress.level >= 5, icon: 'ribbon' as const },
   ];
 
   const unlockedBadgesCount = badges.filter((b) => b.unlocked).length;
@@ -168,59 +143,47 @@ export default function ProfileScreen() {
               tintColor={COLORS.honeyDark}
             />
           }>
-          {/* Profile Card */}
+          {/* Identity and progress */}
           <View style={styles.profileCard}>
+            <View style={styles.identityRow}>
+              <View style={styles.largeAvatar}><ThemedText style={styles.avatarText}>{initials || 'B'}</ThemedText></View>
+              <View style={styles.identityCopy}>
+                <ThemedText style={styles.profileName}>{displayName}</ThemedText>
+                <ThemedText style={styles.profileEmail} numberOfLines={1}>{profile?.email || user?.email}</ThemedText>
+                <View style={styles.levelPill}><Ionicons name="sparkles" size={12} color={COLORS.honeyDark} /><ThemedText style={styles.levelPillText}>Level {levelProgress.level}</ThemedText></View>
+              </View>
+              <TouchableOpacity style={styles.editCircle} onPress={editing ? () => { setEditing(false); setDraft(null); } : startEditing} accessibilityLabel={editing ? 'Cancel editing' : 'Edit profile'}>
+                <Ionicons name={editing ? 'close' : 'create-outline'} size={18} color={COLORS.ink} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.progressHeader}><ThemedText style={styles.progressLabel}>Next level</ThemedText><ThemedText style={styles.progressValue}>{levelProgress.currentLevelXp} / {levelProgress.xpForNextLevel} XP</ThemedText></View>
+            <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${levelProgress.progressPercent}%` }]} /></View>
+          </View>
 
-                      <View style={styles.sectionCard}>
-                        <View style={styles.sectionHeaderRow}>
-                          <ThemedText style={styles.sectionTitle}>Student Information</ThemedText>
-                          <TouchableOpacity onPress={editing ? saveProfile : startEditing} disabled={saving}>
-                            <ThemedText style={styles.editText}>{saving ? 'Saving...' : editing ? 'Save' : 'Edit'}</ThemedText>
-                          </TouchableOpacity>
-                        </View>
-                        {editing && draft ? (
-                          <View style={styles.formGrid}>
-                            {([
-                              ['student_number', 'Student Number'],
-                              ['name', 'Name'],
-                              ['course', 'Course'],
-                              ['year_level', 'Year Level'],
-                              ['section', 'Section'],
-                              ['campus', 'Campus'],
-                              ['goal', 'Goal'],
-                            ] as const).map(([field, label]) => (
-                              <View key={field}>
-                                <ThemedText style={styles.fieldLabel}>{label}</ThemedText>
-                                <TextInput
-                                  style={styles.profileInput}
-                                  value={draft[field]}
-                                  onChangeText={(value) => setDraft((current: StudentProfileUpdates | null) => current ? { ...current, [field]: value } : current)}
-                                  placeholder={label}
-                                  placeholderTextColor={COLORS.muted}
-                                />
-                              </View>
-                            ))}
-                          </View>
-                        ) : (
-                          <View style={styles.infoList}>
-                            <InfoRow label="Student Number" value={profile?.student_number || 'Not provided'} />
-                            <InfoRow label="Course" value={profile?.course || 'Not provided'} />
-                            <InfoRow label="Year / Section" value={`${profile?.year_level || 'Not provided'} · ${profile?.section || 'Not provided'}`} />
-                            <InfoRow label="Campus" value={profile?.campus || 'Not provided'} />
-                            <InfoRow label="Goal" value={profile?.goal || 'No goal set'} />
-                          </View>
-                        )}
-                      </View>
-            <View style={styles.profileTop}>
-              <Ionicons name="star" size={22} color={COLORS.honeyDark} />
-              <ThemedText style={styles.profileName}>{displayName}</ThemedText>
+          {/* Student information */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <View><ThemedText style={styles.sectionTitle}>Student information</ThemedText><ThemedText style={styles.sectionHint}>Keep this current for better quest recommendations.</ThemedText></View>
+              {editing && <TouchableOpacity onPress={saveProfile} disabled={saving} style={styles.saveButton}><ThemedText style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</ThemedText></TouchableOpacity>}
             </View>
-            <ThemedText style={styles.profileLevel}>
-              Level {levelProgress.level} · {levelProgress.currentLevelXp} / {levelProgress.xpForNextLevel} XP to Level {levelProgress.level + 1}
-            </ThemedText>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${levelProgress.progressPercent}%` }]} />
-            </View>
+            {editing && draft ? (
+              <View style={styles.formGrid}>
+                {([
+                  ['student_number', 'Student number'], ['name', 'Full name'], ['course', 'Course'],
+                  ['year_level', 'Year level'], ['section', 'Section'], ['campus', 'Campus'], ['goal', 'Current goal'],
+                ] as const).map(([field, label]) => (
+                  <View key={field}><ThemedText style={styles.fieldLabel}>{label}</ThemedText><TextInput style={styles.profileInput} value={draft[field]} onChangeText={(value) => setDraft((current: StudentProfileUpdates | null) => current ? { ...current, [field]: value } : current)} placeholder={label} placeholderTextColor={COLORS.muted} autoCapitalize={field === 'student_number' ? 'characters' : 'words'} returnKeyType="next" /></View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.infoList}>
+                <InfoRow label="Student number" value={profile?.student_number || 'Not provided'} />
+                <InfoRow label="Course" value={profile?.course || 'Not provided'} />
+                <InfoRow label="Year / section" value={`${profile?.year_level || 'Not provided'} · ${profile?.section || 'Not provided'}`} />
+                <InfoRow label="Campus" value={profile?.campus || 'Not provided'} />
+                <InfoRow label="Current goal" value={profile?.goal || 'No goal set'} />
+              </View>
+            )}
           </View>
 
           {/* Stats Grid */}
@@ -235,7 +198,7 @@ export default function ProfileScreen() {
           </View>
 
           {/* Recent Activity */}
-          <ThemedText style={styles.sectionTitle}>Recent Activity</ThemedText>
+          <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle}>Recent activity</ThemedText><ThemedText style={styles.sectionHint}>Your latest wins</ThemedText></View>
           <View style={styles.activityCard}>
             {completedQuests.length > 0 ? (
               completedQuests.slice(0, 5).map((quest) => (
@@ -301,6 +264,12 @@ export default function ProfileScreen() {
               </View>
               <Ionicons name="chevron-forward" size={20} color={COLORS.muted} />
             </TouchableOpacity>
+            <View style={styles.divider} />
+            <TouchableOpacity style={styles.settingsRow} onPress={refresh} activeOpacity={0.8}>
+              <View style={[styles.settingsIcon, styles.settingsIconBlue]}><Ionicons name="sync-outline" size={20} color="#4B73C2" /></View>
+              <View style={styles.settingsInfo}><ThemedText style={styles.settingsLabel}>Refresh my data</ThemedText><ThemedText style={styles.settingsDesc}>Sync your profile, quests, and progress</ThemedText></View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.muted} />
+            </TouchableOpacity>
           </View>
 
           {/* Account Actions */}
@@ -362,6 +331,39 @@ const styles = StyleSheet.create({
     gap: 8,
     ...BeeBetterShadow,
   },
+  identityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  largeAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: COLORS.honey,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { fontSize: 20, fontWeight: '900', color: COLORS.ink },
+  identityCopy: { flex: 1, gap: 3 },
+  profileEmail: { fontSize: 11, color: COLORS.muted },
+  levelPill: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  levelPillText: { fontSize: 11, fontWeight: '800', color: COLORS.honeyDark },
+  editCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.honeySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  progressLabel: { fontSize: 11, color: COLORS.muted, fontWeight: '700' },
+  progressValue: { fontSize: 11, color: COLORS.ink, fontWeight: '800' },
+  sectionHint: { fontSize: 10, color: COLORS.muted, marginTop: 2 },
+  saveButton: { backgroundColor: COLORS.ink, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  saveButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
+  sectionHeading: { gap: 2, marginTop: 6 },
   profileTop: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -513,6 +515,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  settingsIconBlue: { backgroundColor: '#EAF1FF' },
+  divider: { height: 1, backgroundColor: COLORS.surfaceMuted, marginVertical: 12 },
   settingsInfo: {
     flex: 1,
     gap: 2,
