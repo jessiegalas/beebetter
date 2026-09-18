@@ -75,7 +75,6 @@ begin
 end;
 $$;
 
--- Admin reads the student record and existing progress in one guarded RPC.
 drop function if exists public.admin_list_students();
 create or replace function public.admin_list_students()
 returns table (

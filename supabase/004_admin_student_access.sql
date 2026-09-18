@@ -15,6 +15,7 @@ create policy "Admins can view their own admin record"
   to authenticated
   using (auth.uid() = id);
 
+drop function if exists public.admin_list_students();
 create or replace function public.admin_list_students()
 returns table (
   id uuid,

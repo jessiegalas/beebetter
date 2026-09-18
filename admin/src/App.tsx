@@ -3,10 +3,11 @@ import type { FormEvent, ReactNode } from 'react'
 import './App.css'
 import { supabase } from './supabase'
 
-type Section = 'Overview' | 'Users' | 'Quests' | 'Leaderboard'
+type Section = 'Overview' | 'Users' | 'Quests' | 'Leaderboard' | 'Admins'
 type User = { id: string; studentNumber: string; name: string; email: string; course: string; yearLevel: string; section: string; campus: string; goal: string; joined: string; quests: string; status: 'Active' | 'Inactive' }
 type Quest = { id: string; ownerId: string; title: string; category: string; difficulty: string; completions: string; status: 'Published' | 'Draft'; assignee: string }
 type QuestDraft = { title: string; description: string; category: 'Academics' | 'Habits' | 'Social' | 'Health'; difficulty: 'Easy' | 'Medium' | 'Hard'; assigneeId: string | null; publish: boolean }
+type Admin = { id: string; email: string; displayName: string; role: 'admin' | 'super_admin'; isActive: boolean; createdAt: string }
 
 const initialQuests: Quest[] = []
 
@@ -21,6 +22,11 @@ function App() {
   const [questsLoading, setQuestsLoading] = useState(false)
   const [questsError, setQuestsError] = useState('')
   const [quests, setQuests] = useState(initialQuests)
+  const [adminRole, setAdminRole] = useState<'admin' | 'super_admin' | null>(null)
+  const [admins, setAdmins] = useState<Admin[]>([])
+  const [adminsLoading, setAdminsLoading] = useState(false)
+  const [adminsError, setAdminsError] = useState('')
+  const [adminModalOpen, setAdminModalOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [newQuestOpen, setNewQuestOpen] = useState(false)
@@ -84,18 +90,50 @@ function App() {
     setQuestsLoading(false)
   }
 
+  const loadAdminRole = async () => {
+    const { data } = await supabase.rpc('admin_get_my_role')
+    const current = data?.[0]
+    setAdminRole(current?.is_active ? current.role : null)
+    return current?.is_active ? current.role : null
+  }
+
+  const loadAdmins = async () => {
+    setAdminsLoading(true)
+    setAdminsError('')
+    const { data, error } = await supabase.rpc('super_admin_list_admins')
+    if (error) {
+      setAdminsError(error.message)
+      setAdmins([])
+    } else {
+      setAdmins((data ?? []).map((admin: { id: string; email: string; display_name: string | null; role: 'admin' | 'super_admin'; is_active: boolean; created_at: string }) => ({
+        id: admin.id,
+        email: admin.email,
+        displayName: admin.display_name || admin.email,
+        role: admin.role,
+        isActive: admin.is_active,
+        createdAt: new Date(admin.created_at).toLocaleDateString(),
+      })))
+    }
+    setAdminsLoading(false)
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setAuthenticated(Boolean(session))
       setAuthChecking(false)
-      if (session) { void loadUsers(); void loadQuests() }
+      if (session) {
+        void loadUsers(); void loadQuests()
+        void loadAdminRole().then((role) => { if (role === 'super_admin') void loadAdmins() })
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthenticated(Boolean(session))
       setAuthChecking(false)
-      if (session) { void loadUsers(); void loadQuests() }
-      else setUsers([])
+      if (session) {
+        void loadUsers(); void loadQuests()
+        void loadAdminRole().then((role) => { if (role === 'super_admin') void loadAdmins() })
+      } else { setUsers([]); setAdmins([]); setAdminRole(null) }
     })
 
     return () => subscription.unsubscribe()
@@ -159,6 +197,29 @@ function App() {
       : (draft.assigneeId ? 'Quest saved as a draft for the selected student.' : 'Quest saved as a draft for every active student.'))
   }
 
+  const grantAdmin = async (adminId: string, role: Admin['role']) => {
+    const { error } = await supabase.rpc('super_admin_grant_admin', { target_user_id: adminId.trim(), role_value: role })
+    if (error) { setNotice(`Could not add admin: ${error.message}`); return }
+    setAdminModalOpen(false)
+    await loadAdmins()
+    setNotice('Admin access granted.')
+  }
+
+  const updateAdmin = async (admin: Admin, role: Admin['role'], isActive: boolean) => {
+    const { error } = await supabase.rpc('super_admin_update_admin', { target_user_id: admin.id, role_value: role, is_active_value: isActive })
+    if (error) { setNotice(`Could not update ${admin.email}: ${error.message}`); return }
+    await loadAdmins()
+    setNotice(`${admin.email} was updated.`)
+  }
+
+  const removeAdmin = async (admin: Admin) => {
+    if (!window.confirm(`Remove admin access for ${admin.email}?`)) return
+    const { error } = await supabase.rpc('super_admin_remove_admin', { target_user_id: admin.id })
+    if (error) { setNotice(`Could not remove ${admin.email}: ${error.message}`); return }
+    await loadAdmins()
+    setNotice(`${admin.email} no longer has admin access.`)
+  }
+
   if (authChecking) return <div className="auth-shell"><div className="auth-card"><p>Checking admin session...</p></div></div>
   if (!authenticated) return <AuthScreen onSuccess={() => setAuthenticated(true)} dark={dark} onToggleTheme={toggleTheme} />
 
@@ -167,7 +228,7 @@ function App() {
       <aside className="sidebar">
         <Brand />
         <span className="admin-label">ADMIN CONSOLE</span>
-        <nav>{(['Overview', 'Users', 'Quests', 'Leaderboard'] as Section[]).map((item) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item}><span>{item === 'Overview' ? '▦' : item === 'Users' ? '♙' : item === 'Quests' ? '⚑' : '♛'}</span>{item}</button>)}</nav>
+        <nav>{(['Overview', 'Users', 'Quests', 'Leaderboard', ...(adminRole === 'super_admin' ? ['Admins'] : [])] as Section[]).map((item) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item}><span>{item === 'Overview' ? '▦' : item === 'Users' ? '♙' : item === 'Quests' ? '⚑' : item === 'Admins' ? '♙' : '♛'}</span>{item}</button>)}</nav>
         <div className="sidebar-tools"><button onClick={toggleTheme}>◐ <span>{dark ? 'Light mode' : 'Dark mode'}</span></button><button onClick={() => void supabase.auth.signOut()}>↪ <span>Sign out</span></button></div>
         <ProfileBadge onClick={() => setProfileOpen((value) => !value)} />
       </aside>
@@ -182,13 +243,14 @@ function App() {
           {notificationsOpen && <div className="popover notification-popover"><b>Notifications</b><p><span className="notification-dot">✦</span> New quest submitted for review</p><p><span className="notification-dot">♙</span> 12 new users joined today</p><button className="link-button" onClick={() => setNotificationsOpen(false)}>Mark all as read</button></div>}
           {profileOpen && <div className="popover profile-popover"><b>Administrator</b><small>Supabase admin account</small><button onClick={toggleTheme}>◐ {dark ? 'Switch to light mode' : 'Switch to dark mode'}</button><button onClick={() => void supabase.auth.signOut()}>↪ Sign out</button></div>}
         </header>
-        <nav className="mobile-nav">{(['Overview', 'Users', 'Quests', 'Leaderboard'] as Section[]).map((item) => <button className={section === item ? 'mobile-nav-item active' : 'mobile-nav-item'} onClick={() => navigate(item)} key={item}>{item}</button>)}</nav>
+        <nav className="mobile-nav">{(['Overview', 'Users', 'Quests', 'Leaderboard', ...(adminRole === 'super_admin' ? ['Admins'] : [])] as Section[]).map((item) => <button className={section === item ? 'mobile-nav-item active' : 'mobile-nav-item'} onClick={() => navigate(item)} key={item}>{item}</button>)}</nav>
         <div className="content">
           <div className="heading-row"><div><span className="eyebrow">TUESDAY, SEPTEMBER 15, 2026</span><h1>{section === 'Overview' ? 'Good evening, Jessie' : section}</h1><p>{section === 'Overview' ? 'Here is what is happening in BeeBetter today.' : `Manage and monitor ${section.toLowerCase()} in your app.`}</p></div>{section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}</div>
           {section === 'Overview' && <Overview navigate={navigate} users={users} quests={quests} onUserClick={setSelectedUser} onQuestClick={setSelectedQuest} />}
           {section === 'Users' && <DataTable kind="users" users={users} loading={usersLoading} error={usersError} onRefresh={loadUsers} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
           {section === 'Quests' && <DataTable kind="quests" quests={quests} loading={questsLoading} error={questsError} onRefresh={loadQuests} onQuestClick={setSelectedQuest} />}
           {section === 'Leaderboard' && <Leaderboard users={users} />}
+          {section === 'Admins' && adminRole === 'super_admin' && <AdminTable admins={admins} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} />}
         </div>
       </main>
       {(newQuestOpen || editingQuest) && <QuestModal initialQuest={editingQuest} users={users} onClose={() => { setNewQuestOpen(false); setEditingQuest(null) }} onSave={createQuest} />}
@@ -198,6 +260,7 @@ function App() {
       {messageUser && <MessageModal user={messageUser} onClose={() => setMessageUser(null)} onSend={(message) => { setMessageUser(null); setNotice(`Message sent to ${messageUser.name}: "${message}"`) }} />}
       {activityUser && <ActivityModal user={activityUser} onClose={() => setActivityUser(null)} />}
       {editingUser && <StudentModal user={editingUser} onClose={() => setEditingUser(null)} onSave={(user) => { void saveStudent(user) }} />}
+      {adminModalOpen && <AdminModal onClose={() => setAdminModalOpen(false)} onSave={grantAdmin} />}
       {notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')}>×</button></div>}
     </div>
   )
@@ -275,6 +338,19 @@ function UserRows({ users, search, onUserClick, onUserActions }: { users: User[]
 function QuestRows({ quests, search, onQuestClick }: { quests: Quest[]; search: string; onQuestClick?: (quest: Quest) => void }) {
   if (quests.length === 0) return <div className="empty-state">No quests match “{search}”. Try another search.</div>
   return <div className="table-scroll"><div className="table-row table-header">{['QUEST', 'CATEGORY', 'DIFFICULTY', 'ASSIGNED TO', 'STATUS'].map((head) => <span key={head}>{head}</span>)}</div>{quests.map((row) => <button className="table-row clickable-row" onClick={() => onQuestClick?.(row)} key={row.id}><div className="quest-cell"><span className="quest-icon">✦</span><b>{row.title}</b></div><span>{row.category}</span><span>{row.difficulty}</span><span>{row.assignee}</span><Status status={row.status} /></button>)}</div>
+}
+
+function AdminTable({ admins, loading, error, onRefresh, onAdd, onUpdate, onRemove }: { admins: Admin[]; loading: boolean; error: string; onRefresh: () => void; onAdd: () => void; onUpdate: (admin: Admin, role: Admin['role'], isActive: boolean) => void; onRemove: (admin: Admin) => void }) {
+  return <section className="panel table-panel"><div className="table-toolbar"><div><h2>Admin access</h2><p>Manage who can access the admin console.</p></div><div><button className="secondary-button" onClick={onRefresh}>Refresh</button><button className="primary-button" onClick={onAdd}>＋ Add admin</button></div></div>{error && <div className="empty-state">Could not load admins: {error}. Apply 007_super_admin_management.sql.</div>}{loading ? <div className="empty-state">Loading admins...</div> : admins.length === 0 ? <div className="empty-state">No admin records found.</div> : <div className="table-scroll"><div className="table-row table-header"><span>ADMIN</span><span>ROLE</span><span>STATUS</span><span>ADDED</span><span>ACTIONS</span></div>{admins.map((admin) => <div className="table-row" key={admin.id}><div className="row-copy"><b>{admin.displayName}</b><small>{admin.email}</small></div><select value={admin.role} onChange={(event) => onUpdate(admin, event.target.value as Admin['role'], admin.isActive)}><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select><Status status={admin.isActive ? 'Active' : 'Inactive'} /><span>{admin.createdAt}</span><div><button className="secondary-button" onClick={() => onUpdate(admin, admin.role, !admin.isActive)}>{admin.isActive ? 'Disable' : 'Enable'}</button><button className="row-menu" onClick={() => onRemove(admin)}>×</button></div></div>)}</div>}</section>
+}
+
+function AdminModal({ onClose, onSave }: { onClose: () => void; onSave: (id: string, role: Admin['role']) => Promise<void> }) {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    void onSave(String(data.get('userId') || ''), String(data.get('role')) as Admin['role'])
+  }
+  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">ADMIN ACCESS</span><h2>Add an admin</h2><p>The user must already exist in Supabase Authentication.</p><form onSubmit={submit}><label>Auth user UUID<input name="userId" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /></label><label>Role<select name="role" defaultValue="admin"><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Grant access</button></div></form></div></div>
 }
 
 function Leaderboard({ users }: { users: User[] }) {

@@ -3,11 +3,14 @@
 ## Setup
 
 1. Copy `.env.example` to `.env.local` and fill in the Supabase project URL and publishable key.
-2. Run `supabase/004_admin_student_access.sql` in the Supabase SQL Editor.
-3. Create or use an auth account, then approve it by inserting its auth user UUID into `public.admin_users`.
+2. Run `supabase/004_admin_student_access.sql`, `005_students.sql`, `006_admin_quest_management.sql`, and `007_super_admin_management.sql` in order in the Supabase SQL Editor.
+3. Create or use an Auth account, then bootstrap the first Super Admin with:
+  `update public.admin_users set role = 'super_admin', is_active = true where id = 'AUTH_USER_UUID';`
 4. Start the app with `npm run dev`.
 
 The Users screen reads student records through the guarded `admin_list_students()` RPC. Student information is stored in `public.students`, while `public.profiles` continues to hold level, XP, and streak progress. Apply `supabase/005_students.sql` after the existing migrations to backfill current accounts and enable student editing through `admin_update_student()`.
+
+Super Admins see the Admins section and can grant admin access to existing Supabase Auth users, change roles, disable access, or remove admin access. Regular admins retain student and quest permissions but cannot manage admins. Creating the underlying Auth account must be done in Supabase Auth or through a server-side invite flow; the browser admin app never receives a service-role key.
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
