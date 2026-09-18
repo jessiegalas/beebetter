@@ -6,7 +6,7 @@ import { supabase } from './supabase'
 type Section = 'Overview' | 'Users' | 'Quests' | 'Leaderboard'
 type User = { id: string; studentNumber: string; name: string; email: string; course: string; yearLevel: string; section: string; campus: string; goal: string; joined: string; quests: string; status: 'Active' | 'Inactive' }
 type Quest = { id: string; ownerId: string; title: string; category: string; difficulty: string; completions: string; status: 'Published' | 'Draft'; assignee: string }
-type QuestDraft = { title: string; description: string; category: 'Academics' | 'Habits' | 'Social' | 'Health'; difficulty: 'Easy' | 'Medium' | 'Hard'; assigneeId: string | null }
+type QuestDraft = { title: string; description: string; category: 'Academics' | 'Habits' | 'Social' | 'Health'; difficulty: 'Easy' | 'Medium' | 'Hard'; assigneeId: string | null; publish: boolean }
 
 const initialQuests: Quest[] = []
 
@@ -18,6 +18,8 @@ function App() {
   const [users, setUsers] = useState<User[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [usersError, setUsersError] = useState('')
+  const [questsLoading, setQuestsLoading] = useState(false)
+  const [questsError, setQuestsError] = useState('')
   const [quests, setQuests] = useState(initialQuests)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -36,7 +38,7 @@ function App() {
     setUsersError('')
     const { data, error } = await supabase.rpc('admin_list_students')
     if (error) {
-      setUsersError(error.message)
+      setUsersError(`Student table could not load: ${error.message}. Apply 005_students.sql in Supabase SQL Editor.`)
       setUsers([])
     } else {
       setUsers(
@@ -60,10 +62,13 @@ function App() {
   }
 
   const loadQuests = async () => {
+    setQuestsLoading(true)
+    setQuestsError('')
     const { data, error } = await supabase.rpc('admin_list_quests')
     if (error) {
-      setNotice(`Could not load quests: ${error.message}`)
+      setQuestsError(`Quest table could not load: ${error.message}. Apply 006_admin_quest_management.sql in Supabase SQL Editor.`)
       setQuests([])
+      setQuestsLoading(false)
       return
     }
     setQuests((data ?? []).map((quest: { id: string; owner_id: string; title: string; category: string; xp: number; status: string; completions: number; assignee: string }) => ({
@@ -76,6 +81,7 @@ function App() {
       status: quest.status === 'active' ? 'Published' : 'Draft',
       assignee: quest.assignee,
     })))
+    setQuestsLoading(false)
   }
 
   useEffect(() => {
@@ -138,7 +144,7 @@ function App() {
       description_value: draft.description,
       category_value: draft.category,
       xp_value: xp,
-      status_value: 'active',
+      status_value: draft.publish ? 'active' : 'pending',
       assignee_id: draft.assigneeId,
     })
     if (error) {
@@ -148,7 +154,9 @@ function App() {
     await loadQuests()
     setNewQuestOpen(false)
     setEditingQuest(null)
-    setNotice(draft.assigneeId ? 'Quest assigned successfully.' : 'Quest assigned to every active student.')
+    setNotice(draft.publish
+      ? (draft.assigneeId ? 'Quest published and assigned successfully.' : 'Quest published for every active student.')
+      : (draft.assigneeId ? 'Quest saved as a draft for the selected student.' : 'Quest saved as a draft for every active student.'))
   }
 
   if (authChecking) return <div className="auth-shell"><div className="auth-card"><p>Checking admin session...</p></div></div>
@@ -179,7 +187,7 @@ function App() {
           <div className="heading-row"><div><span className="eyebrow">TUESDAY, SEPTEMBER 15, 2026</span><h1>{section === 'Overview' ? 'Good evening, Jessie' : section}</h1><p>{section === 'Overview' ? 'Here is what is happening in BeeBetter today.' : `Manage and monitor ${section.toLowerCase()} in your app.`}</p></div>{section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}</div>
           {section === 'Overview' && <Overview navigate={navigate} users={users} quests={quests} onUserClick={setSelectedUser} onQuestClick={setSelectedQuest} />}
           {section === 'Users' && <DataTable kind="users" users={users} loading={usersLoading} error={usersError} onRefresh={loadUsers} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
-          {section === 'Quests' && <DataTable kind="quests" quests={quests} onQuestClick={setSelectedQuest} />}
+          {section === 'Quests' && <DataTable kind="quests" quests={quests} loading={questsLoading} error={questsError} onRefresh={loadQuests} onQuestClick={setSelectedQuest} />}
           {section === 'Leaderboard' && <Leaderboard users={users} />}
         </div>
       </main>
@@ -295,15 +303,17 @@ function QuestModal({ initialQuest, users, onClose, onSave }: { initialQuest: Qu
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
+    const submitter = (event.nativeEvent as SubmitEvent).submitter
     void onSave({
       title: String(data.get('title')),
       description: String(data.get('description') || ''),
       category: String(data.get('category')) as QuestDraft['category'],
       difficulty: String(data.get('difficulty')) as QuestDraft['difficulty'],
       assigneeId: String(data.get('assignee') || '') || null,
+      publish: submitter?.getAttribute('value') === 'publish' || data.get('publish') === 'publish',
     })
   }
-  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">QUEST STUDIO</span><h2>{initialQuest ? 'Assign another quest' : 'Create a new quest'}</h2><p>Create a quest that appears in the selected student's mobile quest board.</p><form onSubmit={submit}><label>Quest title<input name="title" required defaultValue={initialQuest?.title} placeholder="e.g. Take a mindful break" /></label><label>Description<textarea name="description" rows={3} placeholder="What should the student do?" /></label><label>Send this quest to<select name="assignee" defaultValue=""><option value="">Everyone</option>{users.filter((user) => user.status === 'Active').map((user) => <option key={user.id} value={user.id}>{user.name} · {user.studentNumber}</option>)}</select></label><label>Category<select name="category" defaultValue="Habits"><option>Academics</option><option>Habits</option><option>Social</option><option>Health</option></select></label><label>Difficulty<select name="difficulty" defaultValue="Easy"><option>Easy</option><option>Medium</option><option>Hard</option></select></label><div className="assignment-note">✦ Everyone assigns one copy to each active student.</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Assign quest</button></div></form></div></div>
+  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">QUEST STUDIO</span><h2>{initialQuest ? 'Assign another quest' : 'Create a new quest'}</h2><p>Create a quest that appears in the selected student's mobile quest board.</p><form onSubmit={submit}><label>Quest title<input name="title" required defaultValue={initialQuest?.title} placeholder="e.g. Take a mindful break" /></label><label>Description<textarea name="description" rows={3} placeholder="What should the student do?" /></label><label>Send this quest to<select name="assignee" defaultValue=""><option value="">Everyone</option>{users.filter((user) => user.status === 'Active').map((user) => <option key={user.id} value={user.id}>{user.name} · {user.studentNumber}</option>)}</select></label><label>Category<select name="category" defaultValue="Habits"><option>Academics</option><option>Habits</option><option>Social</option><option>Health</option></select></label><label>Difficulty<select name="difficulty" defaultValue="Easy"><option>Easy</option><option>Medium</option><option>Hard</option></select></label><div className="assignment-note">✦ Everyone assigns one copy to each active student.</div><div className="publish-choice"><span>Ready for students?</span><label><input type="radio" name="publish" value="draft" defaultChecked /> Save draft</label><label><input type="radio" name="publish" value="publish" /> Publish now</label></div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="secondary-button" type="submit" value="draft">Save draft</button><button className="primary-button" type="submit" value="publish">Publish quest</button></div></form></div></div>
 }
 
 function StudentModal({ user, onClose, onSave }: { user: User; onClose: () => void; onSave: (user: User) => void }) {
