@@ -5,14 +5,10 @@ import { supabase } from './supabase'
 
 type Section = 'Overview' | 'Users' | 'Quests' | 'Leaderboard'
 type User = { id: string; studentNumber: string; name: string; email: string; course: string; yearLevel: string; section: string; campus: string; goal: string; joined: string; quests: string; status: 'Active' | 'Inactive' }
-type Quest = { title: string; category: string; difficulty: string; completions: string; status: 'Published' | 'Draft'; assignee: string }
+type Quest = { id: string; ownerId: string; title: string; category: string; difficulty: string; completions: string; status: 'Published' | 'Draft'; assignee: string }
+type QuestDraft = { title: string; description: string; category: 'Academics' | 'Habits' | 'Social' | 'Health'; difficulty: 'Easy' | 'Medium' | 'Hard'; assigneeId: string | null }
 
-const initialQuests: Quest[] = [
-  { title: 'Take a mindful walk', category: 'Wellness', difficulty: 'Easy', completions: '238', status: 'Published', assignee: 'Everyone' },
-  { title: 'Learn something new', category: 'Growth', difficulty: 'Medium', completions: '184', status: 'Published', assignee: 'Everyone' },
-  { title: 'Connect with someone', category: 'Relationships', difficulty: 'Easy', completions: '126', status: 'Draft', assignee: 'Everyone' },
-  { title: 'Try a new healthy recipe', category: 'Lifestyle', difficulty: 'Medium', completions: '92', status: 'Published', assignee: 'Everyone' },
-]
+const initialQuests: Quest[] = []
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false)
@@ -63,17 +59,36 @@ function App() {
     setUsersLoading(false)
   }
 
+  const loadQuests = async () => {
+    const { data, error } = await supabase.rpc('admin_list_quests')
+    if (error) {
+      setNotice(`Could not load quests: ${error.message}`)
+      setQuests([])
+      return
+    }
+    setQuests((data ?? []).map((quest: { id: string; owner_id: string; title: string; category: string; xp: number; status: string; completions: number; assignee: string }) => ({
+      id: quest.id,
+      ownerId: quest.owner_id,
+      title: quest.title,
+      category: quest.category,
+      difficulty: quest.xp >= 50 ? 'Hard' : quest.xp >= 30 ? 'Medium' : 'Easy',
+      completions: String(quest.completions ?? 0),
+      status: quest.status === 'active' ? 'Published' : 'Draft',
+      assignee: quest.assignee,
+    })))
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setAuthenticated(Boolean(session))
       setAuthChecking(false)
-      if (session) void loadUsers()
+      if (session) { void loadUsers(); void loadQuests() }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthenticated(Boolean(session))
       setAuthChecking(false)
-      if (session) void loadUsers()
+      if (session) { void loadUsers(); void loadQuests() }
       else setUsers([])
     })
 
@@ -116,6 +131,26 @@ function App() {
     setNotice(`${saved.name}'s student information was updated.`)
   }
 
+  const createQuest = async (draft: QuestDraft) => {
+    const xp = draft.difficulty === 'Hard' ? 60 : draft.difficulty === 'Medium' ? 35 : 20
+    const { error } = await supabase.rpc('admin_create_quest', {
+      title_value: draft.title,
+      description_value: draft.description,
+      category_value: draft.category,
+      xp_value: xp,
+      status_value: 'active',
+      assignee_id: draft.assigneeId,
+    })
+    if (error) {
+      setNotice(`Could not assign quest: ${error.message}`)
+      return
+    }
+    await loadQuests()
+    setNewQuestOpen(false)
+    setEditingQuest(null)
+    setNotice(draft.assigneeId ? 'Quest assigned successfully.' : 'Quest assigned to every active student.')
+  }
+
   if (authChecking) return <div className="auth-shell"><div className="auth-card"><p>Checking admin session...</p></div></div>
   if (!authenticated) return <AuthScreen onSuccess={() => setAuthenticated(true)} dark={dark} onToggleTheme={toggleTheme} />
 
@@ -148,7 +183,7 @@ function App() {
           {section === 'Leaderboard' && <Leaderboard users={users} />}
         </div>
       </main>
-      {(newQuestOpen || editingQuest) && <QuestModal initialQuest={editingQuest} users={users} onClose={() => { setNewQuestOpen(false); setEditingQuest(null) }} onSave={(quest) => { setQuests((current) => editingQuest ? current.map((item) => item.title === editingQuest.title ? quest : item) : [...current, quest]); setNewQuestOpen(false); setEditingQuest(null); setNotice(editingQuest ? 'Quest updated successfully.' : 'Quest saved as a draft.') }} />}
+      {(newQuestOpen || editingQuest) && <QuestModal initialQuest={editingQuest} users={users} onClose={() => { setNewQuestOpen(false); setEditingQuest(null) }} onSave={createQuest} />}
       {selectedUser && <UserDetails user={selectedUser} onClose={() => setSelectedUser(null)} onEdit={() => { setEditingUser(selectedUser); setSelectedUser(null) }} onMessage={() => { setMessageUser(selectedUser); setSelectedUser(null) }} onActivity={() => { setActivityUser(selectedUser); setSelectedUser(null) }} onToggleStatus={() => { void saveStudent({ ...selectedUser, status: selectedUser.status === 'Active' ? 'Inactive' : 'Active' }) }} />}
       {selectedQuest && <QuestDetails quest={selectedQuest} onClose={() => setSelectedQuest(null)} onNotice={setNotice} onEdit={() => { setEditingQuest(selectedQuest); setSelectedQuest(null) }} onArchive={() => { setQuests((current) => current.filter((item) => item.title !== selectedQuest.title)); setSelectedQuest(null); setNotice(`"${selectedQuest.title}" was archived.`) }} />}
       {userActions && <UserActions user={userActions} onClose={() => setUserActions(null)} onOpenProfile={() => { setSelectedUser(userActions); setUserActions(null) }} onMessage={() => { setMessageUser(userActions); setUserActions(null) }} onToggleStatus={() => { void saveStudent({ ...userActions, status: userActions.status === 'Active' ? 'Inactive' : 'Active' }) }} />}
@@ -205,8 +240,9 @@ function DataTable({ kind, users = [], quests = [], loading = false, error = '',
   const isUsers = kind === 'users'
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('All')
-  const filteredUsers = useMemo(() => users.filter((user) => `${user.studentNumber} ${user.name} ${user.email} ${user.course} ${user.goal}`.toLowerCase().includes(search.toLowerCase()) && (filter === 'All' || user.status === filter)), [users, search, filter])
-  const filteredQuests = useMemo(() => quests.filter((quest) => `${quest.title} ${quest.category}`.toLowerCase().includes(search.toLowerCase()) && (filter === 'All' || quest.status === filter || quest.difficulty === filter)), [quests, search, filter])
+  const normalizedSearch = search.trim().toLocaleLowerCase()
+  const filteredUsers = useMemo(() => users.filter((user) => `${user.studentNumber} ${user.name} ${user.email} ${user.course} ${user.yearLevel} ${user.section} ${user.campus} ${user.goal}`.toLocaleLowerCase().includes(normalizedSearch) && (filter === 'All' || user.status === filter)), [users, normalizedSearch, filter])
+  const filteredQuests = useMemo(() => quests.filter((quest) => `${quest.title} ${quest.category} ${quest.difficulty} ${quest.assignee}`.toLocaleLowerCase().includes(normalizedSearch) && (filter === 'All' || quest.status === filter || quest.difficulty === filter)), [quests, normalizedSearch, filter])
   return (
     <section className="panel table-panel">
       <div className="table-toolbar">
@@ -225,12 +261,12 @@ function DataTable({ kind, users = [], quests = [], loading = false, error = '',
 
 function UserRows({ users, search, onUserClick, onUserActions }: { users: User[]; search: string; onUserClick?: (user: User) => void; onUserActions?: (user: User) => void }) {
   if (users.length === 0) return <div className="empty-state">No users match “{search}”. Try another search.</div>
-  return <div className="table-scroll"><div className="table-row table-header">{['STUDENT', 'COURSE', 'GOAL', 'JOINED', 'STATUS', ''].map((head) => <span key={head}>{head}</span>)}</div>{users.map((row) => <div className="table-row" key={row.email}><UserRow user={row} onClick={() => onUserClick?.(row)} /><span>{row.course}</span><span>{row.goal || 'No goal set'}</span><span>{row.joined}</span><Status status={row.status} /><button className="row-menu" onClick={() => onUserActions?.(row)}>•••</button></div>)}</div>
+  return <div className="table-scroll"><div className="table-row table-header">{['STUDENT', 'COURSE', 'GOAL', 'JOINED', 'STATUS', ''].map((head) => <span key={head}>{head}</span>)}</div>{users.map((row) => <div className="table-row" key={row.id}><UserRow user={row} onClick={() => onUserClick?.(row)} /><span>{row.course}</span><span>{row.goal || 'No goal set'}</span><span>{row.joined}</span><Status status={row.status} /><button className="row-menu" onClick={() => onUserActions?.(row)}>•••</button></div>)}</div>
 }
 
 function QuestRows({ quests, search, onQuestClick }: { quests: Quest[]; search: string; onQuestClick?: (quest: Quest) => void }) {
   if (quests.length === 0) return <div className="empty-state">No quests match “{search}”. Try another search.</div>
-  return <div className="table-scroll"><div className="table-row table-header">{['QUEST', 'CATEGORY', 'DIFFICULTY', 'COMPLETIONS', 'STATUS'].map((head) => <span key={head}>{head}</span>)}</div>{quests.map((row) => <button className="table-row clickable-row" onClick={() => onQuestClick?.(row)} key={row.title}><div className="quest-cell"><span className="quest-icon">✦</span><b>{row.title}</b></div><span>{row.category}</span><span>{row.difficulty}</span><span>{row.completions}</span><Status status={row.status} /></button>)}</div>
+  return <div className="table-scroll"><div className="table-row table-header">{['QUEST', 'CATEGORY', 'DIFFICULTY', 'ASSIGNED TO', 'STATUS'].map((head) => <span key={head}>{head}</span>)}</div>{quests.map((row) => <button className="table-row clickable-row" onClick={() => onQuestClick?.(row)} key={row.id}><div className="quest-cell"><span className="quest-icon">✦</span><b>{row.title}</b></div><span>{row.category}</span><span>{row.difficulty}</span><span>{row.assignee}</span><Status status={row.status} /></button>)}</div>
 }
 
 function Leaderboard({ users }: { users: User[] }) {
@@ -255,20 +291,19 @@ function UserActions({ user, onClose, onOpenProfile, onMessage, onToggleStatus }
   return <Drawer onClose={onClose}><span className="eyebrow">USER ACTIONS</span><h2>{user.name}</h2><p className="drawer-muted">Choose an action to manage this account.</p><button className="drawer-action" onClick={onOpenProfile}>◉ View profile</button><button className="drawer-action" onClick={onMessage}>✉ Message user</button><button className="drawer-action danger" onClick={onToggleStatus}>{user.status === 'Active' ? '⊘ Suspend account' : '◉ Unsuspend account'}</button></Drawer>
 }
 
-function QuestModal({ initialQuest, users, onClose, onSave }: { initialQuest: Quest | null; users: User[]; onClose: () => void; onSave: (quest: Quest) => void }) {
+function QuestModal({ initialQuest, users, onClose, onSave }: { initialQuest: Quest | null; users: User[]; onClose: () => void; onSave: (quest: QuestDraft) => Promise<void> }) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    onSave({
+    void onSave({
       title: String(data.get('title')),
-      category: String(data.get('category')),
-      difficulty: String(data.get('difficulty')),
-      completions: initialQuest?.completions || '0',
-      status: initialQuest?.status || 'Draft',
-      assignee: String(data.get('assignee')),
+      description: String(data.get('description') || ''),
+      category: String(data.get('category')) as QuestDraft['category'],
+      difficulty: String(data.get('difficulty')) as QuestDraft['difficulty'],
+      assigneeId: String(data.get('assignee') || '') || null,
     })
   }
-  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">QUEST STUDIO</span><h2>{initialQuest ? 'Edit quest' : 'Create a new quest'}</h2><p>Draft a meaningful challenge for the BeeBetter community.</p><form onSubmit={submit}><label>Quest title<input name="title" required defaultValue={initialQuest?.title} placeholder="e.g. Take a mindful break" /></label><label>Send this quest to<select name="assignee" defaultValue={initialQuest?.assignee || 'Everyone'}><option>Everyone</option>{users.filter((user) => user.status === 'Active').map((user) => <option key={user.email}>{user.name}</option>)}</select></label><label>Category<select name="category" defaultValue={initialQuest?.category || 'Wellness'}><option>Wellness</option><option>Growth</option><option>Lifestyle</option><option>Relationships</option></select></label><label>Difficulty<select name="difficulty" defaultValue={initialQuest?.difficulty || 'Easy'}><option>Easy</option><option>Medium</option><option>Hard</option></select></label><div className="assignment-note">✦ Choose Everyone or a specific active user for this quest.</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">{initialQuest ? 'Save changes' : 'Create quest'}</button></div></form></div></div>
+  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">QUEST STUDIO</span><h2>{initialQuest ? 'Assign another quest' : 'Create a new quest'}</h2><p>Create a quest that appears in the selected student's mobile quest board.</p><form onSubmit={submit}><label>Quest title<input name="title" required defaultValue={initialQuest?.title} placeholder="e.g. Take a mindful break" /></label><label>Description<textarea name="description" rows={3} placeholder="What should the student do?" /></label><label>Send this quest to<select name="assignee" defaultValue=""><option value="">Everyone</option>{users.filter((user) => user.status === 'Active').map((user) => <option key={user.id} value={user.id}>{user.name} · {user.studentNumber}</option>)}</select></label><label>Category<select name="category" defaultValue="Habits"><option>Academics</option><option>Habits</option><option>Social</option><option>Health</option></select></label><label>Difficulty<select name="difficulty" defaultValue="Easy"><option>Easy</option><option>Medium</option><option>Hard</option></select></label><div className="assignment-note">✦ Everyone assigns one copy to each active student.</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Assign quest</button></div></form></div></div>
 }
 
 function StudentModal({ user, onClose, onSave }: { user: User; onClose: () => void; onSave: (user: User) => void }) {

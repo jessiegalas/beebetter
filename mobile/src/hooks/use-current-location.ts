@@ -30,6 +30,14 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
   const watchIdRef = useRef<Location.LocationSubscription | null>(null);
   const activeLocationsRef = useRef<UserLocation[]>([]);
   const isTrackingRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Keep reference to latest locations for geofence checks
   useEffect(() => {
@@ -72,17 +80,20 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
   const requestPermissions = useCallback(async (): Promise<Location.PermissionStatus> => {
     try {
       const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      if (!isMountedRef.current) return fgStatus;
       if (fgStatus !== 'granted') {
         setState((prev) => ({ ...prev, permissionStatus: fgStatus, error: 'Location permission denied' }));
         return fgStatus;
       }
 
       if (!(await TaskManager.isAvailableAsync())) {
+        if (!isMountedRef.current) return fgStatus;
         setState((prev) => ({ ...prev, permissionStatus: fgStatus, error: null }));
         return fgStatus;
       }
 
       const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+      if (!isMountedRef.current) return bgStatus;
       setState((prev) => ({
         ...prev,
         permissionStatus: bgStatus,
@@ -90,6 +101,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
       }));
       return bgStatus;
     } catch (err) {
+      if (!isMountedRef.current) return 'denied' as Location.PermissionStatus;
       const message = err instanceof Error ? err.message : 'Unable to request location permissions';
       const deniedStatus = 'denied' as Location.PermissionStatus;
       setState((prev) => ({ ...prev, permissionStatus: deniedStatus, error: message }));
@@ -104,6 +116,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
+      if (!isMountedRef.current) return location.coords;
       setState((prev) => ({ ...prev, coords: location.coords }));
 
       // Check geofence
@@ -125,6 +138,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
       }
       return location.coords;
     } catch (err) {
+      if (!isMountedRef.current) return null;
       setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : 'Failed to get location' }));
       return null;
     }
@@ -135,6 +149,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
     if (isTrackingRef.current) return;
 
     const status = await requestPermissions();
+    if (!isMountedRef.current) return;
     setState((prev) => ({ ...prev, permissionStatus: status }));
 
     if (status !== 'granted') {
@@ -153,6 +168,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
           distanceInterval: 50,
         },
         (location) => {
+          if (!isMountedRef.current) return;
           setState((prev) => ({ ...prev, coords: location.coords }));
 
           const nearest = findNearestLocation(location.coords.latitude, location.coords.longitude);
@@ -176,6 +192,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
 
       watchIdRef.current = subscription;
     } catch (err) {
+      if (!isMountedRef.current) return;
       isTrackingRef.current = false;
       setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : 'Failed to start tracking', isTracking: false }));
     }
@@ -188,6 +205,7 @@ export function useCurrentLocation(userLocations: UserLocation[] = []) {
       watchIdRef.current = null;
     }
     isTrackingRef.current = false;
+    if (!isMountedRef.current) return;
     setState((prev) => ({ ...prev, isTracking: false }));
   }, []);
 
