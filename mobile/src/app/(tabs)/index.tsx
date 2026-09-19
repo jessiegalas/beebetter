@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
+import { BeeMark, PillButton, SectionTitle, VisualTile } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, Category } from '@/hooks/use-user-data';
 
@@ -33,28 +34,6 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.avatar}
-            onPress={() => (user ? router.push('/profile') : router.push('/auth'))}
-            activeOpacity={0.8}>
-            <Ionicons name="person" size={21} color={COLORS.ink} />
-          </TouchableOpacity>
-          <View style={styles.headerText}>
-            <ThemedText style={styles.greeting}>Hey, {displayName}</ThemedText>
-            <ThemedText style={styles.subGreeting}>
-              Level {levelProgress.level} · {profile?.total_xp ?? 0} XP
-            </ThemedText>
-          </View>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push('/notifications')}
-            activeOpacity={0.7}>
-            <Ionicons name="notifications-outline" size={19} color={COLORS.ink} />
-          </TouchableOpacity>
-        </View>
-
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -66,11 +45,29 @@ export default function HomeScreen() {
               tintColor={COLORS.honeyDark}
             />
           }>
-          {/* Today's Progress Card */}
+          <View style={styles.heroHeader}>
+            <View style={styles.heroHeaderTop}>
+              <View style={styles.heroIdentity}>
+                <TouchableOpacity onPress={() => (user ? router.push('/profile') : router.push('/auth'))} activeOpacity={0.8}>
+                  <BeeMark size={52} />
+                </TouchableOpacity>
+                <View>
+                  <ThemedText style={styles.eyebrow}>GOOD DAY, EXPLORER</ThemedText>
+                  <ThemedText style={styles.greeting}>Hi, {displayName}</ThemedText>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/notifications')} activeOpacity={0.7}>
+                <Ionicons name="notifications-outline" size={20} color={COLORS.ink} />
+              </TouchableOpacity>
+            </View>
+            <ThemedText style={styles.heroTitle}>Small steps make a brighter you.</ThemedText>
+            <ThemedText style={styles.heroSubtitle}>Keep your rhythm going and make today count.</ThemedText>
+          </View>
+
           <View style={styles.todayCard}>
             <View style={styles.todayTopRow}>
               <View>
-                <ThemedText style={styles.eyebrow}>TODAY'S PROGRESS</ThemedText>
+                <ThemedText style={styles.eyebrow}>TODAY&apos;S PROGRESS</ThemedText>
                 <ThemedText style={styles.todayTitle}>
                   {profile && profile.current_streak > 0
                     ? `You are on a ${profile.current_streak}-day streak.`
@@ -93,16 +90,15 @@ export default function HomeScreen() {
               <View style={[styles.progressFill, { width: `${levelProgress.progressPercent}%` }]} />
             </View>
 
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.push(user ? '/quests' : '/auth')}
-              activeOpacity={0.8}>
-              <ThemedText style={styles.primaryButtonText}>
-                {user ? 'Continue your quests' : 'Sign in to start'}
-              </ThemedText>
-              <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
-            </TouchableOpacity>
+            <PillButton label={user ? 'Continue your quests' : 'Sign in to start'} icon="arrow-forward" onPress={() => router.push(user ? '/quests' : '/auth')} />
           </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.visualTileRow}>
+            <VisualTile icon="book-outline" label="Learning" color={COLORS.lavender} onPress={() => router.push('/quests')} />
+            <VisualTile icon="leaf-outline" label="Healthy habits" color={COLORS.mint} onPress={() => router.push('/quests')} />
+            <VisualTile icon="people-outline" label="Connection" color={COLORS.peach} onPress={() => router.push('/quests')} />
+            <VisualTile icon="sparkles-outline" label="New goals" color={COLORS.honeySoft} onPress={() => router.push('/add-quest')} />
+          </ScrollView>
 
           {/* Stats Row */}
           <View style={styles.statsRow}>
@@ -131,12 +127,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           {/* Up Next / Active Quests */}
-          <View style={styles.sectionHeading}>
-            <ThemedText style={styles.sectionTitle}>Up next</ThemedText>
-            <TouchableOpacity onPress={() => router.push('/quests')}>
-              <ThemedText style={styles.seeAll}>See all ({activeQuests.length})</ThemedText>
-            </TouchableOpacity>
-          </View>
+          <SectionTitle title="Your next wins" action={`See all (${activeQuests.length})`} onAction={() => router.push('/quests')} />
 
           {isLoading ? (
             <View style={styles.stateCard}>
@@ -196,7 +187,7 @@ export default function HomeScreen() {
 
           {/* Completed Quests Section */}
           <View style={styles.sectionHeading}>
-            <ThemedText style={styles.sectionTitle}>Completed quests</ThemedText>
+            <ThemedText style={styles.sectionTitle}>Your little victories</ThemedText>
             <Ionicons name="checkmark-circle" size={18} color={COLORS.success} />
           </View>
 
@@ -248,6 +239,11 @@ function Stat({ icon, value, label }: { icon: keyof typeof Ionicons.glyphMap; va
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
+  heroHeader: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4 },
+  heroHeaderTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heroIdentity: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  heroTitle: { color: COLORS.ink, fontSize: 27, lineHeight: 32, fontWeight: '900', marginTop: 18, maxWidth: 310 },
+  heroSubtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 19, marginTop: 6, marginBottom: 8 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16, gap: 12 },
   avatar: { width: 46, height: 46, borderRadius: Radii.md, backgroundColor: COLORS.honey, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFF2C9' },
   headerText: { flex: 1 },
@@ -255,13 +251,14 @@ const styles = StyleSheet.create({
   subGreeting: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
   headerButton: { width: 42, height: 42, borderRadius: Radii.md, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   content: { paddingHorizontal: 20, paddingBottom: 112, gap: 12 },
+  visualTileRow: { gap: 10, paddingVertical: 6, paddingRight: 20 },
   guestBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.honeySoft, borderRadius: 16, padding: 14, gap: 12 },
   guestBannerCopy: { flex: 1 },
   guestBannerTitle: { fontSize: 13, fontWeight: '800', color: COLORS.ink },
   guestBannerSubtitle: { fontSize: 11, color: COLORS.ink, marginTop: 2, opacity: 0.8 },
   guestSignInButton: { backgroundColor: COLORS.ink, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
   guestSignInButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
-  todayCard: { backgroundColor: COLORS.honeyDeep, borderRadius: Radii.xl, padding: 20, gap: 12, ...BeeBetterShadow },
+  todayCard: { marginTop: 4, backgroundColor: COLORS.honeyDeep, borderRadius: Radii.xl, padding: 20, gap: 12, ...BeeBetterShadow },
   todayTopRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1, color: '#FFD968' },
   todayTitle: { fontSize: 19, lineHeight: 25, fontWeight: '800', color: '#FFFFFF', marginTop: 5, maxWidth: 230 },

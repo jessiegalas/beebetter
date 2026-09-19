@@ -16,6 +16,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ThemedText } from '@/components/themed-text';
+import { SectionTitle, VisualTile } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, Quest, Category, QuestStatus, ProofFile } from '@/hooks/use-user-data';
 import { useLocationContext } from '@/context/location-context';
@@ -96,25 +97,6 @@ export default function QuestsScreen() {
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerIcon}>
-            <Ionicons name="list-outline" size={22} color={COLORS.ink} />
-          </View>
-          <View style={styles.headerText}>
-            <ThemedText style={styles.greeting}>Quest board</ThemedText>
-            <ThemedText style={styles.subGreeting}>
-              {isAuthenticated ? 'Your saved quests, in one place.' : 'Sign in to begin your journey.'}
-            </ThemedText>
-          </View>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => router.push(isAuthenticated ? '/add-quest' : '/auth')}
-            activeOpacity={0.75}>
-            <Ionicons name={isAuthenticated ? 'add' : 'log-in-outline'} size={21} color={COLORS.ink} />
-          </TouchableOpacity>
-        </View>
-
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -126,6 +108,18 @@ export default function QuestsScreen() {
               tintColor={COLORS.honeyDark}
             />
           }>
+          <View style={styles.questHero}>
+            <View style={styles.questHeroIcon}><Ionicons name="sparkles" size={29} color={COLORS.honeyDeep} /></View>
+            <View style={styles.questHeroCopy}>
+              <ThemedText style={styles.questHeroEyebrow}>YOUR ADVENTURE BOARD</ThemedText>
+              <ThemedText style={styles.questHeroTitle}>Choose one brave little step.</ThemedText>
+              <ThemedText style={styles.questHeroSubtitle}>{isAuthenticated ? 'Every quest adds a little more momentum.' : 'Sign in to save your progress.'}</ThemedText>
+            </View>
+            <TouchableOpacity style={styles.heroAddButton} onPress={() => router.push(isAuthenticated ? '/add-quest' : '/auth')} activeOpacity={0.8}>
+              <Ionicons name={isAuthenticated ? 'add' : 'log-in-outline'} size={21} color={COLORS.ink} />
+            </TouchableOpacity>
+          </View>
+
           {/* Summary Card */}
           <View style={styles.summaryCard}>
             <View style={styles.summaryIcon}>
@@ -141,6 +135,13 @@ export default function QuestsScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color="#BEBEBE" />
           </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryTiles}>
+            <VisualTile icon="book-outline" label="Academics" color={COLORS.lavender} onPress={() => setActiveFilter('Academics')} />
+            <VisualTile icon="checkmark-done-outline" label="Habits" color={COLORS.honeySoft} onPress={() => setActiveFilter('Habits')} />
+            <VisualTile icon="people-outline" label="Social" color={COLORS.peach} onPress={() => setActiveFilter('Social')} />
+            <VisualTile icon="heart-outline" label="Health" color={COLORS.mint} onPress={() => setActiveFilter('Health')} />
+          </ScrollView>
 
           {/* Category Filter Pills */}
               <ScrollView
@@ -180,13 +181,7 @@ export default function QuestsScreen() {
                 />
               </View>
 
-              {/* List Header */}
-              <View style={styles.listHeading}>
-                <ThemedText style={styles.sectionTitle}>
-                  {activeFilter === 'All' ? 'All quests' : activeFilter}
-                </ThemedText>
-                <ThemedText style={styles.resultCount}>{visibleQuests.length} showing</ThemedText>
-              </View>
+              <SectionTitle title={activeFilter === 'All' ? 'All quests' : activeFilter} action={`${visibleQuests.length} showing`} />
 
           {/* List Content States */}
           {isLoading && (
@@ -411,6 +406,13 @@ function EmptyState({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
+  questHero: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 20, marginTop: 8, marginBottom: 4, padding: 18, borderRadius: Radii.xl, backgroundColor: COLORS.surfaceWarm, borderWidth: 1, borderColor: '#F4DFAE' },
+  questHeroIcon: { width: 56, height: 56, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honey },
+  questHeroCopy: { flex: 1 },
+  questHeroEyebrow: { color: COLORS.honeyDark, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  questHeroTitle: { color: COLORS.ink, fontSize: 19, lineHeight: 23, fontWeight: '900', marginTop: 4 },
+  questHeroSubtitle: { color: COLORS.muted, fontSize: 11, lineHeight: 15, marginTop: 4 },
+  heroAddButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.card },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 14 },
   headerIcon: { width: 46, height: 46, borderRadius: Radii.md, backgroundColor: COLORS.honey, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFF2C9' },
   headerText: { flex: 1 },
@@ -418,6 +420,7 @@ const styles = StyleSheet.create({
   subGreeting: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
   addButton: { width: 42, height: 42, borderRadius: Radii.md, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   content: { gap: 12, paddingHorizontal: 20, paddingBottom: 112 },
+  categoryTiles: { gap: 10, paddingVertical: 4, paddingRight: 20 },
   summaryCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: Radii.xl, backgroundColor: COLORS.honeyDeep, ...BeeBetterShadow },
   summaryIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
   summaryCopy: { flex: 1 },

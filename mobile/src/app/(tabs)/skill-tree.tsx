@@ -1,10 +1,10 @@
-import { StyleSheet, View, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line } from 'react-native-svg';
-import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
+import { BeeMark, VisualTile } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, Category } from '@/hooks/use-user-data';
 
@@ -21,7 +21,7 @@ const habitNodes = [
 ];
 
 export default function SkillTreeScreen() {
-  const { user, profile, completedQuests, isRefreshing, refresh } = useUserData();
+  const { profile, completedQuests, isRefreshing, refresh } = useUserData();
 
   const totalXp = profile?.total_xp ?? 0;
 
@@ -61,25 +61,6 @@ export default function SkillTreeScreen() {
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.avatar}>
-            <Ionicons name="git-network-outline" size={22} color={COLORS.ink} />
-          </View>
-          <View style={styles.headerText}>
-            <ThemedText style={styles.greeting}>Skill Tree</ThemedText>
-            <ThemedText style={styles.subGreeting}>
-              {totalSkillsUnlocked} of {habitNodes.length} nodes unlocked · {totalXp} XP
-            </ThemedText>
-          </View>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => router.push(user ? '/add-quest' : '/auth')}
-            activeOpacity={0.75}>
-            <Ionicons name="add" size={20} color={COLORS.ink} />
-          </TouchableOpacity>
-        </View>
-
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -91,20 +72,17 @@ export default function SkillTreeScreen() {
               tintColor={COLORS.honeyDark}
             />
           }>
-          {/* Category Summary Cards */}
-          <View style={styles.grid}>
-            {categories.map((cat) => (
-              <View key={cat.id} style={styles.gridCard}>
-                <View style={styles.gridThumb}>
-                  <Ionicons name={cat.icon} size={20} color={COLORS.honeyDark} />
-                </View>
-                <ThemedText style={styles.gridTitle}>{cat.title}</ThemedText>
-                <ThemedText style={styles.gridSubtitle}>
-                  {cat.completed} quest{cat.completed === 1 ? '' : 's'} done
-                </ThemedText>
-              </View>
-            ))}
+          <View style={styles.skillHero}>
+            <View style={styles.skillHeroTop}><BeeMark size={58} /><View style={styles.skillHeroBadge}><Ionicons name="sparkles" size={14} color={COLORS.honeyDeep} /><ThemedText style={styles.skillHeroBadgeText}>{totalXp} XP</ThemedText></View></View>
+            <ThemedText style={styles.skillHeroEyebrow}>YOUR GROWTH MAP</ThemedText>
+            <ThemedText style={styles.skillHeroTitle}>Watch your strengths bloom.</ThemedText>
+            <ThemedText style={styles.skillHeroSubtitle}>{totalSkillsUnlocked} of {habitNodes.length} milestones unlocked. Keep exploring.</ThemedText>
           </View>
+
+          {/* Category Summary Cards */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryTiles}>
+            {categories.map((cat) => <VisualTile key={cat.id} icon={cat.icon} label={`${cat.title}\n${cat.completed} done`} color={cat.id % 2 === 0 ? COLORS.honeySoft : COLORS.lavender} />)}
+          </ScrollView>
 
           {/* Habit Tree Radial Diagram */}
           <View style={styles.diagramHeader}>
@@ -173,6 +151,14 @@ export default function SkillTreeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
+  skillHero: { marginHorizontal: 20, marginTop: 8, padding: 20, borderRadius: Radii.xl, backgroundColor: COLORS.honeyDeep, ...BeeBetterShadow },
+  skillHeroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  skillHeroBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: Radii.pill, backgroundColor: COLORS.honeySoft },
+  skillHeroBadgeText: { color: COLORS.ink, fontSize: 11, fontWeight: '900' },
+  skillHeroEyebrow: { color: '#FFD978', fontSize: 9, fontWeight: '900', letterSpacing: 1, marginTop: 18 },
+  skillHeroTitle: { color: '#FFFFFF', fontSize: 25, lineHeight: 30, fontWeight: '900', marginTop: 4 },
+  skillHeroSubtitle: { color: '#F6E8D1', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  categoryTiles: { gap: 10, paddingVertical: 4, paddingRight: 20 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

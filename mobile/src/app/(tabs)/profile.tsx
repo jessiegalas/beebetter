@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
+import { BeeMark } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, StudentProfileUpdates } from '@/hooks/use-user-data';
 
@@ -111,27 +112,6 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={22} color={COLORS.ink} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <ThemedText style={styles.headerTitle}>My Profile</ThemedText>
-            {user?.email && (
-              <ThemedText style={styles.headerEmail} numberOfLines={1}>
-                {user.email}
-              </ThemedText>
-            )}
-          </View>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={handleSignOut}
-            accessibilityLabel="Sign Out">
-            <Ionicons name="log-out-outline" size={19} color={COLORS.danger} />
-          </TouchableOpacity>
-        </View>
-
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -143,7 +123,23 @@ export default function ProfileScreen() {
               tintColor={COLORS.honeyDark}
             />
           }>
-          {/* Identity and progress */}
+          <View style={styles.profileHero}>
+            <View style={styles.profileHeroTop}>
+              <BeeMark size={64} />
+              <TouchableOpacity style={styles.headerButton} onPress={handleSignOut} accessibilityLabel="Sign Out">
+                <Ionicons name="log-out-outline" size={19} color={COLORS.danger} />
+              </TouchableOpacity>
+            </View>
+            <ThemedText style={styles.profileHeroEyebrow}>YOUR BEEBETTER JOURNEY</ThemedText>
+            <ThemedText style={styles.profileHeroTitle}>{displayName}</ThemedText>
+            <ThemedText style={styles.profileHeroSubtitle}>{profile?.goal || 'Make today a little brighter.'}</ThemedText>
+            <View style={styles.heroStatRow}>
+              <HeroStat value={String(questsDone)} label="quests" />
+              <HeroStat value={`${streakDays}`} label="day streak" />
+              <HeroStat value={String(totalXp)} label="total XP" />
+            </View>
+          </View>
+
           <View style={styles.profileCard}>
             <View style={styles.identityRow}>
               <View style={styles.largeAvatar}><ThemedText style={styles.avatarText}>{initials || 'B'}</ThemedText></View>
@@ -158,6 +154,13 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.progressHeader}><ThemedText style={styles.progressLabel}>Next level</ThemedText><ThemedText style={styles.progressValue}>{levelProgress.currentLevelXp} / {levelProgress.xpForNextLevel} XP</ThemedText></View>
             <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${levelProgress.progressPercent}%` }]} /></View>
+          </View>
+
+          <View style={styles.badgePreview}>
+            <View style={styles.badgePreviewHeader}><ThemedText style={styles.sectionTitle}>Your reward shelf</ThemedText><Ionicons name="ribbon-outline" size={20} color={COLORS.honeyDark} /></View>
+            <View style={styles.badgePreviewRow}>
+              {badges.slice(0, 4).map((badge) => <View key={badge.id} style={[styles.badgeOrb, !badge.unlocked && styles.badgeOrbLocked]}><Ionicons name={badge.icon} size={21} color={badge.unlocked ? COLORS.honeyDark : COLORS.muted} /></View>)}
+            </View>
           </View>
 
           {/* Student information */}
@@ -289,9 +292,22 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   return <View style={styles.infoRow}><ThemedText style={styles.fieldLabel}>{label}</ThemedText><ThemedText style={styles.infoValue}>{value}</ThemedText></View>;
 }
 
+function HeroStat({ value, label }: { value: string; label: string }) {
+  return <View style={styles.heroStat}><ThemedText style={styles.heroStatValue}>{value}</ThemedText><ThemedText style={styles.heroStatLabel}>{label}</ThemedText></View>;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
+  profileHero: { marginHorizontal: 20, marginTop: 8, padding: 20, borderRadius: Radii.xl, backgroundColor: COLORS.honeyDeep, ...BeeBetterShadow },
+  profileHeroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  profileHeroEyebrow: { color: '#FFD978', fontSize: 9, fontWeight: '900', letterSpacing: 1, marginTop: 18 },
+  profileHeroTitle: { color: '#FFFFFF', fontSize: 29, lineHeight: 34, fontWeight: '900', marginTop: 5 },
+  profileHeroSubtitle: { color: '#F6E8D1', fontSize: 12, lineHeight: 17, marginTop: 4, maxWidth: 280 },
+  heroStatRow: { flexDirection: 'row', gap: 9, marginTop: 18 },
+  heroStat: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, borderRadius: Radii.md, backgroundColor: 'rgba(255,255,255,0.12)' },
+  heroStatValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
+  heroStatLabel: { color: '#F6E8D1', fontSize: 10, marginTop: 2 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -331,6 +347,11 @@ const styles = StyleSheet.create({
     gap: 8,
     ...BeeBetterShadow,
   },
+  badgePreview: { padding: 16, borderRadius: Radii.lg, backgroundColor: COLORS.surfaceWarm, borderWidth: 1, borderColor: '#F4DFAE' },
+  badgePreviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  badgePreviewRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  badgeOrb: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honeySoft },
+  badgeOrbLocked: { backgroundColor: COLORS.surfaceMuted, opacity: 0.65 },
   identityRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
+import { VisualTile } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
 import { useUserData, Category } from '@/hooks/use-user-data';
 import { getSmartSuggestions, SuggestedQuest } from '@/lib/quest-suggestions';
@@ -148,6 +149,18 @@ export default function AddQuestScreen() {
             </ThemedText>
           </TouchableOpacity>
         </View>
+
+        <View style={styles.sheetIntro}>
+          <View style={styles.sheetIntroIcon}><Ionicons name="sparkles" size={22} color={COLORS.honeyDeep} /></View>
+          <View style={styles.sheetIntroCopy}><ThemedText style={styles.sheetIntroTitle}>A little win is waiting.</ThemedText><ThemedText style={styles.sheetIntroText}>Pick something that feels useful, doable, and yours.</ThemedText></View>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRail}>
+          <VisualTile icon="book-outline" label="Learn" color={COLORS.lavender} onPress={() => setCategory('Academics')} />
+          <VisualTile icon="leaf-outline" label="Habits" color={COLORS.honeySoft} onPress={() => setCategory('Habits')} />
+          <VisualTile icon="people-outline" label="Connect" color={COLORS.peach} onPress={() => setCategory('Social')} />
+          <VisualTile icon="heart-outline" label="Health" color={COLORS.mint} onPress={() => setCategory('Health')} />
+        </ScrollView>
 
         {feedback && <ThemedText style={styles.feedback}>{feedback}</ThemedText>}
 
@@ -305,6 +318,12 @@ export default function AddQuestScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
+  sheetIntro: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 20, marginBottom: 4, padding: 14, borderRadius: 22, backgroundColor: COLORS.surfaceWarm, borderWidth: 1, borderColor: '#F4DFAE' },
+  sheetIntroIcon: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honey },
+  sheetIntroCopy: { flex: 1 },
+  sheetIntroTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '900' },
+  sheetIntroText: { color: COLORS.muted, fontSize: 11, lineHeight: 15, marginTop: 2 },
+  categoryRail: { gap: 10, paddingHorizontal: 20, paddingVertical: 5 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 15 },
   headerTitle: { color: COLORS.ink, fontSize: 19, fontWeight: '800' },
   headerSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
