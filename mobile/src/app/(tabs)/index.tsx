@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, Category } from '@/hooks/use-user-data';
 
 const categoryVisuals: Record<Category, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
@@ -248,12 +248,12 @@ function Stat({ icon, value, label }: { icon: keyof typeof Ionicons.glyphMap; va
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 14, gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.honey, alignItems: 'center', justifyContent: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16, gap: 12 },
+  avatar: { width: 46, height: 46, borderRadius: Radii.md, backgroundColor: COLORS.honey, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFF2C9' },
   headerText: { flex: 1 },
   greeting: { fontSize: 17, fontWeight: '800', color: COLORS.ink },
   subGreeting: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
-  headerButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', ...BeeBetterShadow },
+  headerButton: { width: 42, height: 42, borderRadius: Radii.md, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   content: { paddingHorizontal: 20, paddingBottom: 112, gap: 12 },
   guestBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.honeySoft, borderRadius: 16, padding: 14, gap: 12 },
   guestBannerCopy: { flex: 1 },
@@ -261,23 +261,23 @@ const styles = StyleSheet.create({
   guestBannerSubtitle: { fontSize: 11, color: COLORS.ink, marginTop: 2, opacity: 0.8 },
   guestSignInButton: { backgroundColor: COLORS.ink, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
   guestSignInButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
-  todayCard: { backgroundColor: COLORS.ink, borderRadius: 22, padding: 18, gap: 12, ...BeeBetterShadow },
+  todayCard: { backgroundColor: COLORS.honeyDeep, borderRadius: Radii.xl, padding: 20, gap: 12, ...BeeBetterShadow },
   todayTopRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1, color: '#FFD968' },
   todayTitle: { fontSize: 19, lineHeight: 25, fontWeight: '800', color: '#FFFFFF', marginTop: 5, maxWidth: 230 },
-  streakBadge: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#FFF1C2', alignItems: 'center', justifyContent: 'center' },
+  streakBadge: { width: 46, height: 46, borderRadius: Radii.md, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
   progressLabels: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   progressText: { fontSize: 11, color: '#E5E5E5' },
   progressPercent: { fontSize: 11, fontWeight: '800', color: '#FFD968' },
   progressTrack: { height: 7, backgroundColor: '#4C4C4C', borderRadius: 8, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: COLORS.honey, borderRadius: 8 },
-  primaryButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, backgroundColor: COLORS.honeyDark, paddingVertical: 12, borderRadius: 12, marginTop: 2 },
+  primaryButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, backgroundColor: COLORS.honey, paddingVertical: 13, borderRadius: Radii.md, marginTop: 2 },
   primaryButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   statsRow: { flexDirection: 'row', gap: 9 },
-  statCard: { flex: 1, minHeight: 90, backgroundColor: COLORS.card, borderRadius: 16, padding: 12, justifyContent: 'space-between', ...BeeBetterShadow },
+  statCard: { flex: 1, minHeight: 94, backgroundColor: COLORS.card, borderRadius: Radii.md, padding: 13, justifyContent: 'space-between', borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   statValue: { fontSize: 20, fontWeight: '800', color: COLORS.ink, marginTop: 5 },
   statLabel: { fontSize: 10, color: COLORS.muted, fontWeight: '600' },
-  locationCard: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: COLORS.honeySoft, borderRadius: 16, padding: 13 },
+  locationCard: { flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: COLORS.surfaceWarm, borderRadius: Radii.md, padding: 14, borderWidth: 1, borderColor: '#F4DFAE' },
   locationIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.card },
   locationCopy: { flex: 1 },
   locationTitle: { fontSize: 12, fontWeight: '800', color: COLORS.ink },
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 1 },
   sectionTitle: { fontSize: 15, fontWeight: '800', color: COLORS.ink },
   seeAll: { color: COLORS.honeyDark, fontSize: 12, fontWeight: '800' },
-  questCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.card, borderRadius: 16, padding: 12, ...BeeBetterShadow },
+  questCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.card, borderRadius: Radii.md, padding: 13, borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   completedCard: { opacity: 0.88, backgroundColor: '#FAFAFA' },
   questIcon: { width: 46, height: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   questInfo: { flex: 1, gap: 3 },

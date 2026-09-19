@@ -2,7 +2,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { BeeBetterColors, BeeBetterShadow } from '@/constants/theme';
+import { BeeBetterColors, BeeBetterShadow, Radii } from '@/constants/theme';
 
 type TabButtonProps = TabTriggerSlotProps & {
   icon: keyof typeof Ionicons.glyphMap;
@@ -55,7 +55,9 @@ const styles = StyleSheet.create({
     gap: 6,
     padding: 8,
     backgroundColor: BeeBetterColors.card,
-    borderRadius: 24,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    borderColor: '#F1E4CF',
     ...BeeBetterShadow,
   },
   tabButton: {
@@ -64,7 +66,7 @@ const styles = StyleSheet.create({
     minWidth: 58,
     paddingHorizontal: 8,
     paddingVertical: 6,
-    borderRadius: 18,
+    borderRadius: Radii.lg,
   },
   tabButtonPressed: { opacity: 0.65 },
   tabIcon: {
@@ -72,8 +74,8 @@ const styles = StyleSheet.create({
     height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 14,
+    borderRadius: Radii.md,
   },
-  tabIconFocused: { backgroundColor: BeeBetterColors.honey },
-  tabLabel: { fontSize: 10, fontWeight: '700' },
+  tabIconFocused: { backgroundColor: BeeBetterColors.honeySoft },
+  tabLabel: { fontSize: 10, fontWeight: '800' },
 });

@@ -16,7 +16,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, Quest, Category, QuestStatus, ProofFile } from '@/hooks/use-user-data';
 import { useLocationContext } from '@/context/location-context';
 
@@ -412,19 +412,19 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 14 },
-  headerIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.honey, alignItems: 'center', justifyContent: 'center' },
+  headerIcon: { width: 46, height: 46, borderRadius: Radii.md, backgroundColor: COLORS.honey, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFF2C9' },
   headerText: { flex: 1 },
   greeting: { fontSize: 18, fontWeight: '800', color: COLORS.ink },
   subGreeting: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
-  addButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', ...BeeBetterShadow },
+  addButton: { width: 42, height: 42, borderRadius: Radii.md, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   content: { gap: 12, paddingHorizontal: 20, paddingBottom: 112 },
-  summaryCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 15, borderRadius: 18, backgroundColor: COLORS.ink, ...BeeBetterShadow },
+  summaryCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: Radii.xl, backgroundColor: COLORS.honeyDeep, ...BeeBetterShadow },
   summaryIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
   summaryCopy: { flex: 1 },
   summaryLabel: { color: '#FFD968', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   summaryTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginTop: 3 },
   filterRow: { gap: 8, paddingVertical: 2 },
-  filterPill: { backgroundColor: COLORS.card, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, ...BeeBetterShadow },
+  filterPill: { backgroundColor: COLORS.card, borderRadius: Radii.pill, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   filterPillActive: { backgroundColor: COLORS.honey },
   filterText: { color: COLORS.muted, fontSize: 12, fontWeight: '700' },
   filterTextActive: { color: COLORS.ink },
@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
   listHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
   sectionTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '800' },
   resultCount: { color: COLORS.muted, fontSize: 11, fontWeight: '700' },
-  questCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, backgroundColor: COLORS.card, borderRadius: 17, ...BeeBetterShadow },
+  questCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, backgroundColor: COLORS.card, borderRadius: Radii.md, borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   completedQuestCard: { opacity: 0.82, backgroundColor: '#FAFAFA' },
   questIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   questInfo: { flex: 1, gap: 3 },

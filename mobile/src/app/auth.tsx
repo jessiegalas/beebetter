@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { supabase } from '@/supabase';
 
 export default function AuthScreen() {
@@ -319,11 +319,11 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
-  content: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 40 },
+  content: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 40 },
   mark: {
     width: 60,
     height: 60,
-    borderRadius: 20,
+    borderRadius: Radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.honey,
@@ -332,15 +332,15 @@ const styles = StyleSheet.create({
   },
   title: { color: COLORS.ink, fontSize: 26, fontWeight: '800' },
   subtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 19, marginTop: 8, marginBottom: 24 },
-  modeRow: { flexDirection: 'row', backgroundColor: COLORS.surfaceMuted, borderRadius: 13, padding: 4, marginBottom: 20 },
-  modeButton: { flex: 1, alignItems: 'center', borderRadius: 10, paddingVertical: 10 },
+  modeRow: { flexDirection: 'row', backgroundColor: COLORS.surfaceMuted, borderRadius: Radii.md, padding: 4, marginBottom: 20 },
+  modeButton: { flex: 1, alignItems: 'center', borderRadius: Radii.sm, paddingVertical: 11 },
   modeButtonActive: { backgroundColor: COLORS.card, ...BeeBetterShadow },
   modeText: { color: COLORS.muted, fontSize: 12, fontWeight: '800' },
   modeTextActive: { color: COLORS.ink },
   label: { color: COLORS.ink, fontSize: 12, fontWeight: '800', marginBottom: 7 },
   input: {
     backgroundColor: COLORS.card,
-    borderRadius: 13,
+    borderRadius: Radii.md,
     paddingHorizontal: 14,
     paddingVertical: 13,
     fontSize: 14,
@@ -351,13 +351,13 @@ const styles = StyleSheet.create({
   inlineFields: { flexDirection: 'row', gap: 10 },
   inlineField: { flex: 1 },
   goalOptions: { gap: 8, marginBottom: 16 },
-  goalOption: { backgroundColor: COLORS.card, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 12, ...BeeBetterShadow },
+  goalOption: { backgroundColor: COLORS.card, borderRadius: Radii.md, paddingHorizontal: 14, paddingVertical: 13, borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   goalOptionActive: { backgroundColor: COLORS.honey },
   goalOptionText: { color: COLORS.muted, fontSize: 13 },
   goalOptionTextActive: { color: COLORS.ink, fontWeight: '800' },
   feedback: { color: COLORS.danger, fontSize: 12, lineHeight: 17, marginBottom: 14 },
   successFeedback: { color: COLORS.success },
-  passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: 13, marginBottom: 16, ...BeeBetterShadow },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: Radii.md, marginBottom: 16, borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
   passwordInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: COLORS.ink },
   passwordToggle: { paddingHorizontal: 14, paddingVertical: 12 },
   confirmationCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.honeySoft, borderRadius: 14, padding: 12, marginBottom: 14 },
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 48,
     backgroundColor: COLORS.ink,
-    borderRadius: 13,
+    borderRadius: Radii.md,
     marginTop: 8,
     ...BeeBetterShadow,
   },

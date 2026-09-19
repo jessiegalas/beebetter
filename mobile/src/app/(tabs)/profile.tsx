@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, StudentProfileUpdates } from '@/hooks/use-user-data';
 
 export default function ProfileScreen() {
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
   avatar: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: Radii.md,
     backgroundColor: COLORS.honey,
     alignItems: 'center',
     justifyContent: 'center',
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   headerButton: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: Radii.md,
     backgroundColor: COLORS.card,
     alignItems: 'center',
     justifyContent: 'center',
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   },
   profileCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 18,
+    borderRadius: Radii.lg,
     padding: 18,
     gap: 8,
     ...BeeBetterShadow,

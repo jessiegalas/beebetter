@@ -1,10 +1,10 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 
 const COLORS = {
-  bg: '#FFF9E8',
-  honey: '#FFC530',
-  black: '#1A1A1A',
-  gray: '#8A8A8A',
+  bg: '#FFF9ED',
+  honey: '#F6C445',
+  black: '#2D241D',
+  gray: '#88796B',
 };
 
 export default function AppTabs() {

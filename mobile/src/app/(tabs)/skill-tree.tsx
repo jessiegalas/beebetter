@@ -5,7 +5,7 @@ import Svg, { Line } from 'react-native-svg';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, Category } from '@/hooks/use-user-data';
 
 const CANVAS = 300;
@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
   avatar: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: Radii.md,
     backgroundColor: COLORS.honey,
     alignItems: 'center',
     justifyContent: 'center',
@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: 12, color: COLORS.honeyDark, fontWeight: '800' },
   diagramCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 18,
+    borderRadius: Radii.md,
     paddingVertical: 20,
     alignItems: 'center',
     ...BeeBetterShadow,

@@ -27,15 +27,15 @@ export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({
   ios: {
-    sans: 'system-ui',
+    sans: 'Avenir Next',
     serif: 'ui-serif',
-    rounded: 'ui-rounded',
+    rounded: 'Avenir Next Rounded',
     mono: 'ui-monospace',
   },
   default: {
-    sans: 'normal',
+    sans: 'sans-serif',
     serif: 'serif',
-    rounded: 'normal',
+    rounded: 'sans-serif-rounded',
     mono: 'monospace',
   },
   web: {
@@ -56,26 +56,39 @@ export const Spacing = {
   six: 64,
 } as const;
 
+export const Radii = {
+  sm: 10,
+  md: 16,
+  lg: 22,
+  xl: 30,
+  pill: 999,
+} as const;
+
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
 
 export const BeeBetterColors = {
-  background: '#FFF9E8',
+  background: '#FFF9ED',
   card: '#FFFFFF',
-  honey: '#FFC530',
-  honeyDark: '#F5A623',
-  ink: '#1A1A1A',
-  muted: '#8A8A8A',
-  surfaceMuted: '#EDEDED',
-  success: '#4CAF50',
-  danger: '#E85C4A',
-  honeySoft: '#FFF1C2',
+  honey: '#F6C445',
+  honeyDark: '#D98B1E',
+  honeyDeep: '#5B351A',
+  ink: '#2D241D',
+  muted: '#88796B',
+  surfaceMuted: '#F4EBDD',
+  surfaceWarm: '#FFF4D6',
+  success: '#4F9B69',
+  danger: '#D96755',
+  lavender: '#E9E3FA',
+  peach: '#FCE2D7',
+  mint: '#DFF1E5',
+  honeySoft: '#FFF0BF',
 } as const;
 
 export const BeeBetterShadow = {
-  shadowColor: '#000',
-  shadowOpacity: 0.05,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 4 },
-  elevation: 2,
+  shadowColor: '#7B552B',
+  shadowOpacity: 0.12,
+  shadowRadius: 14,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 3,
 } as const;

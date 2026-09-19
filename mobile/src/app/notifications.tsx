@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
 import { useLocationContext } from '@/context/location-context';
 
@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   closeButton: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: Radii.md,
     backgroundColor: COLORS.card,
     alignItems: 'center',
     justifyContent: 'center',
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   sectionHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 2 },
   sectionTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '800' },
   sectionHint: { color: COLORS.muted, fontSize: 10, fontWeight: '700' },
-  actionCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.ink, borderRadius: 16, padding: 12, ...BeeBetterShadow },
+  actionCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.honeyDeep, borderRadius: Radii.lg, padding: 14, ...BeeBetterShadow },
   actionIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
   actionCopy: { flex: 1 },
   actionTitle: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     backgroundColor: COLORS.card,
-    borderRadius: 16,
+    borderRadius: Radii.md,
     padding: 14,
     ...BeeBetterShadow,
   },
