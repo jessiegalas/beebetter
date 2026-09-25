@@ -6,24 +6,17 @@ import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
-import { useLocationContext } from '@/context/location-context';
+import { useQuestPriority } from '@/context/quest-priority-context';
 
 export default function NotificationsScreen() {
-  const { completedQuests, levelProgress, activeQuests, completeQuest } = useUserData();
-  const { currentLocationId } = useLocationContext();
+  const { completedQuests, levelProgress, completeQuest } = useUserData();
+  const { ranked } = useQuestPriority();
+  const activeQuests = ranked.filter(item => item.tier !== 'history').map(item => item.quest);
 
   const handleQuickComplete = async (quest: (typeof activeQuests)[number]) => {
     if (quest.requires_proof) {
       Alert.alert('Proof required', 'Open the quest board to attach proof before completing this quest.', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Open quests', onPress: () => router.replace('/quests') },
-      ]);
-      return;
-    }
-
-    if (quest.location_id && quest.location_id !== currentLocationId) {
-      Alert.alert('Visit the place first', 'This nearby quest can be completed when you are inside its saved location.', [
-        { text: 'Later', style: 'cancel' },
         { text: 'Open quests', onPress: () => router.replace('/quests') },
       ]);
       return;
@@ -54,11 +47,11 @@ export default function NotificationsScreen() {
       time: 'Completed',
       icon: 'trophy-outline' as const,
     })),
-    ...(activeQuests.some((q) => q.is_nearby)
+    ...(ranked.some(item => item.nearby && item.tier !== 'history')
       ? [
           {
             id: 'nearby-alert',
-            text: 'You have quests tagged near your location ready to explore.',
+            text: 'You have quests nearby ready to explore.',
             time: 'Location',
             icon: 'location-outline' as const,
           },

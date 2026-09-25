@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { supabase } from '@/supabase';
 import { useUserData } from '@/hooks/use-user-data';
 
@@ -24,7 +24,7 @@ export type NewLocation = {
 };
 
 export function useUserLocations() {
-  const { user, refresh } = useUserData();
+  const { user } = useUserData();
   const [locations, setLocations] = useState<UserLocation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +124,7 @@ export function useUserLocations() {
   }, [updateLocation]);
 
   // Active locations only (for geofencing)
-  const activeLocations = locations.filter((l) => l.is_active);
+  const activeLocations = useMemo(() => locations.filter((l) => l.is_active), [locations]);
 
   return {
     user,

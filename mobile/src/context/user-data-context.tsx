@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
+import { AppState } from 'react-native';
+import type { CompletionRecord } from '@/lib/quest-priority';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/supabase';
 import * as Notifications from 'expo-notifications';
@@ -11,7 +13,20 @@ import {
 export type Category = 'Academics' | 'Habits' | 'Social' | 'Health';
 export type QuestStatus = 'active' | 'completed' | 'rejected' | 'pending';
 
-export type Quest = {
+export type QuestContextFields = {
+  scheduled_at?: string | null;
+  preferred_time?: string | null;
+  deadline_at?: string | null;
+  importance?: 'low' | 'normal' | 'high';
+  prerequisite_quest_id?: string | null;
+};
+
+export type QuestDraft = QuestContextFields & {
+  title: string; description?: string; category: Category; xp: number;
+  is_nearby?: boolean; location_id?: string | null; requires_proof?: boolean;
+};
+
+export type Quest = QuestContextFields & {
   id: string;
   owner_id: string;
   title: string;
@@ -75,6 +90,7 @@ interface UserDataContextType {
   user: User | null;
   profile: UserProfile | null;
   quests: Quest[];
+  completionHistory: CompletionRecord[];
   activeQuests: Quest[];
   completedQuests: Quest[];
   isLoading: boolean;
@@ -85,15 +101,8 @@ interface UserDataContextType {
   refresh: () => Promise<void>;
   completeQuest: (questId: string, proof?: ProofFile) => Promise<{ success: boolean; error?: string }>;
   deleteQuest: (questId: string) => Promise<{ success: boolean; error?: string }>;
-  addQuest: (quest: {
-    title: string;
-    description?: string;
-    category: Category;
-    xp: number;
-    is_nearby?: boolean;
-    location_id?: string | null;
-    requires_proof?: boolean;
-  }) => Promise<{ success: boolean; error?: string }>;
+  addQuest: (quest: QuestDraft) => Promise<{ success: boolean; error?: string }>;
+  updateQuest: (id: string, quest: QuestDraft) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -108,6 +117,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [quests, setQuests] = useState<Quest[]>([]);
+  const [completionHistory, setCompletionHistory] = useState<CompletionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +130,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setProfile(null);
       setQuests([]);
+      setCompletionHistory([]);
       setIsLoading(false);
       return;
     }
@@ -197,6 +208,12 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
 
         setProfile((createdProfile as UserProfile) ?? defaultProfile);
       }
+
+      // Durable history supplements existing completed quests; old databases can still be read.
+      const { data: historyData } = await supabase.from('quest_completion_history')
+        .select('id,quest_id,title,category,completed_at').eq('owner_id', currentUser.id)
+        .order('completed_at', { ascending: false }).limit(1000);
+      setCompletionHistory((historyData as CompletionRecord[]) ?? []);
 
       // 2. Fetch Quests
       const { data: questsData, error: questsErr } = await supabase
@@ -299,57 +316,17 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         if (uploadError) throw uploadError;
       }
 
-      // Calculate updated XP and Level
-    const earnedXp = targetQuest.xp || 25;
-    const currentXp = profile?.total_xp ?? 0;
-    const newTotalXp = currentXp + earnedXp;
-    const { level: newLevel } = calculateLevel(newTotalXp);
-
-    // Optimistic UI update
-    setQuests((prev) =>
-      prev.map((q) => (q.id === questId ? { ...q, status: 'completed' as const, updated_at: new Date().toISOString() } : q))
-    );
-
-    if (profile) {
-      setProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              total_xp: newTotalXp,
-              level: newLevel,
-              updated_at: new Date().toISOString(),
-            }
-          : null
-      );
-    }
-
-      // 1. Mark quest completed in Supabase
-      const { error: questError } = await supabase
-        .from('quests')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          proof_path: proofPath,
-          proof_mime_type: proof?.mimeType ?? null,
-          proof_submitted_at: proof ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', questId);
-
-      if (questError) throw questError;
-
-      // 2. Update user profile in Supabase
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          total_xp: newTotalXp,
-          level: newLevel,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-
-      if (profileError) throw profileError;
-
+      const { error: completionError } = await supabase.rpc('complete_quest', {
+        quest_id_value: questId,
+        proof_path_value: proofPath,
+        proof_mime_type_value: proof?.mimeType ?? null,
+      });
+      if (completionError) {
+        if (completionError.code === 'PGRST202') throw new Error('Quest completion needs the context-aware database update (008).');
+        throw completionError;
+      }
+      // Refresh server timestamps, durable history and XP together.
+      await fetchUserData(user);
       return { success: true };
     } catch (err) {
       // Revert optimistic updates on failure
@@ -363,7 +340,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         error: err instanceof Error ? err.message : 'Failed to complete quest.',
       };
     }
-  }, [user, quests, profile]);
+  }, [user, quests, profile, fetchUserData]);
 
   useEffect(() => {
     if (!user) return;
@@ -410,15 +387,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, quests]);
 
-  const addQuest = useCallback(async (questData: {
-    title: string;
-    description?: string;
-    category: Category;
-    xp: number;
-    is_nearby?: boolean;
-    location_id?: string | null;
-    requires_proof?: boolean;
-  }): Promise<{ success: boolean; error?: string }> => {
+  const addQuest = useCallback(async (questData: QuestDraft): Promise<{ success: boolean; error?: string }> => {
     if (!user) return { success: false, error: 'User is not signed in.' };
 
     try {
@@ -432,6 +401,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         location_id: questData.location_id ?? null,
         status: 'active' as const,
         ...(questData.requires_proof ? { requires_proof: true } : {}),
+        ...contextPayload(questData),
       };
 
       const { data, error: insertError } = await supabase
@@ -444,7 +414,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         if (questData.requires_proof && insertError.message.toLowerCase().includes('requires_proof')) {
           throw new Error('Proof quests are not enabled in Supabase yet. Run supabase/003_quest_proofs.sql first.');
         }
-        throw insertError;
+        throw new Error(databaseQuestError(insertError));
       }
       if (data) {
         setQuests((prev) => [data as Quest, ...prev]);
@@ -458,11 +428,37 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
+  const updateQuest = useCallback(async (id: string, draft: QuestDraft) => {
+    if (!user) return { success: false, error: 'User is not signed in.' };
+    const { data, error: updateError } = await supabase.from('quests').update({
+      title: draft.title.trim(), description: draft.description?.trim() || null,
+      category: draft.category, location_id: draft.location_id ?? null,
+      is_nearby: Boolean(draft.location_id), requires_proof: Boolean(draft.requires_proof),
+      ...contextPayload(draft), updated_at: new Date().toISOString(),
+    }).eq('id', id).eq('owner_id', user.id).neq('status', 'completed').select('*').single();
+    if (updateError) return { success: false, error: databaseQuestError(updateError) };
+    setQuests(previous => previous.map(q => q.id === id ? data as Quest : q));
+    return { success: true };
+  }, [user]);
+
+  // Refresh remote edits and approvals even when Realtime isn't enabled in Supabase.
+  useEffect(() => {
+    if (!user) return;
+    const poll = setInterval(() => {
+      if (AppState.currentState === 'active') void fetchUserData(user);
+    }, 60_000);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void fetchUserData(user);
+    });
+    return () => { clearInterval(poll); subscription.remove(); };
+  }, [user, fetchUserData]);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
     setQuests([]);
+      setCompletionHistory([]);
   }, []);
 
   const activeQuests = useMemo(() => quests.filter((q) => q.status === 'active'), [quests]);
@@ -477,6 +473,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       user,
       profile,
       quests,
+      completionHistory,
       activeQuests,
       completedQuests,
       isLoading,
@@ -488,12 +485,14 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       completeQuest,
       deleteQuest,
       addQuest,
+      updateQuest,
       signOut,
     }),
     [
       user,
       profile,
       quests,
+      completionHistory,
       activeQuests,
       completedQuests,
       isLoading,
@@ -505,6 +504,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       completeQuest,
       deleteQuest,
       addQuest,
+      updateQuest,
       signOut,
     ]
   );
@@ -520,3 +520,15 @@ export function useUserData() {
   return context;
 }
 
+function contextPayload(draft: QuestDraft): QuestContextFields {
+  // Omit fields for legacy template callers; explicit null clears a field when editing.
+  return Object.fromEntries(
+    ['scheduled_at', 'preferred_time', 'deadline_at', 'importance', 'prerequisite_quest_id']
+      .filter(key => key in draft).map(key => [key, draft[key as keyof QuestContextFields]])
+  );
+}
+function databaseQuestError(error: { code?: string; message: string }): string {
+  return error.code === 'PGRST204' || error.code === '42703'
+    ? 'Quest scheduling needs the context-aware database update (008).'
+    : error.message;
+}

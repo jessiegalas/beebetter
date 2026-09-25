@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { VisualTile } from '@/components/bee-visuals';
@@ -19,31 +19,44 @@ import { useUserData, Category } from '@/hooks/use-user-data';
 import { getSmartSuggestions, SuggestedQuest } from '@/lib/quest-suggestions';
 import { useLocationContext } from '@/context/location-context';
 
-type QuestDraft = {
-  title: string;
-  description?: string;
-  category: Category;
-  xp: number;
-  is_nearby?: boolean;
-  location_id?: string | null;
-  requires_proof?: boolean;
-};
+import type { QuestDraft } from '@/context/user-data-context';
+import { formatLocalDateTime, parseLocalDateTime, parsePreferredTime } from '@/lib/quest-time';
 
 const categories: Category[] = ['Academics', 'Habits', 'Social', 'Health'];
 
 export default function AddQuestScreen() {
-  const { user, addQuest, quests } = useUserData();
+  const { user, addQuest, updateQuest, quests } = useUserData();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const editingQuest = quests.find(quest => quest.id === id);
+  const isEditing = Boolean(id);
   const { currentLocationName, activeLocations } = useLocationContext();
-  const [mode, setMode] = useState<'templates' | 'custom'>('templates');
-  const [customTitle, setCustomTitle] = useState('');
-  const [customDesc, setCustomDesc] = useState('');
-  const [category, setCategory] = useState<Category>('Habits');
-  const [isNearby, setIsNearby] = useState(false);
-  const [locationId, setLocationId] = useState<string | null>(null);
+  const [mode, setMode] = useState<'templates' | 'custom'>(id ? 'custom' : 'templates');
+  const [customTitle, setCustomTitle] = useState(editingQuest?.title ?? '');
+  const [customDesc, setCustomDesc] = useState(editingQuest?.description ?? '');
+  const [category, setCategory] = useState<Category>(editingQuest?.category ?? 'Habits');
+  const [isNearby, setIsNearby] = useState(Boolean(editingQuest?.location_id));
+  const [locationId, setLocationId] = useState<string | null>(editingQuest?.location_id ?? null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [savingTemplateId, setSavingTemplateId] = useState<string | number | null>(null);
-  const [requiresProof, setRequiresProof] = useState(false);
+  const [requiresProof, setRequiresProof] = useState(editingQuest?.requires_proof ?? false);
+  const [scheduledAt, setScheduledAt] = useState(formatLocalDateTime(editingQuest?.scheduled_at));
+  const [preferredTime, setPreferredTime] = useState(editingQuest?.preferred_time?.slice(0, 5) ?? '');
+  const [deadlineAt, setDeadlineAt] = useState(formatLocalDateTime(editingQuest?.deadline_at));
+  const [importance, setImportance] = useState<NonNullable<QuestDraft['importance']>>(editingQuest?.importance ?? 'normal');
+  const [prerequisiteId, setPrerequisiteId] = useState<string | null>(editingQuest?.prerequisite_quest_id ?? null);
+  const [showContext, setShowContext] = useState(isEditing);
+  const prerequisiteOptions = quests.filter(quest => {
+    if (quest.id === id) return false;
+    const visited = new Set<string>();
+    let current: typeof quest | undefined = quest;
+    while (current) {
+      if (current.id === id || visited.has(current.id)) return false;
+      visited.add(current.id);
+      current = quests.find(candidate => candidate.id === current?.prerequisite_quest_id);
+    }
+    return true;
+  });
 
   const smartSuggestions = useMemo(() => {
     return getSmartSuggestions(quests, currentLocationName);
@@ -62,7 +75,7 @@ export default function AddQuestScreen() {
     }
 
     const draftLocationId = 'location_id' in quest ? quest.location_id : null;
-    const selectedLocationId = draftLocationId ?? (quest.is_nearby ? locationId : null);
+    const selectedLocationId = quest.is_nearby ? draftLocationId ?? locationId : null;
 
     if (quest.is_nearby && !selectedLocationId) {
       setFeedback('Choose a saved place for this nearby quest.');
@@ -74,7 +87,7 @@ export default function AddQuestScreen() {
     setSavingTemplateId(templateId ?? null);
 
     try {
-      const result = await addQuest({
+      const draft: QuestDraft = {
         title: quest.title.trim(),
         description: quest.description?.trim() || undefined,
         category: quest.category,
@@ -82,7 +95,13 @@ export default function AddQuestScreen() {
         is_nearby: quest.is_nearby ?? false,
         location_id: selectedLocationId,
         requires_proof: (quest as QuestDraft).requires_proof ?? false,
-      });
+        ...('importance' in quest ? {
+          scheduled_at: quest.scheduled_at, preferred_time: quest.preferred_time,
+          deadline_at: quest.deadline_at, importance: quest.importance,
+          prerequisite_quest_id: quest.prerequisite_quest_id,
+        } : {}),
+      };
+      const result = isEditing && id ? await updateQuest(id, draft) : await addQuest(draft);
 
       if (!result.success) {
         setFeedback(result.error || 'Failed to save quest. Please try again.');
@@ -98,16 +117,27 @@ export default function AddQuestScreen() {
     }
   };
 
-  const createCustomQuest = () =>
-    saveQuest({
-      title: customTitle,
-      description: customDesc,
-      category,
-      xp: 25,
-      is_nearby: isNearby,
-      location_id: locationId,
-      requires_proof: requiresProof,
-    });
+  const createCustomQuest = () => {
+    try {
+      if (isEditing && (!editingQuest || editingQuest.status === 'completed')) {
+        setFeedback('This quest is no longer available to edit.');
+        return;
+      }
+      const scheduled = parseLocalDateTime(scheduledAt);
+      const preferred = parsePreferredTime(preferredTime);
+      const deadline = parseLocalDateTime(deadlineAt);
+      if (scheduled && preferred) throw new Error('Choose a scheduled date or a preferred time, or leave both blank.');
+      if (scheduled && deadline && Date.parse(scheduled) > Date.parse(deadline)) {
+        throw new Error('The deadline must be on or after the scheduled time.');
+      }
+      void saveQuest({
+        title: customTitle, description: customDesc, category, xp: editingQuest?.xp ?? 25,
+        is_nearby: isNearby, location_id: isNearby ? locationId : null, requires_proof: requiresProof,
+        scheduled_at: scheduled, preferred_time: preferred, deadline_at: deadline,
+        importance, prerequisite_quest_id: prerequisiteId,
+      });
+    } catch (error) { setFeedback(error instanceof Error ? error.message : 'Check your quest details.'); }
+  };
 
   return (
     <View style={styles.container}>
@@ -115,7 +145,7 @@ export default function AddQuestScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <ThemedText style={styles.headerTitle}>New quest</ThemedText>
+            <ThemedText style={styles.headerTitle}>{isEditing ? 'Edit quest' : 'New quest'}</ThemedText>
             <ThemedText style={styles.headerSubtitle}>Make a small promise to yourself.</ThemedText>
           </View>
           <TouchableOpacity
@@ -127,7 +157,7 @@ export default function AddQuestScreen() {
         </View>
 
         {/* Mode Toggle */}
-        <View style={styles.toggleRow}>
+        {!isEditing && <View style={styles.toggleRow}>
           <TouchableOpacity
             style={[styles.toggleButton, mode === 'templates' && styles.toggleButtonActive]}
             onPress={() => {
@@ -148,7 +178,7 @@ export default function AddQuestScreen() {
               Custom
             </ThemedText>
           </TouchableOpacity>
-        </View>
+        </View>}
 
         <View style={styles.sheetIntro}>
           <View style={styles.sheetIntroIcon}><Ionicons name="sparkles" size={22} color={COLORS.honeyDeep} /></View>
@@ -166,7 +196,7 @@ export default function AddQuestScreen() {
 
         {mode === 'templates' ? (
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <ThemedText style={styles.sectionLabel}>RECOMMENDED FOR YOU</ThemedText>
+            <ThemedText style={styles.sectionLabel}>QUICK-START IDEAS</ThemedText>
             {smartSuggestions.map((template) => (
               <TouchableOpacity
                 key={template.id}
@@ -246,14 +276,14 @@ export default function AddQuestScreen() {
             {/* Nearby Quest Toggle */}
             <View style={styles.locationToggleCard}>
               <View style={styles.locationToggleCopy}>
-                <ThemedText style={styles.locationToggleTitle}>Tag as nearby quest</ThemedText>
+                <ThemedText style={styles.locationToggleTitle}>Use a saved place</ThemedText>
                 <ThemedText style={styles.locationToggleSubtitle}>
-                  Flags this quest as tied to a physical place or location
+                  Optional. Recommend this quest when you are nearby.
                 </ThemedText>
               </View>
               <Switch
                 value={isNearby}
-                onValueChange={setIsNearby}
+                onValueChange={(value) => { setIsNearby(value); if (!value) setLocationId(null); }}
                 trackColor={{ false: COLORS.surfaceMuted, true: COLORS.honey }}
                 thumbColor="#FFFFFF"
               />
@@ -292,9 +322,46 @@ export default function AddQuestScreen() {
               />
             </View>
 
+            <TouchableOpacity style={styles.placeOption} accessibilityRole="button" accessibilityState={{ expanded: showContext }} onPress={() => setShowContext(!showContext)}>
+              <ThemedText style={styles.placeOptionText}>Timing & priority (optional)</ThemedText>
+              <Ionicons name={showContext ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.ink} />
+            </TouchableOpacity>
+            {showContext && (
+              <View style={styles.placePicker}>
+                <ThemedText style={styles.placeHint}>Leave timing blank for an anytime quest. Times use this device's local timezone. Preferences guide recommendations; you can still choose any quest.</ThemedText>
+                <ThemedText style={styles.label}>Scheduled date & time</ThemedText>
+                <TextInput style={styles.input} accessibilityLabel="Scheduled date and time, optional" placeholder="YYYY-MM-DD HH:mm" placeholderTextColor={COLORS.muted} value={scheduledAt} onChangeText={setScheduledAt} autoCapitalize="none" />
+                <ThemedText style={styles.label}>Or preferred time of day</ThemedText>
+                <TextInput style={styles.input} accessibilityLabel="Preferred time of day, optional" placeholder="HH:mm (24-hour)" placeholderTextColor={COLORS.muted} value={preferredTime} onChangeText={setPreferredTime} autoCapitalize="none" />
+                <ThemedText style={styles.placeHint}>A preferred time does not automatically repeat a completed quest.</ThemedText>
+                <ThemedText style={styles.label}>Deadline</ThemedText>
+                <TextInput style={styles.input} accessibilityLabel="Deadline, optional" placeholder="YYYY-MM-DD HH:mm" placeholderTextColor={COLORS.muted} value={deadlineAt} onChangeText={setDeadlineAt} autoCapitalize="none" />
+                <ThemedText style={styles.label}>Importance</ThemedText>
+                <View style={styles.categoryRow}>
+                  {(['low', 'normal', 'high'] as const).map(value => (
+                    <TouchableOpacity key={value} style={[styles.categoryPill, importance === value && styles.categoryPillActive]} accessibilityRole="button" accessibilityState={{ selected: importance === value }} onPress={() => setImportance(value)}>
+                      <ThemedText style={styles.categoryPillText}>{value === 'low' ? 'Low' : value === 'high' ? 'High' : 'Normal'}</ThemedText>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <ThemedText style={styles.label}>Do after (optional)</ThemedText>
+                <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
+                  <TouchableOpacity style={[styles.placeOption, !prerequisiteId && styles.placeOptionActive]} onPress={() => setPrerequisiteId(null)}>
+                    <ThemedText style={styles.placeOptionText}>No prerequisite</ThemedText>
+                  </TouchableOpacity>
+                  {prerequisiteOptions.map(quest => (
+                    <TouchableOpacity key={quest.id} style={[styles.placeOption, prerequisiteId === quest.id && styles.placeOptionActive]} onPress={() => setPrerequisiteId(quest.id)}>
+                      <ThemedText style={styles.placeOptionText}>{quest.title}</ThemedText>
+                      {prerequisiteId === quest.id && <Ionicons name="checkmark" size={18} color={COLORS.ink} />}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
             <View style={styles.xpHint}>
               <Ionicons name="sparkles" size={16} color={COLORS.honeyDark} />
-              <ThemedText style={styles.xpHintText}>Custom quests are worth 25 XP.</ThemedText>
+              <ThemedText style={styles.xpHintText}>{isEditing ? `This quest is worth ${editingQuest?.xp ?? 25} XP.` : 'Custom quests are worth 25 XP.'}</ThemedText>
             </View>
 
             <TouchableOpacity
@@ -305,7 +372,7 @@ export default function AddQuestScreen() {
               {isSaving ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <ThemedText style={styles.createButtonText}>Create quest</ThemedText>
+                <ThemedText style={styles.createButtonText}>{isEditing ? 'Save changes' : 'Create quest'}</ThemedText>
               )}
             </TouchableOpacity>
           </ScrollView>
@@ -368,4 +435,3 @@ const styles = StyleSheet.create({
   createButtonDisabled: { opacity: 0.65 },
   createButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
 });
-

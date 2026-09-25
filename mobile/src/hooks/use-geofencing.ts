@@ -1,3 +1,4 @@
+import { recordGeofenceEvent } from '@/lib/geofence-events';
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { UserLocation } from './use-user-locations';
@@ -16,7 +17,7 @@ TaskManager.defineTask<GeofenceTaskData>(GEOFENCE_TASK_NAME, async ({ data, erro
   }
 
   const { eventType, region } = data;
-  console.log('Geofence event:', eventType, 'for location:', region.identifier);
+  if (region?.identifier) await recordGeofenceEvent(region.identifier, eventType === Location.GeofencingEventType.Enter);
   return null;
 });
 

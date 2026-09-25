@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { UserDataProvider, useUserData } from '@/context/user-data-context';
+import { QuestPriorityProvider } from '@/context/quest-priority-context';
 import { LocationProvider } from '@/context/location-context';
 import { BeeBetterColors as COLORS } from '@/constants/theme';
 
@@ -45,6 +46,7 @@ export default function RootLayout() {
   return (
     <UserDataProvider>
       <LocationProvider>
+      <QuestPriorityProvider>
       <AuthGuard>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <AnimatedSplashOverlay />
@@ -57,6 +59,7 @@ export default function RootLayout() {
           </Stack>
         </ThemeProvider>
       </AuthGuard>
+      </QuestPriorityProvider>
       </LocationProvider>
     </UserDataProvider>
   );
@@ -70,4 +73,3 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
-

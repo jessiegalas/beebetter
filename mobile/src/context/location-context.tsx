@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import { useCurrentLocation } from '@/hooks/use-current-location';
-import { registerGeofences, syncGeofences } from '@/hooks/use-geofencing';
+import { syncGeofences, unregisterAllGeofences } from '@/hooks/use-geofencing';
 import { useUserLocations, type UserLocation } from '@/hooks/use-user-locations';
 
 interface LocationContextType {
@@ -16,7 +17,8 @@ interface LocationContextType {
   refreshLocations: () => Promise<void>;
 
   // Current location / geofence state
-  coords: { latitude: number; longitude: number } | null;
+  coords: { latitude: number; longitude: number; accuracy?: number | null } | null;
+  locationUpdatedAt: number | null;
   currentLocationName: string | null;     // e.g., "Gym"
   currentLocationId: string | null;       // ID of the nearest user place
   isInsideGeofence: boolean;              // true if within radius of any active location
@@ -48,6 +50,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
   const {
     coords,
+    locationUpdatedAt,
     locationName,
     locationId,
     isInsideGeofence,
@@ -68,13 +71,15 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
     async function initialize() {
       if (!user) {
-        setHasInitialized(true);
+        await stopTracking();
+        await refreshLocations();
+        await unregisterAllGeofences();
+        setHasInitialized(false);
         return;
       }
 
       // Load locations before enabling location features.
       await refreshLocations();
-      await requestPermissions();
       await startTracking();
 
       if (mounted) {
@@ -87,13 +92,30 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [user, refreshLocations, requestPermissions, startTracking]);
+  }, [user, refreshLocations, startTracking, stopTracking]);
 
   // Register the latest regions after locations load or change.
   useEffect(() => {
     if (!hasInitialized || !user) return;
     void syncGeofences(activeLocations);
   }, [activeLocations, hasInitialized, user]);
+
+  // A stationary device may not emit watch events. Refresh on resume and while visible.
+  useEffect(() => {
+    if (!user) return;
+    const update = () => {
+      if (AppState.currentState === 'active') {
+        void getCurrentPosition();
+        void refreshLocations();
+      }
+    };
+    update();
+    const timer = setInterval(update, 60_000);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') { update(); void startTracking(); }
+    });
+    return () => { clearInterval(timer); subscription.remove(); };
+  }, [user, getCurrentPosition, refreshLocations, startTracking]);
 
   // Stop tracking on unmount
   useEffect(() => {
@@ -115,6 +137,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
     // Current location state
     coords,
+    locationUpdatedAt,
     currentLocationName: locationName,
     currentLocationId: locationId,
     isInsideGeofence,
@@ -137,6 +160,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     toggleActive,
     refreshLocations,
     coords,
+    locationUpdatedAt,
     locationName,
     locationId,
     isInsideGeofence,
