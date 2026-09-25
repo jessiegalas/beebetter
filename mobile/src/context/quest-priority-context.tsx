@@ -25,7 +25,7 @@ export function QuestPriorityProvider({ children }: { children: ReactNode }) {
     return () => { alive = false; clearInterval(timer); subscription.remove(); unsubscribe(); };
   }, []);
   const context = useMemo(() => ({
-    now, coords: permissionStatus === 'granted' ? coords : null,
+    now: Math.max(now, locationUpdatedAt ?? now), coords: permissionStatus === 'granted' ? coords : null,
     locationUpdatedAt, places: locations, history: completionHistory,
     geofenceEvents: permissionStatus === 'granted' ? geofenceEvents : {},
   }), [now, coords, permissionStatus, locationUpdatedAt, locations, completionHistory, geofenceEvents]);

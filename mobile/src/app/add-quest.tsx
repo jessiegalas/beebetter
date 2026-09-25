@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -16,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { VisualTile } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
 import { useUserData, Category } from '@/hooks/use-user-data';
-import { getSmartSuggestions, SuggestedQuest } from '@/lib/quest-suggestions';
+import { getQuestIdeas, SuggestedQuest } from '@/lib/quest-suggestions';
 import { useLocationContext } from '@/context/location-context';
 
 import type { QuestDraft } from '@/context/user-data-context';
@@ -29,7 +29,7 @@ export default function AddQuestScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const editingQuest = quests.find(quest => quest.id === id);
   const isEditing = Boolean(id);
-  const { currentLocationName, activeLocations } = useLocationContext();
+  const { activeLocations } = useLocationContext();
   const [mode, setMode] = useState<'templates' | 'custom'>(id ? 'custom' : 'templates');
   const [customTitle, setCustomTitle] = useState(editingQuest?.title ?? '');
   const [customDesc, setCustomDesc] = useState(editingQuest?.description ?? '');
@@ -58,9 +58,7 @@ export default function AddQuestScreen() {
     return true;
   });
 
-  const smartSuggestions = useMemo(() => {
-    return getSmartSuggestions(quests, currentLocationName);
-  }, [quests, currentLocationName]);
+  const questIdeas = getQuestIdeas();
 
   const saveQuest = async (quest: QuestDraft | SuggestedQuest, templateId?: string | number) => {
     if (!quest.title.trim()) {
@@ -197,7 +195,7 @@ export default function AddQuestScreen() {
         {mode === 'templates' ? (
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <ThemedText style={styles.sectionLabel}>QUICK-START IDEAS</ThemedText>
-            {smartSuggestions.map((template) => (
+            {questIdeas.map((template) => (
               <TouchableOpacity
                 key={template.id}
                 style={styles.templateCard}
@@ -292,6 +290,12 @@ export default function AddQuestScreen() {
             {isNearby && (
               <View style={styles.placePicker}>
                 <ThemedText style={styles.label}>Quest place</ThemedText>
+                {locationId && !activeLocations.some(place => place.id === locationId) && (
+                  <ThemedText style={styles.placeHint}>Your saved place is inactive or unavailable. Choose another place or turn off the place preference.</ThemedText>
+                )}
+                <TouchableOpacity onPress={() => router.push('/manage-locations')} accessibilityRole="button">
+                  <ThemedText style={styles.placeHint}>Manage saved places â†’</ThemedText>
+                </TouchableOpacity>
                 {activeLocations.length === 0 ? (
                   <ThemedText style={styles.placeHint}>Add an active place in My Places first.</ThemedText>
                 ) : activeLocations.map((place) => (
@@ -328,7 +332,7 @@ export default function AddQuestScreen() {
             </TouchableOpacity>
             {showContext && (
               <View style={styles.placePicker}>
-                <ThemedText style={styles.placeHint}>Leave timing blank for an anytime quest. Times use this device's local timezone. Preferences guide recommendations; you can still choose any quest.</ThemedText>
+                <ThemedText style={styles.placeHint}>Leave timing blank for an anytime quest. Times use this device&apos;s local timezone. Preferences guide recommendations; you can still choose any quest.</ThemedText>
                 <ThemedText style={styles.label}>Scheduled date & time</ThemedText>
                 <TextInput style={styles.input} accessibilityLabel="Scheduled date and time, optional" placeholder="YYYY-MM-DD HH:mm" placeholderTextColor={COLORS.muted} value={scheduledAt} onChangeText={setScheduledAt} autoCapitalize="none" />
                 <ThemedText style={styles.label}>Or preferred time of day</ThemedText>

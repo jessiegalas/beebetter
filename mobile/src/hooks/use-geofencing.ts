@@ -21,9 +21,7 @@ TaskManager.defineTask<GeofenceTaskData>(GEOFENCE_TASK_NAME, async ({ data, erro
   return null;
 });
 
-export interface GeofenceRegion extends Location.LocationRegion {
-  identifier: string;
-}
+export type GeofenceRegion = Location.LocationRegion & { identifier: string };
 
 export async function registerGeofences(locations: UserLocation[]): Promise<{ success: boolean; error?: string }> {
   try {
@@ -87,9 +85,13 @@ export async function getRegisteredGeofences(): Promise<GeofenceRegion[]> {
   }
 }
 
-export async function syncGeofences(locations: UserLocation[]): Promise<void> {
-  const result = await registerGeofences(locations);
-  if (!result.success && result.error !== 'Background geofencing is unavailable in this app environment') {
-    console.warn('Geofence sync skipped:', result.error);
-  }
+let syncQueue = Promise.resolve();
+export function syncGeofences(locations: UserLocation[]): Promise<void> {
+  syncQueue = syncQueue.catch(() => {}).then(async () => {
+    const result = await registerGeofences(locations);
+    if (!result.success && result.error !== 'Background geofencing is unavailable in this app environment') {
+      console.warn('Geofence sync skipped:', result.error);
+    }
+  });
+  return syncQueue;
 }

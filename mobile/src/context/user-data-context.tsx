@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { AppState } from 'react-native';
 import type { CompletionRecord } from '@/lib/quest-priority';
 import { User } from '@supabase/supabase-js';
@@ -114,6 +114,8 @@ export type StudentProfileUpdates = Pick<
 const UserDataContext = createContext<UserDataContextType | undefined>(undefined);
 
 export function UserDataProvider({ children }: { children: React.ReactNode }) {
+  const requestVersion = useRef(0);
+  const completingQuests = useRef(new Set<string>());
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [quests, setQuests] = useState<Quest[]>([]);
@@ -123,6 +125,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchUserData = useCallback(async (currentUser: User | null, showLoading = false) => {
+    const version = ++requestVersion.current;
     if (showLoading) setIsLoading(true);
     setError(null);
 
@@ -155,6 +158,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         .eq('id', currentUser.id)
         .maybeSingle();
 
+      if (version !== requestVersion.current) return;
       if (studentErr) {
         console.warn('Could not fetch student information:', studentErr.message);
       }
@@ -206,6 +210,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
           .select('*')
           .maybeSingle();
 
+        if (version !== requestVersion.current) return;
         setProfile((createdProfile as UserProfile) ?? defaultProfile);
       }
 
@@ -213,6 +218,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       const { data: historyData } = await supabase.from('quest_completion_history')
         .select('id,quest_id,title,category,completed_at').eq('owner_id', currentUser.id)
         .order('completed_at', { ascending: false }).limit(1000);
+      if (version !== requestVersion.current) return;
       setCompletionHistory((historyData as CompletionRecord[]) ?? []);
 
       // 2. Fetch Quests
@@ -222,16 +228,16 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         .eq('owner_id', currentUser.id)
         .order('created_at', { ascending: false });
 
+      if (version !== requestVersion.current) return;
       if (questsErr) {
         setError(questsErr.code === '42P01' ? 'Run the Supabase SQL migration before loading quests.' : questsErr.message);
       } else if (questsData) {
         setQuests(questsData as Quest[]);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load user data');
+      if (version === requestVersion.current) setError(err instanceof Error ? err.message : 'Failed to load user data');
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (version === requestVersion.current) { setIsLoading(false); setIsRefreshing(false); }
     }
   }, []);
 
@@ -299,8 +305,8 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: 'Attach a photo, video, or file as proof before completing this quest.' };
     }
 
-    const previousQuests = [...quests];
-    const previousProfile = profile ? { ...profile } : null;
+    if (completingQuests.current.has(questId)) return { success: false, error: 'This quest is already being completed.' };
+    completingQuests.current.add(questId);
 
     let proofPath: string | null = null;
 
@@ -329,18 +335,15 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       await fetchUserData(user);
       return { success: true };
     } catch (err) {
-      // Revert optimistic updates on failure
-      setQuests(previousQuests);
-      setProfile(previousProfile);
       if (proofPath) {
         await supabase.storage.from('quest-proofs').remove([proofPath]);
       }
       return {
         success: false,
-        error: err instanceof Error ? err.message : 'Failed to complete quest.',
+        error: err instanceof Error ? err.message : (err as { message?: string })?.message || 'Failed to complete quest.',
       };
-    }
-  }, [user, quests, profile, fetchUserData]);
+    } finally { completingQuests.current.delete(questId); }
+  }, [user, quests, fetchUserData]);
 
   useEffect(() => {
     if (!user) return;
@@ -454,11 +457,12 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   }, [user, fetchUserData]);
 
   const signOut = useCallback(async () => {
+    requestVersion.current += 1;
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
     setQuests([]);
-      setCompletionHistory([]);
+    setCompletionHistory([]);
   }, []);
 
   const activeQuests = useMemo(() => quests.filter((q) => q.status === 'active'), [quests]);

@@ -44,7 +44,8 @@ export function useUserLocations() {
         .order('created_at', { ascending: false });
 
       if (fetchError) throw fetchError;
-      setLocations((data as UserLocation[]) ?? []);
+      const next = (data as UserLocation[]) ?? [];
+      setLocations(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load locations');
     } finally {
