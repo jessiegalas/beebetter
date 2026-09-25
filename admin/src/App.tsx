@@ -1,3 +1,4 @@
+import { PROGRAMS, YEARS, LIMITS, cleanName, cleanStudentNumber, normalizeProgram, normalizeYear, validateStudent, studentPayload, type StudentFields, type EnrollmentOption } from '../../mobile/src/lib/student-validation'
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
@@ -393,23 +394,51 @@ function QuestModal({ initialQuest, users, onClose, onSave }: { initialQuest: Qu
 }
 
 function StudentModal({ user, onClose, onSave }: { user: User; onClose: () => void; onSave: (user: User) => void }) {
+  const original: StudentFields = { name: user.name, student_number: user.studentNumber, course: user.course, year_level: user.yearLevel, campus: user.campus, section: user.section, goal: user.goal }
+  const [draft, setDraft] = useState(original)
+  const [status, setStatus] = useState(user.status)
+  const [other, setOther] = useState(!(PROGRAMS as readonly string[]).includes(normalizeProgram(user.course)))
+  const [options, setOptions] = useState<EnrollmentOption[]>([])
+  const [optionError, setOptionError] = useState('')
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        const { data, error } = await supabase.from('student_enrollment_options').select('id,course,year_level,campus,section').order('campus').order('section').abortSignal(controller.signal)
+        if (!controller.signal.aborted) { setOptions(data ?? []); setOptionError(error ? 'Could not load school options.' : '') }
+      } catch { if (!controller.signal.aborted) setOptionError('Could not load school options.') }
+    })()
+    return () => controller.abort()
+  }, [retry])
+  const errors = validateStudent(draft, options, original)
+  const change = (field: keyof StudentFields, value: string) => setDraft(previous => ({ ...previous, [field]: value, ...(['course', 'year_level', 'campus'].includes(field) ? { section: '' } : {}) }))
+  const message = (field: keyof StudentFields) => errors[field] ? <small role="alert" style={{ color: '#a83434' }}>{errors[field]}</small> : null
+  const legacy = (field: keyof StudentFields, values: string[]) => draft[field] === original[field] && draft[field] && !values.includes(draft[field]) ? [draft[field], ...values] : values
+  const campuses = legacy('campus', Array.from(new Set(options.map(o => o.campus))).sort())
+  const sections = legacy('section', Array.from(new Set(options.filter(o => o.campus === draft.campus && o.course === normalizeProgram(draft.course) && o.year_level === normalizeYear(draft.year_level)).map(o => o.section))).sort())
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const data = new FormData(event.currentTarget)
-    onSave({
-      ...user,
-      studentNumber: String(data.get('studentNumber') || '').trim(),
-      name: String(data.get('name') || '').trim(),
-      email: String(data.get('email') || '').trim().toLowerCase(),
-      course: String(data.get('course') || '').trim(),
-      yearLevel: String(data.get('yearLevel') || '').trim(),
-      section: String(data.get('section') || '').trim(),
-      campus: String(data.get('campus') || '').trim(),
-      goal: String(data.get('goal') || '').trim(),
-      status: String(data.get('status') || 'Active') as User['status'],
-    })
+    if (Object.keys(errors).length) return
+    const value = studentPayload(draft, original)
+    onSave({ ...user, ...value, studentNumber: value.student_number, yearLevel: value.year_level, status })
   }
-  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><span className="eyebrow">STUDENT RECORD</span><h2>Edit student information</h2><form onSubmit={submit}><label>Student number<input name="studentNumber" required defaultValue={user.studentNumber} /></label><label>Name<input name="name" required defaultValue={user.name} /></label><label>Email<input name="email" required type="email" defaultValue={user.email} readOnly /></label><label>Course<input name="course" required defaultValue={user.course} /></label><label>Year level<input name="yearLevel" required defaultValue={user.yearLevel} /></label><label>Section<input name="section" required defaultValue={user.section} /></label><label>Campus<input name="campus" required defaultValue={user.campus} /></label><label>Goal<input name="goal" required defaultValue={user.goal} placeholder="Predefined or custom goal" /></label><label>Status<select name="status" defaultValue={user.status}><option>Active</option><option>Inactive</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Save student</button></div></form></div></div>
+  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Close">{'\u00d7'}</button><span className="eyebrow">STUDENT RECORD</span><h2>Edit student information</h2><p>Required fields use official school information. Unchanged legacy values are preserved.</p>
+    {optionError && <p role="alert">{optionError} <button type="button" onClick={() => setRetry(n => n + 1)}>Retry</button></p>}
+    <form onSubmit={submit}>
+      <label>Student number *<input value={draft.student_number} onChange={e => change('student_number', cleanStudentNumber(e.target.value))} inputMode="numeric" maxLength={9} />{message('student_number')}</label>
+      <label>Full name *<input value={draft.name} onChange={e => change('name', cleanName(e.target.value))} maxLength={30} />{message('name')}</label>
+      <label>Email<input type="email" value={user.email} readOnly /></label>
+      <label>Course / Program *<select value={other ? 'Others' : normalizeProgram(draft.course)} onChange={e => { setOther(e.target.value === 'Others'); change('course', e.target.value === 'Others' ? '' : e.target.value) }}><option value="">Choose program</option>{[...PROGRAMS, 'Others'].map(value => <option key={value}>{value}</option>)}</select></label>
+      {other && <label>Specify program *<input value={draft.course} maxLength={LIMITS.course} onChange={e => change('course', e.target.value)} /></label>}{message('course')}
+      <label>Year level *<select value={draft.year_level} onChange={e => change('year_level', e.target.value)}><option value="">Choose year</option>{legacy('year_level', [...YEARS]).map(value => <option key={value}>{value}</option>)}</select>{message('year_level')}</label>
+      <label>Campus *<select value={draft.campus} onChange={e => change('campus', e.target.value)}><option value="">Choose campus</option>{campuses.map(value => <option key={value}>{value}</option>)}</select>{message('campus')}</label>
+      <label>Section *<select value={draft.section} onChange={e => change('section', e.target.value)}><option value="">Choose section</option>{sections.map(value => <option key={value}>{value}</option>)}</select>{message('section')}</label>
+      {!sections.length && <p>No sections configured for this combination. Update student_enrollment_options in Supabase with approved school values.</p>}
+      <label>Goal *<input value={draft.goal} maxLength={LIMITS.goal} onChange={e => change('goal', e.target.value)} />{message('goal')}</label>
+      <label>Status<select value={status} onChange={e => setStatus(e.target.value as User['status'])}><option>Active</option><option>Inactive</option></select></label>
+      <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={Object.keys(errors).length > 0}>Save student</button></div>
+    </form></div></div>
 }
 
 function MessageModal({ user, onClose, onSend }: { user: User; onClose: () => void; onSend: (message: string) => void }) {

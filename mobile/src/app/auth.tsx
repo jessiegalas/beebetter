@@ -6,18 +6,16 @@ import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
+import { StudentInformationFields } from '@/components/student-information-fields';
+import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
+import { validateStudent, studentPayload, emailError, passwordError, LIMITS, type StudentFields } from '@/lib/student-validation';
 import { supabase } from '@/supabase';
 
 export default function AuthScreen() {
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
-  const [name, setName] = useState('');
-  const [studentNumber, setStudentNumber] = useState('');
-  const [course, setCourse] = useState('');
-  const [yearLevel, setYearLevel] = useState('');
-  const [section, setSection] = useState('');
-  const [campus, setCampus] = useState('');
-  const [goal, setGoal] = useState('');
-  const [customGoal, setCustomGoal] = useState(false);
+  const [student, setStudent] = useState<StudentFields>({ name: '', student_number: '', course: '', year_level: '', section: '', campus: '', goal: '' });
+  const enrollment = useEnrollmentOptions();
+  const studentErrors = validateStudent(student, enrollment.options);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -27,6 +25,11 @@ export default function AuthScreen() {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [confirmationPending, setConfirmationPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
+  const emailValidation = emailError(email);
+  const passwordValidation = mode === 'sign-up' ? passwordError(password) : !password ? 'Enter your password.' : undefined;
+  const invalid = !!emailValidation || !!passwordValidation || (mode === 'sign-up' && (enrollment.loading || !!enrollment.error || Object.keys(studentErrors).length > 0));
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -49,6 +52,7 @@ export default function AuthScreen() {
     if (normalized.includes('already registered') || normalized.includes('already been registered')) {
       return 'That email already has an account. Switch to Sign in or use the confirmation email again.';
     }
+    if (normalized.includes('database error saving new user')) return 'Could not save your student information. Check your student number and school selections; if they are correct, contact your administrator.';
     if (normalized.includes('email not confirmed')) {
       return 'Your email is not confirmed yet. Check your inbox or resend the confirmation email below.';
     }
@@ -59,31 +63,10 @@ export default function AuthScreen() {
   };
 
   const submit = async () => {
+    if (isSubmitting) return;
     const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !password) {
-      setMessage('Please enter both email and password to continue.');
-      return;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setMessage('Enter a valid email address.');
-      return;
-    }
-
-    if (mode === 'sign-up' && !name.trim()) {
-      setMessage('Add your name so your profile feels like yours.');
-      return;
-    }
-
-    if (mode === 'sign-up' && (!studentNumber.trim() || !course.trim() || !yearLevel.trim() || !section.trim() || !campus.trim() || !goal.trim())) {
-      setMessage('Complete your student information and choose a goal to continue.');
-      return;
-    }
-
-    if (password.length < 6) {
-      setMessage('Your password must have at least 6 characters.');
-      return;
-    }
+    if (invalid) { setMessage('Check the highlighted fields before continuing.'); return; }
+    const normalizedStudent = studentPayload(student);
 
     setIsSubmitting(true);
     setFeedback(null);
@@ -95,14 +78,8 @@ export default function AuthScreen() {
           password,
           options: {
             data: {
-              display_name: name.trim() || undefined,
-              name: name.trim(),
-              student_number: studentNumber.trim(),
-              course: course.trim(),
-              year_level: yearLevel.trim(),
-              section: section.trim(),
-              campus: campus.trim(),
-              goal: goal.trim(),
+              ...normalizedStudent,
+              display_name: normalizedStudent.name,
             },
             emailRedirectTo: 'beebetter://auth',
           },
@@ -203,55 +180,18 @@ export default function AuthScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Sign-up Name Field */}
-          {mode === 'sign-up' && (
-            <>
-              <ThemedText style={styles.label}>Full Name</ThemedText>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Jessie Galas"
-                placeholderTextColor={COLORS.muted}
-                autoCapitalize="words"
-              />
-              <ThemedText style={styles.label}>Student Number</ThemedText>
-              <TextInput style={styles.input} value={studentNumber} onChangeText={setStudentNumber} placeholder="e.g. 2024-00001" placeholderTextColor={COLORS.muted} autoCapitalize="characters" />
-              <ThemedText style={styles.label}>Course</ThemedText>
-              <TextInput style={styles.input} value={course} onChangeText={setCourse} placeholder="e.g. BS Computer Science" placeholderTextColor={COLORS.muted} autoCapitalize="words" />
-              <View style={styles.inlineFields}>
-                <View style={styles.inlineField}>
-                  <ThemedText style={styles.label}>Year Level</ThemedText>
-                  <TextInput style={styles.input} value={yearLevel} onChangeText={setYearLevel} placeholder="4" placeholderTextColor={COLORS.muted} keyboardType="number-pad" />
-                </View>
-                <View style={styles.inlineField}>
-                  <ThemedText style={styles.label}>Section</ThemedText>
-                  <TextInput style={styles.input} value={section} onChangeText={setSection} placeholder="A" placeholderTextColor={COLORS.muted} autoCapitalize="characters" />
-                </View>
-              </View>
-              <ThemedText style={styles.label}>Campus</ThemedText>
-              <TextInput style={styles.input} value={campus} onChangeText={setCampus} placeholder="Main campus" placeholderTextColor={COLORS.muted} autoCapitalize="words" />
-              <ThemedText style={styles.label}>Your Goal</ThemedText>
-              <View style={styles.goalOptions}>
-                {['Improve my study habits', 'Build healthier routines', 'Grow my confidence'].map((option) => (
-                  <TouchableOpacity key={option} style={[styles.goalOption, goal === option && !customGoal && styles.goalOptionActive]} onPress={() => { setGoal(option); setCustomGoal(false); }}>
-                    <ThemedText style={[styles.goalOptionText, goal === option && !customGoal && styles.goalOptionTextActive]}>{option}</ThemedText>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity style={[styles.goalOption, customGoal && styles.goalOptionActive]} onPress={() => { setCustomGoal(true); setGoal(''); }}>
-                  <ThemedText style={[styles.goalOptionText, customGoal && styles.goalOptionTextActive]}>Custom goal</ThemedText>
-                </TouchableOpacity>
-              </View>
-              {customGoal && <TextInput style={styles.input} value={goal} onChangeText={setGoal} placeholder="Write your personal goal" placeholderTextColor={COLORS.muted} />}
-            </>
-          )}
+          {mode === 'sign-up' && <StudentInformationFields value={student} onChange={setStudent} options={enrollment.options} errors={studentErrors} loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} />}
 
           {/* Email Field */}
-          <ThemedText style={styles.label}>Email address</ThemedText>
+          <ThemedText style={styles.label}>Email address *</ThemedText>
           <TextInput
             style={styles.input}
             value={email}
-            onChangeText={setEmail}
+            onChangeText={value => setEmail(value.replace(/\s/g, ''))}
+            onBlur={() => setEmailTouched(true)}
+            maxLength={LIMITS.email}
+            accessibilityLabel="Email address, required"
+            autoComplete="email"
             placeholder="you@example.com"
             placeholderTextColor={COLORS.muted}
             keyboardType="email-address"
@@ -259,13 +199,19 @@ export default function AuthScreen() {
             autoCorrect={false}
           />
 
+          {(emailTouched || !!email) && emailValidation && <ThemedText style={styles.feedback}>{emailValidation}</ThemedText>}
+
           {/* Password Field */}
-          <ThemedText style={styles.label}>Password</ThemedText>
+          <ThemedText style={styles.label}>Password *</ThemedText>
           <View style={styles.passwordRow}>
             <TextInput
               style={styles.passwordInput}
               value={password}
               onChangeText={setPassword}
+              onBlur={() => setPasswordTouched(true)}
+              maxLength={mode === 'sign-up' ? LIMITS.password : undefined}
+              autoCorrect={false}
+              accessibilityLabel="Password, required"
               placeholder="At least 6 characters"
               placeholderTextColor={COLORS.muted}
               secureTextEntry={!showPassword}
@@ -279,6 +225,7 @@ export default function AuthScreen() {
             </TouchableOpacity>
           </View>
 
+          {(passwordTouched || !!password) && passwordValidation && <ThemedText style={styles.feedback}>{passwordValidation}</ThemedText>}
           {feedback && <ThemedText style={[styles.feedback, feedbackTone === 'success' && styles.successFeedback]}>{feedback}</ThemedText>}
 
           {confirmationPending && mode === 'sign-in' && (
@@ -298,9 +245,11 @@ export default function AuthScreen() {
 
           {/* Submit Button */}
           <TouchableOpacity
-            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+            style={[styles.submitButton, (isSubmitting || invalid) && styles.submitButtonDisabled]}
             onPress={submit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || invalid}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubmitting || invalid, busy: isSubmitting }}
             activeOpacity={0.8}>
             {isSubmitting ? (
               <ActivityIndicator color="#FFFFFF" />

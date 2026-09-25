@@ -21,7 +21,7 @@ const schema = name => fs.readFileSync(path.resolve(__dirname, '../../supabase',
 let count = 0;
 async function test(name, fn) { await fn(); count++; console.log('PASS ' + name); }
 const owner = '00000000-0000-0000-0000-000000000001';
-const other = '00000000-0000-0000-0000-000000000002';
+const other = '10000000-0000-0000-0000-000000000002';
 async function create(title, fields = {}, user = owner) {
   const values = { owner_id: user, title, category: 'Habits', ...fields };
   const keys = Object.keys(values);
@@ -201,6 +201,60 @@ const complete = id => db.query('select public.complete_quest($1)', [id]);
     await db.query('update public.quests set scheduled_at=null,deadline_at=null where id=$1', [valid.id]);
     await complete(old.id);
     assert.equal((await get(old.id)).status, 'completed');
+  });
+  await test('student catalogue migration seeds real combinations and preserves legacy records', async () => {
+    await db.exec(schema('004_admin_student_access.sql'));
+    await db.exec(schema('005_students.sql'));
+    await db.exec(schema('006_admin_quest_management.sql'));
+    await db.exec(schema('007_super_admin_management.sql'));
+    await db.query("update public.students set name='  A legacy name that exceeds thirty characters  ',course='bs computer science',year_level='4',campus='Test Campus',section='A' where id=$1", [owner]);
+    await db.exec(schema('011_student_registration_validation.sql'));
+    await db.exec(schema('011_student_registration_validation.sql'));
+    assert.equal((await db.query('select count(*)::int n from public.student_enrollment_options')).rows[0].n, 1);
+    const row = (await db.query('select * from public.students where id=$1', [owner])).rows[0];
+    assert(row.student_number.startsWith('LEGACY-')); assert.equal(row.year_level, '4');
+    await db.query("update public.students set goal='A new goal' where id=$1", [owner]);
+  });
+  const registration = { student_number: '202311197', name: 'Ana-Maria O\u2019Neil', course: 'bscs', year_level: '4', campus: 'Test Campus', section: 'A', goal: 'Study better' };
+  const newStudent = '00000000-0000-0000-0000-000000000003';
+  await test('auth registration stores standardized information through the real trigger', async () => {
+    await db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)', [newStudent, 'ana@example.invalid', JSON.stringify(registration)]);
+    const row = (await db.query('select * from public.students where id=$1', [newStudent])).rows[0];
+    assert.equal(row.course, 'BSCS'); assert.equal(row.year_level, '4th Year'); assert.equal(row.student_number, '202311197');
+  });
+  await test('backend rejects invalid student metadata and duplicate student numbers', async () => {
+    for (const bad of [{ student_number: '123' }, { student_number: '1234567890' }, { name: 'Ana123' }, { name: 'A'.repeat(31) }, { section: 'Unknown' }, { campus: 'Unknown' }, { year_level: '6' }, { goal: 'x'.repeat(201) }]) {
+      await assert.rejects(db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)', ['00000000-0000-0000-0000-000000000004', 'bad@example.invalid', JSON.stringify({ ...registration, student_number: '202311198', ...bad })]));
+    }
+    await assert.rejects(db.query('insert into auth.users(id,email,raw_user_meta_data) values($1,$2,$3)', ['00000000-0000-0000-0000-000000000004', 'duplicate@example.invalid', JSON.stringify(registration)]), /unique|duplicate/);
+  });
+  await test('anonymous users read only catalogue data and cannot alter it', async () => {
+    await db.exec('grant usage on schema public to anon; set role anon;');
+    assert.equal((await db.query('select course from public.student_enrollment_options')).rows.length, 1);
+    await assert.rejects(db.query("insert into public.student_enrollment_options(course,year_level,campus,section) values('BSIT','1st Year','Other','Z')"));
+    await assert.rejects(db.query('select * from public.students'));
+    await db.exec('reset role;');
+  });
+  await test('profile edits validate changes and admin reads standardized values', async () => {
+    await db.exec('grant select,update on public.students to authenticated;');
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [newStudent]);
+    await db.exec('set role authenticated;');
+    await db.query("update public.students set name='Jos\u00e9 Cruz' where id=$1", [newStudent]);
+    await assert.rejects(db.query("update public.students set student_number='ABC' where id=$1", [newStudent]), /9 digits/);
+    await assert.rejects(db.query("insert into public.student_enrollment_options(course,year_level,campus,section) values('BSIT','1st Year','Other','Z')"));
+    await db.exec('reset role;');
+    await db.query('insert into public.admin_users(id) values($1)', [owner]);
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [owner]);
+    await db.exec('set role authenticated;');
+    const rows = (await db.query('select * from public.admin_list_students()')).rows;
+    assert.equal(rows.find(row => row.id === newStudent).course, 'BSCS');
+    const old = rows.find(row => row.id === owner);
+    await db.query('select public.admin_update_student($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [owner, old.student_number, old.name, old.email, old.course, old.year_level, old.section, old.campus, 'Legacy goal updated', old.status]);
+    const preserved = (await db.query('select * from public.students where id=$1', [owner])).rows[0];
+    assert.equal(preserved.name, old.name); assert.equal(preserved.student_number, old.student_number);
+    await db.query("select public.admin_update_student($1,'202311197','Jos\u00e9 Cruz','ignored','BSCS','4th Year','A','Test Campus','Admin goal','Active')", [newStudent]);
+    await assert.rejects(db.query("select public.admin_update_student($1,'ABC','Jos\u00e9 Cruz','ignored','BSCS','4th Year','A','Test Campus','Admin goal','Active')", [newStudent]), /9 digits/);
+    await db.exec('reset role;');
   });
   console.log(count + ' database integration tests passed.');
   await db.close();

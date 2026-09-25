@@ -3,7 +3,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -16,6 +15,9 @@ import { XpProgress, XpBadge } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { BeeMark } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
+import { StudentInformationFields } from '@/components/student-information-fields';
+import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
+import { validateStudent, studentPayload } from '@/lib/student-validation';
 import { useUserData, StudentProfileUpdates } from '@/hooks/use-user-data';
 
 export default function ProfileScreen() {
@@ -32,6 +34,8 @@ export default function ProfileScreen() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<StudentProfileUpdates | null>(null);
   const [saving, setSaving] = useState(false);
+  const enrollment = useEnrollmentOptions();
+  const fieldErrors = draft ? validateStudent(draft, enrollment.options, profile ?? undefined) : {};
 
   const displayName =
     profile?.display_name ||
@@ -64,12 +68,12 @@ export default function ProfileScreen() {
 
   const saveProfile = async () => {
     if (!draft) return;
-    if (Object.values(draft).some((value) => !value.trim())) {
-      Alert.alert('Complete your profile', 'Student number, name, course, year level, section, campus, and goal are required.');
+    if (Object.keys(fieldErrors).length > 0) {
+      Alert.alert('Complete your profile', Object.values(fieldErrors)[0] || 'Check your student information.');
       return;
     }
     setSaving(true);
-    const result = await updateProfile(draft);
+    const result = await updateProfile(studentPayload(draft, profile ?? undefined));
     setSaving(false);
     if (!result.success) {
       Alert.alert('Could not save profile', result.error || 'Please try again.');
@@ -167,17 +171,10 @@ export default function ProfileScreen() {
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <View><ThemedText style={styles.sectionTitle}>Student information</ThemedText><ThemedText style={styles.sectionHint}>Keep this current for better quest recommendations.</ThemedText></View>
-              {editing && <TouchableOpacity onPress={saveProfile} disabled={saving} style={styles.saveButton}><ThemedText style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</ThemedText></TouchableOpacity>}
+              {editing && <TouchableOpacity onPress={saveProfile} disabled={saving || Object.keys(fieldErrors).length > 0} style={styles.saveButton}><ThemedText style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</ThemedText></TouchableOpacity>}
             </View>
             {editing && draft ? (
-              <View style={styles.formGrid}>
-                {([
-                  ['student_number', 'Student number'], ['name', 'Full name'], ['course', 'Course'],
-                  ['year_level', 'Year level'], ['section', 'Section'], ['campus', 'Campus'], ['goal', 'Current goal'],
-                ] as const).map(([field, label]) => (
-                  <View key={field}><ThemedText style={styles.fieldLabel}>{label}</ThemedText><TextInput style={styles.profileInput} value={draft[field]} onChangeText={(value) => setDraft((current: StudentProfileUpdates | null) => current ? { ...current, [field]: value } : current)} placeholder={label} placeholderTextColor={COLORS.muted} autoCapitalize={field === 'student_number' ? 'characters' : 'words'} returnKeyType="next" /></View>
-                ))}
-              </View>
+              <StudentInformationFields value={draft} onChange={setDraft} options={enrollment.options} errors={fieldErrors} loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} original={profile ?? undefined} />
             ) : (
               <View style={styles.infoList}>
                 <InfoRow label="Student number" value={profile?.student_number || 'Not provided'} />
