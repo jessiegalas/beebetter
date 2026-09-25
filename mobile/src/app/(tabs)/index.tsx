@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
+import { XpBadge, XpProgress } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { BeeMark } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow, MaxContentWidth, Radii } from '@/constants/theme';
@@ -56,7 +57,7 @@ export default function HomeScreen() {
                 {recommendations.length ? recommendations.map(({ quest, reasons }) => (
                   <View key={quest.id} style={styles.questPreview}>
                     <View style={styles.questCopy}>
-                      <ThemedText style={styles.eyebrow}>{quest.category.toUpperCase()} / +{quest.xp} XP</ThemedText>
+                      <View style={styles.sectionHeading}><ThemedText style={styles.eyebrow}>{quest.category.toUpperCase()}</ThemedText><XpBadge xp={quest.xp} /></View>
                       <ThemedText style={styles.questTitle} numberOfLines={2}>{quest.title}</ThemedText>
                       {!!quest.description && <ThemedText style={styles.body} numberOfLines={2}>{quest.description}</ThemedText>}
                       <ThemedText style={styles.body}>{reasons.slice(0, 2).join(' / ')}</ThemedText>
@@ -77,7 +78,7 @@ export default function HomeScreen() {
                 <View style={styles.sectionHeading}>
                   <View style={styles.copy}>
                     <ThemedText style={[styles.eyebrow, styles.onDarkMuted]}>YOUR PROGRESS</ThemedText>
-                    <ThemedText style={styles.levelTitle}>{user ? `Level ${levelProgress.level}` : 'Small steps start here.'}</ThemedText>
+                    {!user && <ThemedText style={styles.levelTitle}>Small steps start here.</ThemedText>}
                   </View>
                   {user && (
                     <View style={styles.streakBadge}>
@@ -88,10 +89,7 @@ export default function HomeScreen() {
                 </View>
                 {user ? (
                   <>
-                    <ThemedText style={styles.progressText}>{levelProgress.currentLevelXp} / {levelProgress.xpForNextLevel} XP toward Level {levelProgress.level + 1}</ThemedText>
-                    <View style={styles.progressTrack} accessibilityRole="progressbar" accessibilityLabel="Progress to next level" accessibilityValue={{ min: 0, max: 100, now: levelProgress.progressPercent }}>
-                      <View style={[styles.progressFill, { width: `${levelProgress.progressPercent}%` }]} />
-                    </View>
+                    <XpProgress progress={levelProgress} />
                     <ThemedText style={styles.progressText}>{completedQuests.length} quests completed</ThemedText>
                     <OverviewAction label="View profile & achievements" onPress={() => router.push('/profile')} onDark />
                   </>

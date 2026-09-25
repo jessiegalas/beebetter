@@ -33,3 +33,15 @@ export function timestamp(value?: string | null): number | null {
   const time = Date.parse(value);
   return Number.isFinite(time) ? time : null;
 }
+
+/** Inputs have minute precision. Recheck at submission, not just when opening a picker. */
+export function validateQuestDates(scheduled: string | null, deadline: string | null, now = Date.now()): void {
+  const currentMinute = Math.floor(now / 60000) * 60000;
+  for (const [label, value] of [['Scheduled start', scheduled], ['Deadline', deadline]] as const) {
+    if (value === null) continue;
+    const time = timestamp(value);
+    if (time === null) throw new Error(label + ' must be a valid date and time.');
+    if (time < currentMinute) throw new Error(label + ' cannot be in the past. Choose today or a future date and time.');
+  }
+  if (scheduled && deadline && Date.parse(deadline) < Date.parse(scheduled)) throw new Error('The deadline must be on or after the scheduled start.');
+}

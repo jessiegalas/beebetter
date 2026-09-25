@@ -149,4 +149,18 @@ test('nearby filter does not fabricate matches without location', () => {
   assert.equal(recommendedQuests(items).length, 1);
 });
 
+const { validateQuestDates } = load('quest-time');
+test('creation rejects past starts and deadlines and invalid calendar dates', () => {
+  assert.throws(() => validateQuestDates(iso(-1440), null, now), /Scheduled start cannot/);
+  assert.throws(() => validateQuestDates(null, iso(-1), now), /Deadline cannot/);
+  assert.throws(() => validateQuestDates('invalid', null, now), /valid date/);
+  assert.throws(() => parseLocalDateTime('2026-02-30 12:00'), /valid local/);
+});
+test('date validation permits anytime current minute and future with ordered deadline', () => {
+  validateQuestDates(null, null, now);
+  validateQuestDates(iso(0), iso(1), now + 30000);
+  validateQuestDates(iso(60), iso(60), now);
+  assert.throws(() => validateQuestDates(iso(60), iso(30), now), /on or after/);
+  assert.throws(() => validateQuestDates(iso(1), null, now + 120000), /past/);
+});
 console.log(count + ' context-aware tests passed.');

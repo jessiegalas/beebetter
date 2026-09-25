@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
+import { XpProgress, XpBadge } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { BeeMark } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
@@ -152,8 +153,7 @@ export default function ProfileScreen() {
                 <Ionicons name={editing ? 'close' : 'create-outline'} size={18} color={COLORS.ink} />
               </TouchableOpacity>
             </View>
-            <View style={styles.progressHeader}><ThemedText style={styles.progressLabel}>Next level</ThemedText><ThemedText style={styles.progressValue}>{levelProgress.currentLevelXp} / {levelProgress.xpForNextLevel} XP</ThemedText></View>
-            <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${levelProgress.progressPercent}%` }]} /></View>
+            <XpProgress progress={levelProgress} />
           </View>
 
           <View style={styles.badgePreview}>
@@ -211,7 +211,7 @@ export default function ProfileScreen() {
                     Completed {quest.title}
                   </ThemedText>
                   <View style={styles.activityTag}>
-                    <ThemedText style={styles.activityTagText}>+{quest.xp} XP</ThemedText>
+                    <XpBadge xp={quest.xp} />
                   </View>
                 </View>
               ))

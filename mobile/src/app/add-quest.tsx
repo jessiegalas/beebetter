@@ -10,7 +10,7 @@ import { useUserData, type Quest } from '@/hooks/use-user-data';
 import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useLocationContext } from '@/context/location-context';
 import { getQuestIdeas } from '@/lib/quest-suggestions';
-import { formatLocalDateTime, parseLocalDateTime, parsePreferredTime } from '@/lib/quest-time';
+import { formatLocalDateTime, parseLocalDateTime, parsePreferredTime, validateQuestDates } from '@/lib/quest-time';
 
 export default function AddQuestScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -67,7 +67,7 @@ function QuestForm({ quest }: { quest?: Quest }) {
       if (scheduleMode === 'scheduled' && !scheduled_at) throw new Error('Choose a scheduled date and time.');
       if (scheduleMode === 'preferred' && !preferred_time) throw new Error('Choose a preferred time.');
       if (hasDeadline && !deadline_at) throw new Error('Choose a deadline or turn it off.');
-      if (scheduled_at && deadline_at && Date.parse(scheduled_at) > Date.parse(deadline_at)) throw new Error('The deadline must be on or after the scheduled time.');
+      validateQuestDates(scheduled_at, deadline_at);
       savingRef.current = true; setSaving(true);
       const draft = { title: title.trim(), description: description.trim(), category, xp, scheduled_at, preferred_time, deadline_at, importance, location_id: location, is_nearby: !!location, requires_proof: proof, prerequisite_quest_id: prerequisite };
       const result = quest ? await updateQuest(quest.id, draft) : await addQuest(draft);

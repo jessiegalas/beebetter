@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -16,6 +16,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
+import { XpBadge, QuestReward } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { SectionTitle } from '@/components/bee-visuals';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
@@ -43,6 +44,7 @@ const statusCopy: Record<QuestStatus, { label: string; color: string }> = {
 export default function QuestsScreen() {
   const {
     user,
+    levelProgress,
     isLoading,
     isRefreshing,
     error: loadError,
@@ -51,6 +53,10 @@ export default function QuestsScreen() {
     deleteQuest,
   } = useUserData();
   const { categories } = useQuestCategories();
+  const [reward, setReward] = useState<{ title: string; xp: number; previousLevel: number } | null>(null);
+  const completionBusy = useRef(false);
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const dismissReward = () => setReward(null);
   const { questId } = useLocalSearchParams<{ questId?: string }>();
   const closeDetails = () => router.setParams({ questId: '' });
   const { ranked, locationAvailable, now } = useQuestPriority();
@@ -85,9 +91,15 @@ export default function QuestsScreen() {
 
   const handleComplete = async (quest: Quest, proof?: ProofFile) => {
 
+    if (completionBusy.current || quest.status === 'completed') return;
+    completionBusy.current = true;
+    setCompletingId(quest.id);
+    const previousLevel = levelProgress.level;
     const result = await completeQuest(quest.id, proof);
+    completionBusy.current = false;
+    setCompletingId(null);
     if (result.success) {
-      Alert.alert('Quest complete!', `+${quest.xp} XP earned. Keep the momentum going.`);
+      setReward({ title: quest.title, xp: quest.xp, previousLevel });
     } else {
       Alert.alert('Could not complete quest', result.error || 'Please try again.');
     }
@@ -95,6 +107,9 @@ export default function QuestsScreen() {
 
   return (
     <View style={styles.container}>
+      <Modal visible={!!reward && !questId} transparent animationType="fade" onRequestClose={dismissReward}>
+        <View style={styles.rewardBackdrop}><ScrollView contentContainerStyle={styles.rewardContent}>{reward && <QuestReward {...reward} progress={levelProgress} onClose={dismissReward} />}</ScrollView></View>
+      </Modal>
       <Modal visible={filtersOpen} transparent animationType="slide" onRequestClose={() => setFiltersOpen(false)}>
         <View style={styles.sheetBackdrop}>
           <SafeAreaView style={styles.filterSheet} edges={['bottom']} accessibilityViewIsModal>
@@ -126,12 +141,13 @@ export default function QuestsScreen() {
           </SafeAreaView>
         </View>
       </Modal>
-      <Modal visible={!!questId} animationType="slide" onRequestClose={closeDetails}>
+      <Modal visible={!!questId} animationType="slide" onRequestClose={reward ? dismissReward : closeDetails}>
         <SafeAreaView style={styles.container}>
           <ScrollView contentContainerStyle={styles.content}>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close quest details" onPress={closeDetails} style={{ minHeight: 44, justifyContent: 'center' }}><ThemedText>Close details</ThemedText></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close quest details" onPress={() => { dismissReward(); closeDetails(); }} style={{ minHeight: 44, justifyContent: 'center' }}><ThemedText>Close details</ThemedText></TouchableOpacity>
             <SectionTitle title="Quest details" />
-            {selected ? <QuestCard key={selected.quest.id} quest={selected.quest} reasons={selected.reasons} nearby={selected.nearby} details onEdit={() => { closeDetails(); router.push({ pathname: '/add-quest', params: { id: selected.quest.id } }); }} onComplete={proof => void handleComplete(selected.quest, proof)} onDelete={() => handleConfirmDelete(selected.quest)} /> : <ThemedText>{isLoading ? 'Loading quest...' : 'This quest is no longer available.'}</ThemedText>}
+            {reward && <QuestReward {...reward} progress={levelProgress} onClose={dismissReward} />}
+            {!reward && (selected ? <QuestCard key={selected.quest.id} quest={selected.quest} completing={completingId === selected.quest.id} reasons={selected.reasons} nearby={selected.nearby} details onEdit={() => { closeDetails(); router.push({ pathname: '/add-quest', params: { id: selected.quest.id } }); }} onComplete={proof => void handleComplete(selected.quest, proof)} onDelete={() => handleConfirmDelete(selected.quest)} /> : <ThemedText>{isLoading ? 'Loading quest...' : 'This quest is no longer available.'}</ThemedText>)}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -202,6 +218,7 @@ export default function QuestsScreen() {
               <QuestCard
                 key={item.quest.id}
                 quest={item.quest}
+                completing={completingId === item.quest.id}
                 reasons={item.reasons}
                 priority={view === 'context' ? index + 1 : undefined}
                 nearby={item.nearby}
@@ -235,6 +252,7 @@ function QuestCard({
   nearby = false,
   onOpen,
   details = false,
+  completing = false,
   onEdit,
   onComplete,
   onDelete,
@@ -245,6 +263,7 @@ function QuestCard({
   nearby?: boolean;
   onOpen?: () => void;
   details?: boolean;
+  completing?: boolean;
   onEdit?: () => void;
   onComplete: (proof?: ProofFile) => void;
   onDelete: () => void;
@@ -330,7 +349,7 @@ function QuestCard({
 
       {/* Action Buttons */}
       <View style={styles.questActions}>
-        {onOpen ? <TouchableOpacity style={[styles.filterPill, styles.filterPillActive]} accessibilityRole="button" onPress={onOpen}><ThemedText style={styles.filterTextActive}>View quest / +{quest.xp} XP</ThemedText></TouchableOpacity> : !isCompleted ? (
+        {onOpen ? <TouchableOpacity style={styles.rewardAction} accessibilityRole="button" onPress={onOpen}><ThemedText style={styles.filterTextActive}>View quest</ThemedText><XpBadge xp={quest.xp} /></TouchableOpacity> : !isCompleted ? (
           <>
             {quest.requires_proof && (
               <View style={styles.proofActions}>
@@ -358,22 +377,24 @@ function QuestCard({
               <TouchableOpacity
                 style={[styles.proofSubmitButton, !proof && styles.xpBadgeDisabled]}
                 onPress={() => onComplete(proof)}
-                disabled={!proof}
+                disabled={!proof || completing}
                 activeOpacity={0.7}
                 accessibilityLabel={`Submit proof and complete quest for ${quest.xp} XP`}>
                 <Ionicons name="cloud-upload-outline" size={14} color={COLORS.ink} />
                 <ThemedText style={styles.proofSubmitText}>
-                  {proof ? 'Submit proof' : 'Choose proof'}
+                  {completing ? 'Submitting...' : proof ? 'Submit proof' : 'Choose proof'}
                 </ThemedText>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={styles.xpBadge}
+                style={styles.rewardAction}
+                accessibilityRole="button"
+                disabled={completing}
+                accessibilityState={{ busy: completing, disabled: completing }}
                 onPress={() => onComplete()}
                 activeOpacity={0.7}
                 accessibilityLabel={`Complete quest and earn ${quest.xp} XP`}>
-                <ThemedText style={styles.xpText}>+{quest.xp}</ThemedText>
-                <ThemedText style={styles.xpUnit}>XP</ThemedText>
+                <Ionicons name="checkmark-circle-outline" size={20} color={COLORS.honeyDeep} /><ThemedText style={styles.filterTextActive}>{completing ? 'Completing...' : 'Complete quest'}</ThemedText><XpBadge xp={quest.xp} />
               </TouchableOpacity>
             )}
 
@@ -433,6 +454,9 @@ function EmptyState({
 }
 
 const styles = StyleSheet.create({
+  rewardBackdrop: { flex: 1, backgroundColor: 'rgba(45,36,29,0.45)' },
+  rewardContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  rewardAction: { minHeight: 48, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: COLORS.honeySoft, borderRadius: Radii.md, padding: 10 },
   sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(45,36,29,0.35)' },
   filterSheet: { maxHeight: '90%', width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: COLORS.background, borderTopLeftRadius: Radii.xl, borderTopRightRadius: Radii.xl, paddingHorizontal: 20, paddingTop: 12 },
   sheetContent: { gap: 18, paddingVertical: 12 },
