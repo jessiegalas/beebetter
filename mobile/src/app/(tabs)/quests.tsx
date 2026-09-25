@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Alert,
   RefreshControl,
   StyleSheet,
@@ -11,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -48,7 +49,10 @@ export default function QuestsScreen() {
     completeQuest,
     deleteQuest,
   } = useUserData();
+  const { questId } = useLocalSearchParams<{ questId?: string }>();
+  const closeDetails = () => router.setParams({ questId: '' });
   const { ranked, locationAvailable } = useQuestPriority();
+  const selected = ranked.find(item => item.quest.id === questId);
   const [view, setView] = useState<'context' | 'all'>('context');
 
   const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]>('All');
@@ -93,6 +97,15 @@ export default function QuestsScreen() {
 
   return (
     <View style={styles.container}>
+      <Modal visible={!!questId} animationType="slide" onRequestClose={closeDetails}>
+        <SafeAreaView style={styles.container}>
+          <ScrollView contentContainerStyle={styles.content}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close quest details" onPress={closeDetails} style={{ minHeight: 44, justifyContent: 'center' }}><ThemedText>Close details</ThemedText></TouchableOpacity>
+            <SectionTitle title="Quest details" />
+            {selected ? <QuestCard key={selected.quest.id} quest={selected.quest} reasons={selected.reasons} details onEdit={() => { closeDetails(); router.push({ pathname: '/add-quest', params: { id: selected.quest.id } }); }} onComplete={proof => void handleComplete(selected.quest, proof)} onDelete={() => handleConfirmDelete(selected.quest)} /> : <ThemedText>{isLoading ? 'Loading quest...' : 'This quest is no longer available.'}</ThemedText>}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           contentContainerStyle={styles.content}
@@ -126,7 +139,7 @@ export default function QuestsScreen() {
               <ThemedText style={styles.summaryLabel}>YOUR NEXT WIN</ThemedText>
               <ThemedText style={styles.summaryTitle}>
                 {isAuthenticated
-                  ? `${visibleQuests.filter((q) => q.status === 'active').length} active Ã‚Â· ${availableXp} XP ready`
+                  ? `${visibleQuests.filter((q) => q.status === 'active').length} active \u00b7 ${availableXp} XP ready`
                   : 'Create an account to save progress'}
               </ThemedText>
             </View>
@@ -241,12 +254,16 @@ function QuestCard({
   quest,
   reasons,
   heading,
+  details = false,
+  onEdit,
   onComplete,
   onDelete,
 }: {
   quest: Quest;
   reasons: string[];
   heading?: string;
+  details?: boolean;
+  onEdit?: () => void;
   onComplete: (proof?: ProofFile) => void;
   onDelete: () => void;
 }) {
@@ -301,17 +318,17 @@ function QuestCard({
         <View style={styles.titleRow}>
           <ThemedText
             style={[styles.questTitle, isCompleted && styles.completedQuestTitle]}
-            numberOfLines={1}>
+            numberOfLines={details ? undefined : 1}>
             {quest.title}
           </ThemedText>
           {quest.is_nearby && <Ionicons name="location" size={13} color={COLORS.honeyDark} />}
         </View>
 
-        <ThemedText style={styles.questSubtitle} numberOfLines={2}>
+        <ThemedText style={styles.questSubtitle} numberOfLines={details ? undefined : 2}>
           {quest.description || `${quest.category} quest`}
         </ThemedText>
 
-        {!isCompleted && <ThemedText style={styles.reasonText}>{reasons.join(' Â· ')}</ThemedText>}
+        {!isCompleted && <ThemedText style={styles.reasonText}>{reasons.join(' \u00b7 ')}</ThemedText>}
         {(quest.scheduled_at || quest.preferred_time || quest.deadline_at) && (
           <ThemedText style={styles.questSubtitle}>
             {[
@@ -377,7 +394,7 @@ function QuestCard({
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={styles.deleteIconButton} accessibilityRole="button" accessibilityLabel={`Edit ${quest.title}`} onPress={() => router.push({ pathname: '/add-quest', params: { id: quest.id } })}>
+            <TouchableOpacity style={styles.deleteIconButton} accessibilityRole="button" accessibilityLabel={`Edit ${quest.title}`} onPress={onEdit ?? (() => router.push({ pathname: '/add-quest', params: { id: quest.id } }))}>
               <Ionicons name="create-outline" size={20} color={COLORS.muted} />
             </TouchableOpacity>
             <TouchableOpacity

@@ -294,7 +294,7 @@ export default function AddQuestScreen() {
                   <ThemedText style={styles.placeHint}>Your saved place is inactive or unavailable. Choose another place or turn off the place preference.</ThemedText>
                 )}
                 <TouchableOpacity onPress={() => router.push('/manage-locations')} accessibilityRole="button">
-                  <ThemedText style={styles.placeHint}>Manage saved places â†’</ThemedText>
+                  <ThemedText style={styles.placeHint}>Manage saved places</ThemedText>
                 </TouchableOpacity>
                 {activeLocations.length === 0 ? (
                   <ThemedText style={styles.placeHint}>Add an active place in My Places first.</ThemedText>
