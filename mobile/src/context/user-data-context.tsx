@@ -10,7 +10,7 @@ import {
   scheduleQuestNotifications,
 } from '@/lib/quest-notifications';
 
-export type Category = 'Academics' | 'Habits' | 'Social' | 'Health';
+export type Category = string;
 export type QuestStatus = 'active' | 'completed' | 'rejected' | 'pending';
 
 export type QuestContextFields = {

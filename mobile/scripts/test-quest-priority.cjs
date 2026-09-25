@@ -111,4 +111,42 @@ test('invalid dates and times are rejected', () => {
   assert.throws(() => parsePreferredTime('25:00'));
   assert.equal(parsePreferredTime('00:00'), '00:00');
 });
+
+const { DEFAULT_FILTERS, activeFilterCount, filterAllQuests, recommendedQuests } = load('quest-discovery');
+test('discovery filters never affect recommended order or mutate ranking', () => {
+  const items = rank([quest('due', { deadline_at: iso(15) }), quest('health', { category: 'Health' }), quest('done', { status: 'completed' })]);
+  const before = items.map(item => item.quest.id);
+  assert.deepEqual(filterAllQuests(items, { ...DEFAULT_FILTERS, category: 'Health' }, now).map(item => item.quest.id), ['health']);
+  assert.deepEqual(recommendedQuests(items).map(item => item.quest.id), ['due', 'health']);
+  assert.deepEqual(items.map(item => item.quest.id), before);
+});
+test('all quests includes history and combines category status and proximity', () => {
+  const items = rank([quest('done', { status: 'completed', category: 'Health', location_id: 'place' }), quest('active'), quest('pending', { status: 'pending' })]);
+  assert.equal(filterAllQuests(items, DEFAULT_FILTERS, now).length, 3);
+  const filters = { ...DEFAULT_FILTERS, category: 'Health', status: 'completed', nearby: true };
+  assert.deepEqual(filterAllQuests(items, filters, now).map(item => item.quest.id), ['done']);
+  assert.equal(activeFilterCount(filters), 3);
+  assert.equal(activeFilterCount(DEFAULT_FILTERS), 0);
+});
+test('recommendations omit review history and waiting prerequisites', () => {
+  const items = rank([quest('waiting', { prerequisite_quest_id: 'missing', deadline_at: iso(-1) }), quest('pending', { status: 'pending' }), quest('done', { status: 'completed' }), quest('ready', { prerequisite_quest_id: 'done' }), quest('revision', { status: 'rejected' })]);
+  assert.deepEqual(new Set(recommendedQuests(items).map(item => item.quest.id)), new Set(['ready', 'revision']));
+});
+test('time filters handle local today preferred times missing and invalid dates', () => {
+  const items = rank([quest('today', { scheduled_at: iso(0) }), quest('daily', { preferred_time: '23:00' }), quest('future', { deadline_at: iso(2880) }), quest('none'), quest('invalid', { scheduled_at: 'invalid' })]);
+  const ids = time => filterAllQuests(items, { ...DEFAULT_FILTERS, time }, now).map(item => item.quest.id).sort();
+  assert.deepEqual(ids('today'), ['daily', 'today']);
+  assert.deepEqual(ids('scheduled'), ['daily', 'future', 'today']);
+  assert.deepEqual(ids('anytime'), ['invalid', 'none']);
+});
+test('overdue excludes completed and pending quests', () => {
+  const items = rank(['active', 'rejected', 'completed', 'pending'].map(status => quest(status, { status, deadline_at: iso(-1) })));
+  assert.deepEqual(filterAllQuests(items, { ...DEFAULT_FILTERS, time: 'overdue' }, now).map(item => item.quest.id).sort(), ['active', 'rejected']);
+});
+test('nearby filter does not fabricate matches without location', () => {
+  const items = rank([quest('q', { location_id: 'place', is_nearby: true })], { coords: null });
+  assert.equal(filterAllQuests(items, { ...DEFAULT_FILTERS, nearby: true }, now).length, 0);
+  assert.equal(recommendedQuests(items).length, 1);
+});
+
 console.log(count + ' context-aware tests passed.');

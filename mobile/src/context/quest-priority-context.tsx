@@ -5,7 +5,7 @@ import { useLocationContext } from './location-context';
 import { hasFreshPosition, prioritizeQuests, type RankedQuest } from '@/lib/quest-priority';
 import { readGeofenceEvents, subscribeGeofenceEvents, type GeofenceEvents } from '@/lib/geofence-events';
 
-const QuestPriorityContext = createContext<{ ranked: RankedQuest[]; locationAvailable: boolean } | null>(null);
+const QuestPriorityContext = createContext<{ ranked: RankedQuest[]; locationAvailable: boolean; now: number } | null>(null);
 
 export function QuestPriorityProvider({ children }: { children: ReactNode }) {
   const { quests, completionHistory } = useUserData();
@@ -31,6 +31,7 @@ export function QuestPriorityProvider({ children }: { children: ReactNode }) {
   }), [now, coords, permissionStatus, locationUpdatedAt, locations, completionHistory, geofenceEvents]);
   const value = useMemo(() => ({
     ranked: prioritizeQuests(quests, context),
+    now: context.now,
     locationAvailable: hasFreshPosition(context),
   }), [quests, context]);
   return <QuestPriorityContext.Provider value={value}>{children}</QuestPriorityContext.Provider>;

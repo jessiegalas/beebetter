@@ -1,441 +1,200 @@
-import { useState } from 'react';
-import {
-  ActivityIndicator,
-  StyleSheet,
-  View,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Switch,
-} from 'react-native';
+import { useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-
 import { ThemedText } from '@/components/themed-text';
-import { VisualTile } from '@/components/bee-visuals';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
-import { useUserData, Category } from '@/hooks/use-user-data';
-import { getQuestIdeas, SuggestedQuest } from '@/lib/quest-suggestions';
+import { QuestTimeInput } from '@/components/quest-time-input';
+import { BeeBetterColors as C, MaxContentWidth } from '@/constants/theme';
+import { useUserData, type Quest } from '@/hooks/use-user-data';
+import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useLocationContext } from '@/context/location-context';
-
-import type { QuestDraft } from '@/context/user-data-context';
+import { getQuestIdeas } from '@/lib/quest-suggestions';
 import { formatLocalDateTime, parseLocalDateTime, parsePreferredTime } from '@/lib/quest-time';
 
-const categories: Category[] = ['Academics', 'Habits', 'Social', 'Health'];
-
 export default function AddQuestScreen() {
-  const { user, addQuest, updateQuest, quests } = useUserData();
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const editingQuest = quests.find(quest => quest.id === id);
-  const isEditing = Boolean(id);
-  const { activeLocations } = useLocationContext();
-  const [mode, setMode] = useState<'templates' | 'custom'>(id ? 'custom' : 'templates');
-  const [customTitle, setCustomTitle] = useState(editingQuest?.title ?? '');
-  const [customDesc, setCustomDesc] = useState(editingQuest?.description ?? '');
-  const [category, setCategory] = useState<Category>(editingQuest?.category ?? 'Habits');
-  const [isNearby, setIsNearby] = useState(Boolean(editingQuest?.location_id));
-  const [locationId, setLocationId] = useState<string | null>(editingQuest?.location_id ?? null);
+  const { quests, isLoading, error, refresh } = useUserData();
+  const quest = quests.find(item => item.id === id);
+  if (id && (isLoading || !quest || quest.status === 'completed')) return <SafeAreaView style={s.screen}><View style={s.content}>
+    <Button label="Back" onPress={() => router.back()} />
+    {isLoading ? <ActivityIndicator color={C.honeyDark} /> : <ThemedText>{error ? 'Could not load quest.' : 'This quest is no longer available to edit.'}</ThemedText>}
+    {!!error && <Button label="Try again" onPress={() => void refresh()} />}
+  </View></SafeAreaView>;
+  // Mount only after saved data is available; background refreshes must not overwrite edits.
+  return <QuestForm key={id ?? 'new'} quest={quest} />;
+}
+function QuestForm({ quest }: { quest?: Quest }) {
+  const { user, quests, addQuest, updateQuest } = useUserData();
+  const { activeLocations, isLoadingLocations } = useLocationContext();
+  const { categories, loading, error, refresh, createCategory } = useQuestCategories();
+  const [title, setTitle] = useState(quest?.title ?? '');
+  const [description, setDescription] = useState(quest?.description ?? '');
+  const [category, setCategory] = useState(quest?.category ?? '');
+  const [xp, setXp] = useState(quest?.xp ?? 25);
+  const [mode, setMode] = useState<'custom' | 'templates'>('custom');
+  const [scheduleMode, setScheduleMode] = useState<'anytime' | 'scheduled' | 'preferred'>(quest?.scheduled_at ? 'scheduled' : quest?.preferred_time ? 'preferred' : 'anytime');
+  const [scheduled, setScheduled] = useState(formatLocalDateTime(quest?.scheduled_at));
+  const [preferred, setPreferred] = useState(quest?.preferred_time?.slice(0, 5) ?? '');
+  const [deadline, setDeadline] = useState(formatLocalDateTime(quest?.deadline_at));
+  const [hasDeadline, setHasDeadline] = useState(!!quest?.deadline_at);
+  const [importance, setImportance] = useState(quest?.importance ?? 'normal');
+  const [location, setLocation] = useState<string | null>(quest?.location_id ?? null);
+  const [proof, setProof] = useState(quest?.requires_proof ?? false);
+  const [prerequisite, setPrerequisite] = useState<string | null>(quest?.prerequisite_quest_id ?? null);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [savingTemplateId, setSavingTemplateId] = useState<string | number | null>(null);
-  const [requiresProof, setRequiresProof] = useState(editingQuest?.requires_proof ?? false);
-  const [scheduledAt, setScheduledAt] = useState(formatLocalDateTime(editingQuest?.scheduled_at));
-  const [preferredTime, setPreferredTime] = useState(editingQuest?.preferred_time?.slice(0, 5) ?? '');
-  const [deadlineAt, setDeadlineAt] = useState(formatLocalDateTime(editingQuest?.deadline_at));
-  const [importance, setImportance] = useState<NonNullable<QuestDraft['importance']>>(editingQuest?.importance ?? 'normal');
-  const [prerequisiteId, setPrerequisiteId] = useState<string | null>(editingQuest?.prerequisite_quest_id ?? null);
-  const [showContext, setShowContext] = useState(isEditing);
-  const prerequisiteOptions = quests.filter(quest => {
-    if (quest.id === id) return false;
-    const visited = new Set<string>();
-    let current: typeof quest | undefined = quest;
-    while (current) {
-      if (current.id === id || visited.has(current.id)) return false;
-      visited.add(current.id);
-      current = quests.find(candidate => candidate.id === current?.prerequisite_quest_id);
-    }
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const prerequisiteOptions = quests.filter(item => {
+    const seen = new Set<string>(); let current: Quest | undefined = item;
+    while (current) { if (current.id === quest?.id || seen.has(current.id)) return false; seen.add(current.id); current = quests.find(q => q.id === current?.prerequisite_quest_id); }
     return true;
   });
-
-  const questIdeas = getQuestIdeas();
-
-  const saveQuest = async (quest: QuestDraft | SuggestedQuest, templateId?: string | number) => {
-    if (!quest.title.trim()) {
-      setFeedback('Give your quest a title first.');
-      return;
-    }
-
-    if (!user) {
-      setFeedback('Sign in first so this quest can be saved to your account.');
-      router.push('/auth');
-      return;
-    }
-
-    const draftLocationId = 'location_id' in quest ? quest.location_id : null;
-    const selectedLocationId = quest.is_nearby ? draftLocationId ?? locationId : null;
-
-    if (quest.is_nearby && !selectedLocationId) {
-      setFeedback('Choose a saved place for this nearby quest.');
-      return;
-    }
-
+  const save = async () => {
+    if (savingRef.current) return;
     setFeedback(null);
-    setIsSaving(true);
-    setSavingTemplateId(templateId ?? null);
-
     try {
-      const draft: QuestDraft = {
-        title: quest.title.trim(),
-        description: quest.description?.trim() || undefined,
-        category: quest.category,
-        xp: quest.xp,
-        is_nearby: quest.is_nearby ?? false,
-        location_id: selectedLocationId,
-        requires_proof: (quest as QuestDraft).requires_proof ?? false,
-        ...('importance' in quest ? {
-          scheduled_at: quest.scheduled_at, preferred_time: quest.preferred_time,
-          deadline_at: quest.deadline_at, importance: quest.importance,
-          prerequisite_quest_id: quest.prerequisite_quest_id,
-        } : {}),
-      };
-      const result = isEditing && id ? await updateQuest(id, draft) : await addQuest(draft);
-
-      if (!result.success) {
-        setFeedback(result.error || 'Failed to save quest. Please try again.');
-        return;
-      }
-
+      if (!user) throw new Error('Sign in to save your quest.');
+      if (!title.trim()) throw new Error('Give your quest a name.');
+      if (!category || !categories.some(c => c.name === category)) throw new Error('Choose an available category.');
+      const scheduled_at = scheduleMode === 'scheduled' ? parseLocalDateTime(scheduled) : null;
+      const preferred_time = scheduleMode === 'preferred' ? parsePreferredTime(preferred) : null;
+      const deadline_at = hasDeadline ? parseLocalDateTime(deadline) : null;
+      if (scheduleMode === 'scheduled' && !scheduled_at) throw new Error('Choose a scheduled date and time.');
+      if (scheduleMode === 'preferred' && !preferred_time) throw new Error('Choose a preferred time.');
+      if (hasDeadline && !deadline_at) throw new Error('Choose a deadline or turn it off.');
+      if (scheduled_at && deadline_at && Date.parse(scheduled_at) > Date.parse(deadline_at)) throw new Error('The deadline must be on or after the scheduled time.');
+      savingRef.current = true; setSaving(true);
+      const draft = { title: title.trim(), description: description.trim(), category, xp, scheduled_at, preferred_time, deadline_at, importance, location_id: location, is_nearby: !!location, requires_proof: proof, prerequisite_quest_id: prerequisite };
+      const result = quest ? await updateQuest(quest.id, draft) : await addQuest(draft);
+      if (!result.success) throw new Error(result.error || 'Could not save quest. Please try again.');
       router.back();
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : 'Quest could not be saved. Please try again.');
-    } finally {
-      setIsSaving(false);
-      setSavingTemplateId(null);
-    }
+    } catch (failure) { setFeedback(failure instanceof Error ? failure.message : 'Could not save quest. Please try again.'); }
+    finally { savingRef.current = false; setSaving(false); }
   };
-
-  const createCustomQuest = () => {
-    try {
-      if (isEditing && (!editingQuest || editingQuest.status === 'completed')) {
-        setFeedback('This quest is no longer available to edit.');
-        return;
-      }
-      const scheduled = parseLocalDateTime(scheduledAt);
-      const preferred = parsePreferredTime(preferredTime);
-      const deadline = parseLocalDateTime(deadlineAt);
-      if (scheduled && preferred) throw new Error('Choose a scheduled date or a preferred time, or leave both blank.');
-      if (scheduled && deadline && Date.parse(scheduled) > Date.parse(deadline)) {
-        throw new Error('The deadline must be on or after the scheduled time.');
-      }
-      void saveQuest({
-        title: customTitle, description: customDesc, category, xp: editingQuest?.xp ?? 25,
-        is_nearby: isNearby, location_id: isNearby ? locationId : null, requires_proof: requiresProof,
-        scheduled_at: scheduled, preferred_time: preferred, deadline_at: deadline,
-        importance, prerequisite_quest_id: prerequisiteId,
-      });
-    } catch (error) { setFeedback(error instanceof Error ? error.message : 'Check your quest details.'); }
+  const addCategory = async () => {
+    if (creatingCategory) return;
+    setCreatingCategory(true); setCategoryError(null);
+    try { const created = await createCategory(newCategory); setCategory(created.name); setNewCategory(''); setCategoryOpen(false); }
+    catch (failure) { setCategoryError(failure instanceof Error ? failure.message : 'Could not create category.'); }
+    finally { setCreatingCategory(false); }
   };
-
-  return (
-    <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <ThemedText style={styles.headerTitle}>{isEditing ? 'Edit quest' : 'New quest'}</ThemedText>
-            <ThemedText style={styles.headerSubtitle}>Make a small promise to yourself.</ThemedText>
+  return <SafeAreaView style={s.screen}>
+    <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <View style={s.header}><View style={s.flex}><ThemedText style={s.heading}>{quest ? 'Edit quest' : 'New quest'}</ThemedText><ThemedText style={s.hint}>Make a small promise to yourself.</ThemedText></View><TouchableOpacity style={s.iconButton} accessibilityRole="button" accessibilityLabel="Close quest form" onPress={() => router.back()}><Ionicons name="close" size={22} color={C.ink} /></TouchableOpacity></View>
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        {!quest && <View style={s.row}><Choice label="Quick start" selected={mode === 'templates'} onPress={() => setMode('templates')} /><Choice label="Custom" selected={mode === 'custom'} onPress={() => setMode('custom')} /></View>}
+        <View style={s.intro}><ThemedText style={s.label}>A little win is waiting.</ThemedText><ThemedText style={s.hint}>Pick something useful, doable, and yours.</ThemedText></View>
+        {mode === 'templates' ? <>
+          <ThemedText style={s.hint}>Choose an idea, then make it your own.</ThemedText>
+          {getQuestIdeas().map(idea => <TouchableOpacity key={idea.id} style={s.option} accessibilityRole="button" onPress={() => { setTitle(idea.title); setDescription(idea.description ?? ''); setCategory(categories.find(c => c.name === idea.category)?.name ?? ''); setXp(idea.xp); setMode('custom'); }}><Ionicons name={idea.icon} size={20} color={C.honeyDark} /><ThemedText style={[s.label, s.flex]}>{idea.title}</ThemedText><ThemedText style={s.hint}>+{idea.xp} XP</ThemedText></TouchableOpacity>)}
+        </> : <>
+          <ThemedText style={s.sectionTitle}>Quest details</ThemedText>
+          <ThemedText style={s.label}>Quest name</ThemedText>
+          <TextInput accessibilityLabel="Quest name" style={s.input} placeholder="e.g. Review my notes" placeholderTextColor={C.muted} value={title} onChangeText={setTitle} maxLength={100} />
+          <ThemedText style={s.label}>Description (optional)</ThemedText>
+          <TextInput accessibilityLabel="Description, optional" style={[s.input, s.textArea]} placeholder="What would you like to accomplish?" placeholderTextColor={C.muted} value={description} onChangeText={setDescription} multiline textAlignVertical="top" />
+          <ThemedText style={s.label}>Category</ThemedText>
+          <TouchableOpacity style={s.option} accessibilityRole="button" accessibilityLabel="Choose category" onPress={() => setCategoryOpen(true)}><ThemedText style={[s.label, s.flex]}>{category || 'Choose a category'}</ThemedText><Ionicons name="chevron-down" size={18} color={C.muted} /></TouchableOpacity>
+          <Button label="Create new category" onPress={() => setCategoryOpen(true)} />
+          {!!error && <View><ThemedText style={s.error}>{error}</ThemedText><Button label="Reload categories" onPress={() => void refresh()} /></View>}
+          <View style={s.divider} />
+          <ThemedText style={s.sectionTitle}>Optional settings</ThemedText>
+          <ThemedText style={s.hint}>Customize how and when your quest fits into your day.</ThemedText>
+          <View style={s.sections}>
+            <Section title="Timing & schedule" icon="time-outline" summary={scheduleMode === 'anytime' ? 'Anytime' : scheduleMode === 'scheduled' ? scheduled || 'Choose a date and time' : preferred ? 'Preferred at ' + preferred : 'Choose a preferred time'}>
+              <View style={s.row}>{(['anytime', 'scheduled', 'preferred'] as const).map(value => <Choice key={value} label={value === 'anytime' ? 'Anytime' : value === 'scheduled' ? 'Scheduled' : 'Preferred time'} selected={scheduleMode === value} onPress={() => setScheduleMode(value)} />)}</View>
+              {scheduleMode === 'scheduled' && <QuestTimeInput label="Scheduled date & time" value={scheduled} onChange={setScheduled} />}
+              {scheduleMode === 'preferred' && <><QuestTimeInput label="Preferred time of day" timeOnly value={preferred} onChange={setPreferred} /><ThemedText style={s.hint}>A preferred time does not repeat a completed quest.</ThemedText></>}
+            </Section>
+            <Section title="Location & geofencing" icon="location-outline" summary={location ? activeLocations.find(p => p.id === location)?.name ?? 'Saved area unavailable' : 'No location attached'}>
+              <Choice label="No location requirement" selected={!location} onPress={() => setLocation(null)} />
+              {activeLocations.map(place => <Choice key={place.id} label={place.name} selected={location === place.id} onPress={() => setLocation(place.id)} />)}
+              {isLoadingLocations && <ActivityIndicator color={C.honeyDark} />}
+              {!isLoadingLocations && !activeLocations.length && <ThemedText style={s.hint}>No active saved areas yet. Add one in location management.</ThemedText>}
+              {!!location && !activeLocations.some(p => p.id === location) && <ThemedText style={s.hint}>The attached area is inactive or unavailable. Keep it, choose another, or remove the preference.</ThemedText>}
+              <Button label="Manage saved areas" onPress={() => router.push('/manage-locations')} />
+            </Section>
+            <Section title="Deadline & importance" icon="flag-outline" summary={(hasDeadline ? deadline || 'Deadline needed' : 'No deadline') + ' / ' + importance + ' importance'}>
+              <View style={s.between}><ThemedText style={s.label}>Set a deadline</ThemedText><Switch accessibilityLabel="Set a deadline" value={hasDeadline} onValueChange={setHasDeadline} trackColor={{ true: C.honey }} /></View>
+              {hasDeadline && <QuestTimeInput label="Deadline" value={deadline} onChange={setDeadline} />}
+              <ThemedText style={s.label}>Importance</ThemedText>
+              <View style={s.row}>{(['low', 'normal', 'high'] as const).map(value => <Choice key={value} label={value[0].toUpperCase() + value.slice(1)} selected={importance === value} onPress={() => setImportance(value)} />)}</View>
+            </Section>
+            <Section title="Proof of completion" icon="camera-outline" summary={proof ? 'Proof required when completing' : 'No proof required'}>
+              <View style={s.between}><ThemedText style={[s.label, s.flex]}>Require proof</ThemedText><Switch accessibilityLabel="Require proof of completion" value={proof} onValueChange={setProof} trackColor={{ true: C.honey }} /></View>
+              <ThemedText style={s.hint}>Attach an image, video, or file when completing this quest.</ThemedText>
+            </Section>
+            <Section title="Do after" icon="git-branch-outline" summary={prerequisite ? quests.find(q => q.id === prerequisite)?.title ?? 'Saved prerequisite unavailable' : 'No prerequisite'}>
+              <Choice label="No prerequisite" selected={!prerequisite} onPress={() => setPrerequisite(null)} />
+              {prerequisiteOptions.map(q => <Choice key={q.id} label={q.title} selected={prerequisite === q.id} onPress={() => setPrerequisite(q.id)} />)}
+            </Section>
           </View>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <Ionicons name="close" size={20} color={COLORS.ink} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Mode Toggle */}
-        {!isEditing && <View style={styles.toggleRow}>
-          <TouchableOpacity
-            style={[styles.toggleButton, mode === 'templates' && styles.toggleButtonActive]}
-            onPress={() => {
-              setMode('templates');
-              setFeedback(null);
-            }}>
-            <ThemedText style={[styles.toggleText, mode === 'templates' && styles.toggleTextActive]}>
-              Quick start
-            </ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleButton, mode === 'custom' && styles.toggleButtonActive]}
-            onPress={() => {
-              setMode('custom');
-              setFeedback(null);
-            }}>
-            <ThemedText style={[styles.toggleText, mode === 'custom' && styles.toggleTextActive]}>
-              Custom
-            </ThemedText>
-          </TouchableOpacity>
-        </View>}
-
-        <View style={styles.sheetIntro}>
-          <View style={styles.sheetIntroIcon}><Ionicons name="sparkles" size={22} color={COLORS.honeyDeep} /></View>
-          <View style={styles.sheetIntroCopy}><ThemedText style={styles.sheetIntroTitle}>A little win is waiting.</ThemedText><ThemedText style={styles.sheetIntroText}>Pick something that feels useful, doable, and yours.</ThemedText></View>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRail}>
-          <VisualTile icon="book-outline" label="Learn" color={COLORS.lavender} onPress={() => setCategory('Academics')} />
-          <VisualTile icon="leaf-outline" label="Habits" color={COLORS.honeySoft} onPress={() => setCategory('Habits')} />
-          <VisualTile icon="people-outline" label="Connect" color={COLORS.peach} onPress={() => setCategory('Social')} />
-          <VisualTile icon="heart-outline" label="Health" color={COLORS.mint} onPress={() => setCategory('Health')} />
-        </ScrollView>
-
-        {feedback && <ThemedText style={styles.feedback}>{feedback}</ThemedText>}
-
-        {mode === 'templates' ? (
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <ThemedText style={styles.sectionLabel}>QUICK-START IDEAS</ThemedText>
-            {questIdeas.map((template) => (
-              <TouchableOpacity
-                key={template.id}
-                style={styles.templateCard}
-                onPress={() => saveQuest(template, template.id)}
-                disabled={isSaving}
-                activeOpacity={0.78}>
-                <View style={styles.iconWrap}>
-                  {savingTemplateId === template.id ? (
-                    <ActivityIndicator color={COLORS.honeyDark} />
-                  ) : (
-                    <Ionicons name={template.icon} size={20} color={COLORS.honeyDark} />
-                  )}
-                </View>
-                <View style={styles.templateInfo}>
-                  <View style={styles.templateTitleRow}>
-                    <ThemedText style={styles.templateTitle}>{template.title}</ThemedText>
-                    {template.is_nearby && (
-                      <Ionicons name="location" size={12} color={COLORS.honeyDark} />
-                    )}
-                  </View>
-                  <View style={styles.reasonRow}>
-                    <Ionicons name={template.reason.icon} size={10} color={COLORS.muted} />
-                    <ThemedText style={styles.templateReason}>{template.reason.text}</ThemedText>
-                  </View>
-                </View>
-                <View style={styles.xpTag}>
-                  <ThemedText style={styles.xpTagText}>+{template.xp} XP</ThemedText>
-                </View>
-              </TouchableOpacity>
-            ))}
+        </>}
+      </ScrollView>
+      {mode === 'custom' && <View style={s.footer}>
+        {!!feedback && <ThemedText style={s.error} accessibilityLiveRegion="polite">{feedback}</ThemedText>}
+        <ThemedText style={s.hint}>{xp} XP on completion</ThemedText>
+        <Button primary label={saving ? 'Saving...' : quest ? 'Save changes' : 'Create Quest'} disabled={saving || creatingCategory || loading || !title.trim() || !category} onPress={() => void save()} />
+      </View>}
+      <Modal visible={categoryOpen} animationType="slide" transparent onRequestClose={() => setCategoryOpen(false)}>
+        <View style={s.backdrop}><SafeAreaView style={s.modal} edges={['bottom']} accessibilityViewIsModal>
+          <View style={s.between}><ThemedText style={s.sectionTitle}>Choose a category</ThemedText><Button label="Close" onPress={() => setCategoryOpen(false)} /></View>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.modalContent}>
+            {loading ? <ActivityIndicator color={C.honeyDark} /> : error ? <><ThemedText style={s.error}>{error}</ThemedText><Button label="Try again" onPress={() => void refresh()} /></> : categories.length ? categories.map(item => <Choice key={item.id} label={item.name} selected={category === item.name} onPress={() => { setCategory(item.name); setCategoryOpen(false); }} />) : <ThemedText style={s.hint}>No categories yet. Create your first one below.</ThemedText>}
+            <ThemedText style={s.label}>Create a category</ThemedText>
+            <TextInput accessibilityLabel="New category name" style={s.input} value={newCategory} onChangeText={setNewCategory} maxLength={40} placeholder="e.g. Creativity" placeholderTextColor={C.muted} />
+            {!!categoryError && <ThemedText style={s.error} accessibilityLiveRegion="polite">{categoryError}</ThemedText>}
+            <Button primary label={creatingCategory ? 'Creating...' : 'Create & select'} disabled={creatingCategory || loading || !!error || !newCategory.trim()} onPress={() => void addCategory()} />
           </ScrollView>
-        ) : (
-          <ScrollView
-            contentContainerStyle={styles.content}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled">
-            <ThemedText style={styles.label}>Quest title</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="For example, clean my desk"
-              placeholderTextColor={COLORS.muted}
-              value={customTitle}
-              onChangeText={setCustomTitle}
-              maxLength={100}
-            />
-
-            <ThemedText style={styles.label}>Description (optional)</ThemedText>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="What does completing this quest involve?"
-              placeholderTextColor={COLORS.muted}
-              multiline
-              value={customDesc}
-              onChangeText={setCustomDesc}
-              textAlignVertical="top"
-            />
-
-            <ThemedText style={styles.label}>Category</ThemedText>
-            <View style={styles.categoryRow}>
-              {categories.map((item) => (
-                <TouchableOpacity
-                  key={item}
-                  style={[styles.categoryPill, category === item && styles.categoryPillActive]}
-                  onPress={() => setCategory(item)}>
-                  <ThemedText
-                    style={[
-                      styles.categoryPillText,
-                      category === item && styles.categoryPillTextActive,
-                    ]}>
-                    {item}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Nearby Quest Toggle */}
-            <View style={styles.locationToggleCard}>
-              <View style={styles.locationToggleCopy}>
-                <ThemedText style={styles.locationToggleTitle}>Use a saved place</ThemedText>
-                <ThemedText style={styles.locationToggleSubtitle}>
-                  Optional. Recommend this quest when you are nearby.
-                </ThemedText>
-              </View>
-              <Switch
-                value={isNearby}
-                onValueChange={(value) => { setIsNearby(value); if (!value) setLocationId(null); }}
-                trackColor={{ false: COLORS.surfaceMuted, true: COLORS.honey }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
-
-            {isNearby && (
-              <View style={styles.placePicker}>
-                <ThemedText style={styles.label}>Quest place</ThemedText>
-                {locationId && !activeLocations.some(place => place.id === locationId) && (
-                  <ThemedText style={styles.placeHint}>Your saved place is inactive or unavailable. Choose another place or turn off the place preference.</ThemedText>
-                )}
-                <TouchableOpacity onPress={() => router.push('/manage-locations')} accessibilityRole="button">
-                  <ThemedText style={styles.placeHint}>Manage saved places</ThemedText>
-                </TouchableOpacity>
-                {activeLocations.length === 0 ? (
-                  <ThemedText style={styles.placeHint}>Add an active place in My Places first.</ThemedText>
-                ) : activeLocations.map((place) => (
-                  <TouchableOpacity
-                    key={place.id}
-                    style={[styles.placeOption, locationId === place.id && styles.placeOptionActive]}
-                    onPress={() => setLocationId(place.id)}>
-                    <Ionicons name="location-outline" size={16} color={COLORS.honeyDark} />
-                    <ThemedText style={styles.placeOptionText}>{place.name}</ThemedText>
-                    {locationId === place.id && <Ionicons name="checkmark-circle" size={17} color={COLORS.honeyDark} />}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            <View style={styles.locationToggleCard}>
-              <View style={styles.locationToggleCopy}>
-                <ThemedText style={styles.locationToggleTitle}>Require proof to complete</ThemedText>
-                <ThemedText style={styles.locationToggleSubtitle}>
-                  Ask for a photo, video, or file before XP is awarded
-                </ThemedText>
-              </View>
-              <Switch
-                value={requiresProof}
-                onValueChange={setRequiresProof}
-                trackColor={{ false: COLORS.surfaceMuted, true: COLORS.honey }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
-
-            <TouchableOpacity style={styles.placeOption} accessibilityRole="button" accessibilityState={{ expanded: showContext }} onPress={() => setShowContext(!showContext)}>
-              <ThemedText style={styles.placeOptionText}>Timing & priority (optional)</ThemedText>
-              <Ionicons name={showContext ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.ink} />
-            </TouchableOpacity>
-            {showContext && (
-              <View style={styles.placePicker}>
-                <ThemedText style={styles.placeHint}>Leave timing blank for an anytime quest. Times use this device&apos;s local timezone. Preferences guide recommendations; you can still choose any quest.</ThemedText>
-                <ThemedText style={styles.label}>Scheduled date & time</ThemedText>
-                <TextInput style={styles.input} accessibilityLabel="Scheduled date and time, optional" placeholder="YYYY-MM-DD HH:mm" placeholderTextColor={COLORS.muted} value={scheduledAt} onChangeText={setScheduledAt} autoCapitalize="none" />
-                <ThemedText style={styles.label}>Or preferred time of day</ThemedText>
-                <TextInput style={styles.input} accessibilityLabel="Preferred time of day, optional" placeholder="HH:mm (24-hour)" placeholderTextColor={COLORS.muted} value={preferredTime} onChangeText={setPreferredTime} autoCapitalize="none" />
-                <ThemedText style={styles.placeHint}>A preferred time does not automatically repeat a completed quest.</ThemedText>
-                <ThemedText style={styles.label}>Deadline</ThemedText>
-                <TextInput style={styles.input} accessibilityLabel="Deadline, optional" placeholder="YYYY-MM-DD HH:mm" placeholderTextColor={COLORS.muted} value={deadlineAt} onChangeText={setDeadlineAt} autoCapitalize="none" />
-                <ThemedText style={styles.label}>Importance</ThemedText>
-                <View style={styles.categoryRow}>
-                  {(['low', 'normal', 'high'] as const).map(value => (
-                    <TouchableOpacity key={value} style={[styles.categoryPill, importance === value && styles.categoryPillActive]} accessibilityRole="button" accessibilityState={{ selected: importance === value }} onPress={() => setImportance(value)}>
-                      <ThemedText style={styles.categoryPillText}>{value === 'low' ? 'Low' : value === 'high' ? 'High' : 'Normal'}</ThemedText>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <ThemedText style={styles.label}>Do after (optional)</ThemedText>
-                <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
-                  <TouchableOpacity style={[styles.placeOption, !prerequisiteId && styles.placeOptionActive]} onPress={() => setPrerequisiteId(null)}>
-                    <ThemedText style={styles.placeOptionText}>No prerequisite</ThemedText>
-                  </TouchableOpacity>
-                  {prerequisiteOptions.map(quest => (
-                    <TouchableOpacity key={quest.id} style={[styles.placeOption, prerequisiteId === quest.id && styles.placeOptionActive]} onPress={() => setPrerequisiteId(quest.id)}>
-                      <ThemedText style={styles.placeOptionText}>{quest.title}</ThemedText>
-                      {prerequisiteId === quest.id && <Ionicons name="checkmark" size={18} color={COLORS.ink} />}
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            <View style={styles.xpHint}>
-              <Ionicons name="sparkles" size={16} color={COLORS.honeyDark} />
-              <ThemedText style={styles.xpHintText}>{isEditing ? `This quest is worth ${editingQuest?.xp ?? 25} XP.` : 'Custom quests are worth 25 XP.'}</ThemedText>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.createButton, isSaving && styles.createButtonDisabled]}
-              onPress={createCustomQuest}
-              disabled={isSaving}
-              activeOpacity={0.8}>
-              {isSaving ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <ThemedText style={styles.createButtonText}>{isEditing ? 'Save changes' : 'Create quest'}</ThemedText>
-              )}
-            </TouchableOpacity>
-          </ScrollView>
-        )}
-      </SafeAreaView>
-    </View>
-  );
+        </SafeAreaView></View>
+      </Modal>
+    </KeyboardAvoidingView>
+  </SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  safeArea: { flex: 1 },
-  sheetIntro: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 20, marginBottom: 4, padding: 14, borderRadius: 22, backgroundColor: COLORS.surfaceWarm, borderWidth: 1, borderColor: '#F4DFAE' },
-  sheetIntroIcon: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honey },
-  sheetIntroCopy: { flex: 1 },
-  sheetIntroTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '900' },
-  sheetIntroText: { color: COLORS.muted, fontSize: 11, lineHeight: 15, marginTop: 2 },
-  categoryRail: { gap: 10, paddingHorizontal: 20, paddingVertical: 5 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 15 },
-  headerTitle: { color: COLORS.ink, fontSize: 19, fontWeight: '800' },
-  headerSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
-  closeButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', ...BeeBetterShadow },
-  toggleRow: { flexDirection: 'row', marginHorizontal: 20, backgroundColor: COLORS.surfaceMuted, borderRadius: 13, padding: 4, marginBottom: 10 },
-  toggleButton: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10 },
-  toggleButtonActive: { backgroundColor: COLORS.card, ...BeeBetterShadow },
-  toggleText: { color: COLORS.muted, fontSize: 12, fontWeight: '800' },
-  toggleTextActive: { color: COLORS.ink },
-  feedback: { color: COLORS.danger, fontSize: 12, lineHeight: 17, marginHorizontal: 20, marginBottom: 4 },
-  content: { paddingHorizontal: 20, paddingBottom: 44, gap: 11 },
-  sectionLabel: { color: COLORS.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginTop: 4, marginBottom: 2 },
-  templateCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.card, borderRadius: 16, padding: 12, ...BeeBetterShadow },
-  iconWrap: { width: 42, height: 42, borderRadius: 13, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
-  templateInfo: { flex: 1 },
-  templateTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  templateTitle: { color: COLORS.ink, fontSize: 14, fontWeight: '800' },
-  reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  templateReason: { color: COLORS.muted, fontSize: 11 },
-  xpTag: { backgroundColor: COLORS.honey, borderRadius: 14, paddingHorizontal: 9, paddingVertical: 6 },
-  xpTagText: { color: COLORS.ink, fontSize: 10, fontWeight: '800' },
-  label: { color: COLORS.ink, fontSize: 12, fontWeight: '800', marginTop: 5 },
-  input: { backgroundColor: COLORS.card, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: COLORS.ink, ...BeeBetterShadow },
-  textArea: { height: 96 },
-  categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  categoryPill: { borderRadius: 18, paddingHorizontal: 13, paddingVertical: 8, backgroundColor: COLORS.card, ...BeeBetterShadow },
-  categoryPillActive: { backgroundColor: COLORS.honey },
-  categoryPillText: { color: COLORS.muted, fontSize: 11, fontWeight: '800' },
-  categoryPillTextActive: { color: COLORS.ink },
-  locationToggleCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.card, borderRadius: 14, padding: 12, marginTop: 4, ...BeeBetterShadow },
-  locationToggleCopy: { flex: 1 },
-  locationToggleTitle: { fontSize: 13, fontWeight: '800', color: COLORS.ink },
-  locationToggleSubtitle: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
-  placePicker: { gap: 8 },
-  placeHint: { color: COLORS.muted, fontSize: 12 },
-  placeOption: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 12, backgroundColor: COLORS.card },
-  placeOptionActive: { backgroundColor: COLORS.honeySoft, borderWidth: 1, borderColor: COLORS.honey },
-  placeOptionText: { flex: 1, color: COLORS.ink, fontSize: 13, fontWeight: '700' },
-  xpHint: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: COLORS.honeySoft, borderRadius: 13, padding: 12, marginTop: 3 },
-  xpHintText: { color: COLORS.ink, fontSize: 12, fontWeight: '700' },
-  createButton: { minHeight: 48, borderRadius: 13, backgroundColor: COLORS.ink, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
-  createButtonDisabled: { opacity: 0.65 },
-  createButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+function Section({ title, summary, icon, children }: { title: string; summary: string; icon: keyof typeof Ionicons.glyphMap; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return <View style={s.section}><TouchableOpacity style={s.sectionHeader} accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)}><Ionicons name={icon} size={19} color={C.honeyDark} /><View style={s.flex}><ThemedText style={s.label}>{title}</ThemedText><ThemedText style={s.hint} numberOfLines={2}>{summary}</ThemedText></View><Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={17} color={C.muted} /></TouchableOpacity>{open && <View style={s.sectionBody}>{children}</View>}</View>;
+}
+function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return <TouchableOpacity style={[s.choice, selected && s.selected]} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress}><ThemedText style={s.label}>{label}</ThemedText>{selected && <Ionicons name="checkmark" size={16} color={C.honeyDeep} />}</TouchableOpacity>;
+}
+function Button({ label, onPress, primary = false, disabled = false }: { label: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
+  return <TouchableOpacity style={[s.button, primary && s.primary, disabled && s.disabled]} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}><ThemedText style={s.label}>{label}</ThemedText></TouchableOpacity>;
+}
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: C.background },
+  header: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 12 },
+  heading: { fontSize: 25, lineHeight: 32, fontWeight: '800', color: C.ink },
+  flex: { flex: 1, minWidth: 0 },
+  hint: { fontSize: 12, lineHeight: 18, color: C.muted },
+  label: { fontSize: 13, lineHeight: 20, fontWeight: '600', color: C.ink },
+  sectionTitle: { fontSize: 17, lineHeight: 24, fontWeight: '700', color: C.ink },
+  iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: C.honeySoft },
+  content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', padding: 20, paddingTop: 4, gap: 10 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  intro: { backgroundColor: C.honeySoft, padding: 12, borderRadius: 12, gap: 3, marginBottom: 4 },
+  input: { minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.card, fontSize: 14, color: C.ink },
+  textArea: { minHeight: 76 },
+  option: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.card },
+  divider: { height: 1, backgroundColor: C.surfaceMuted, marginVertical: 8 },
+  sections: { borderWidth: 1, borderColor: C.surfaceMuted, borderRadius: 14, overflow: 'hidden' },
+  section: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: C.surfaceMuted, backgroundColor: C.card },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, minHeight: 64 },
+  sectionBody: { padding: 14, paddingTop: 0, gap: 12 },
+  choice: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 10, borderRadius: 10, backgroundColor: C.background, flexShrink: 1 },
+  selected: { backgroundColor: C.honeySoft },
+  button: { minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  primary: { backgroundColor: C.honey, minHeight: 48 },
+  disabled: { opacity: 0.45 },
+  footer: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', paddingHorizontal: 20, paddingVertical: 10, gap: 6, borderTopWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.background },
+  error: { fontSize: 12, lineHeight: 18, color: C.danger },
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(45,36,29,0.35)' },
+  modal: { maxHeight: '85%', width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', backgroundColor: C.background, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  modalContent: { gap: 10, paddingBottom: 20 },
 });

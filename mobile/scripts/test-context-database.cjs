@@ -163,6 +163,30 @@ const complete = id => db.query('select public.complete_quest($1)', [id]);
     await db.exec(schema('008_context_aware_quests.sql'));
     assert.equal((await db.query('select count(*)::int n from public.quest_completion_history')).rows[0].n, before);
   });
+  await test('category migration preserves defaults and is repeatable', async () => {
+    await db.exec(schema('009_quest_categories.sql'));
+    await db.exec(schema('009_quest_categories.sql'));
+    assert.equal((await db.query('select count(*)::int n from public.quest_categories where owner_id is null')).rows[0].n, 4);
+    assert.equal((await get(legacy.id)).category, 'Habits');
+  });
+  await test('custom categories are private and clients cannot create global categories', async () => {
+    await db.query('insert into public.quest_categories(owner_id,name) values($1,$2)', [other, 'Private other']);
+    await db.exec('set role authenticated;');
+    await db.query('insert into public.quest_categories(owner_id,name) values($1,$2)', [owner, 'Creativity']);
+    assert.equal((await db.query('select count(*)::int n from public.quest_categories')).rows[0].n, 5);
+    await assert.rejects(db.query('insert into public.quest_categories(name) values($1)', ['Global attack']));
+    await assert.rejects(db.query('insert into public.quest_categories(owner_id,name) values($1,$2)', [other, 'Other attack']));
+    await assert.rejects(db.query('insert into public.quest_categories(owner_id,name) values($1,$2)', [owner, 'creativity']));
+    await db.exec('reset role;');
+  });
+  await test('custom category quests validate ownership and retain history on completion', async () => {
+    const custom = await create('Paint something', { category: 'Creativity', preferred_time: '15:30', importance: 'high' });
+    await assert.rejects(create('Wrong category', { category: 'Private other' }));
+    await assert.rejects(create('Unknown category', { category: 'Missing' }));
+    await db.query('update public.quests set scheduled_at=null, preferred_time=null, deadline_at=null, importance=$1, requires_proof=false where id=$2', ['normal', custom.id]);
+    await complete(custom.id);
+    assert.equal((await db.query('select category from public.quest_completion_history where quest_id=$1', [custom.id])).rows[0].category, 'Creativity');
+  });
   console.log(count + ' database integration tests passed.');
   await db.close();
 })().catch(async error => { console.error(error); await db.close(); process.exitCode = 1; });
