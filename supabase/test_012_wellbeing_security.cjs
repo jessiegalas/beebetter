@@ -70,10 +70,32 @@ async function asUser(id, action) {
 
   await asUser(ids.students[0], async () => {
     assert.equal((await db.query('select count(*)::int count from public.student_check_ins')).rows[0].count, 1);
+    await db.query(`
+      insert into public.student_check_ins(student_id,check_in_date,overall_wellbeing,stress_level,energy_level,note)
+      values($1,'2026-09-20',5,2,5,'Updated private note')
+      on conflict(student_id,check_in_date) do update set overall_wellbeing=excluded.overall_wellbeing,
+        stress_level=excluded.stress_level,energy_level=excluded.energy_level,note=excluded.note
+    `, [ids.students[0]]);
+    const updatedCheckIn = (await db.query('select * from public.student_check_ins')).rows[0];
+    assert.equal(updatedCheckIn.overall_wellbeing, 5);
+    assert.equal((await db.query('select count(*)::int count from public.student_check_ins')).rows[0].count, 1);
     await assert.rejects(db.query(
       'insert into public.student_check_ins(student_id,overall_wellbeing,stress_level,energy_level) values($1,3,3,3)',
       [ids.students[1]],
     ));
+    await db.query(`
+      insert into public.self_management_reflections(
+        student_id,period_start,period_end,planning_score,follow_through_score,confidence_score,challenge
+      ) values($1,'2026-09-20','2026-09-26',4,3,4,'Private challenge')
+    `, [ids.students[0]]);
+  });
+  await asUser(ids.students[1], async () => {
+    assert.equal((await db.query('select count(*)::int count from public.self_management_reflections')).rows[0].count, 0);
+    await assert.rejects(db.query(`
+      insert into public.self_management_reflections(
+        student_id,period_start,period_end,planning_score,follow_through_score,confidence_score
+      ) values($1,'2026-09-20','2026-09-26',3,3,3)
+    `, [ids.students[0]]));
   });
 
   await asUser(ids.regularAdmin, async () => {

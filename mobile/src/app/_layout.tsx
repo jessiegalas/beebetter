@@ -55,6 +55,9 @@ export default function RootLayout() {
             <Stack.Screen name="notifications" options={{ presentation: 'modal' }} />
             <Stack.Screen name="add-quest" options={{ presentation: 'modal' }} />
             <Stack.Screen name="manage-locations" />
+            <Stack.Screen name="wellness-check-in" />
+            <Stack.Screen name="self-management-reflection" />
+            <Stack.Screen name="wellness-history" />
           </Stack>
         </ThemeProvider>
       </AuthGuard>

@@ -102,6 +102,30 @@ export default function HomeScreen() {
               </View>
 
               {!!recommendations.length && <OverviewAction label="Explore all quests" onPress={() => router.push('/quests')} />}
+              <View style={styles.wellnessCard}>
+                <View style={styles.wellnessHeading}>
+                  <View style={styles.wellnessIcon}><Ionicons name="heart-outline" size={22} color={COLORS.honeyDeep} /></View>
+                  <View style={styles.copy}>
+                    <ThemedText style={styles.sectionTitle}>A moment for you</ThemedText>
+                    <ThemedText style={styles.body}>Optional, private check-ins and reflections.</ThemedText>
+                  </View>
+                  <Ionicons name="lock-closed-outline" size={16} color={COLORS.muted} />
+                </View>
+                <View style={styles.wellnessActions}>
+                  <TouchableOpacity style={styles.wellnessAction} onPress={() => router.push('/wellness-check-in' as any)} accessibilityRole="button">
+                    <Ionicons name="pulse-outline" size={18} color={COLORS.ink} />
+                    <ThemedText style={styles.wellnessActionText}>Check in</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.wellnessAction} onPress={() => router.push('/self-management-reflection' as any)} accessibilityRole="button">
+                    <Ionicons name="compass-outline" size={18} color={COLORS.ink} />
+                    <ThemedText style={styles.wellnessActionText}>Reflect</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.wellnessAction} onPress={() => router.push('/wellness-history' as any)} accessibilityRole="button">
+                    <Ionicons name="stats-chart-outline" size={18} color={COLORS.ink} />
+                    <ThemedText style={styles.wellnessActionText}>History</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
               <TouchableOpacity style={styles.growthCard} accessibilityRole="button" accessibilityLabel="View skill tree" onPress={() => router.push('/skill-tree')} activeOpacity={0.8}>
                 <View style={styles.growthIcon}><Ionicons name="git-network-outline" size={23} color={COLORS.ink} /></View>
                 <View style={styles.copy}>
@@ -164,5 +188,11 @@ const styles = StyleSheet.create({
   actionTextOnDark: { color: COLORS.ink },
   growthCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18, backgroundColor: COLORS.surfaceWarm, borderRadius: Radii.lg, borderWidth: 1, borderColor: COLORS.surfaceMuted },
   growthIcon: { width: 44, height: 44, borderRadius: Radii.md, backgroundColor: COLORS.mint, alignItems: 'center', justifyContent: 'center' },
+  wellnessCard: { padding: 17, borderRadius: Radii.lg, backgroundColor: COLORS.card, gap: 13, borderWidth: 1, borderColor: COLORS.surfaceMuted, ...BeeBetterShadow },
+  wellnessHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  wellnessIcon: { width: 42, height: 42, borderRadius: Radii.md, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
+  wellnessActions: { flexDirection: 'row', gap: 8 },
+  wellnessAction: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 4, borderRadius: Radii.md, backgroundColor: COLORS.surfaceWarm },
+  wellnessActionText: { color: COLORS.ink, fontSize: 10, lineHeight: 14, fontWeight: '800' },
   stateCard: { padding: 32, alignItems: 'center', gap: 12, backgroundColor: COLORS.card, borderRadius: Radii.lg },
 });
