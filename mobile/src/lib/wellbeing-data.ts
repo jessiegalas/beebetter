@@ -3,9 +3,11 @@ import { supabase } from '@/supabase';
 export type WellbeingCheckIn = {
   id: string; student_id: string; check_in_date: string;
   overall_wellbeing: number; stress_level: number; energy_level: number;
+  motivation_level: number | null;
   note: string | null; created_at: string; updated_at: string;
 };
-export type CheckInInput = Pick<WellbeingCheckIn, 'check_in_date' | 'overall_wellbeing' | 'stress_level' | 'energy_level'> & { note?: string | null };
+export type CheckInInput = Pick<WellbeingCheckIn, 'check_in_date' | 'overall_wellbeing' | 'stress_level' | 'energy_level'> &
+  Partial<Pick<WellbeingCheckIn, 'motivation_level'>> & { note?: string | null };
 
 export type SelfManagementReflection = {
   id: string; student_id: string; quest_id: string | null; period_start: string; period_end: string;
@@ -15,6 +17,35 @@ export type SelfManagementReflection = {
 };
 export type ReflectionInput = Pick<SelfManagementReflection, 'period_start' | 'period_end' | 'planning_score' | 'follow_through_score' | 'confidence_score'> &
   Partial<Pick<SelfManagementReflection, 'quest_id' | 'accomplishment' | 'challenge' | 'next_step'>>;
+
+export type RecommendationWellnessContext = {
+  checkIn: Pick<WellbeingCheckIn, 'check_in_date' | 'overall_wellbeing' | 'stress_level' | 'energy_level' | 'motivation_level'> | null;
+  reflection: Pick<SelfManagementReflection, 'quest_id' | 'period_end' | 'planning_score' | 'follow_through_score' | 'confidence_score'> | null;
+};
+
+const recommendationListeners = new Set<() => void>();
+function notifyRecommendationContextChanged() { recommendationListeners.forEach(listener => listener()); }
+export function subscribeRecommendationContext(listener: () => void) {
+  recommendationListeners.add(listener);
+  return () => recommendationListeners.delete(listener);
+}
+
+export async function getMyRecommendationWellnessContext(studentId: string): Promise<RecommendationWellnessContext> {
+  const [checkInResult, reflectionResult] = await Promise.all([
+    supabase.from('student_check_ins')
+      .select('check_in_date,overall_wellbeing,stress_level,energy_level,motivation_level')
+      .eq('student_id', studentId).order('check_in_date', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('self_management_reflections')
+      .select('quest_id,period_end,planning_score,follow_through_score,confidence_score')
+      .eq('student_id', studentId).order('period_end', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  if (checkInResult.error) throw checkInResult.error;
+  if (reflectionResult.error) throw reflectionResult.error;
+  return {
+    checkIn: checkInResult.data as RecommendationWellnessContext['checkIn'],
+    reflection: reflectionResult.data as RecommendationWellnessContext['reflection'],
+  };
+}
 
 export type SupportRequest = {
   id: string; student_id: string;
@@ -36,6 +67,7 @@ export async function saveMyCheckIn(studentId: string, input: CheckInInput): Pro
   const { data, error } = await supabase.from('student_check_ins')
     .upsert({ ...input, note: input.note?.trim() || null, student_id: studentId }, { onConflict: 'student_id,check_in_date' }).select('*').single();
   if (error) throw error;
+  notifyRecommendationContextChanged();
   return data as WellbeingCheckIn;
 }
 export async function listMyReflections(studentId: string): Promise<SelfManagementReflection[]> {
@@ -46,6 +78,7 @@ export async function listMyReflections(studentId: string): Promise<SelfManageme
 export async function createMyReflection(studentId: string, input: ReflectionInput): Promise<SelfManagementReflection> {
   const { data, error } = await supabase.from('self_management_reflections').insert({ ...input, student_id: studentId }).select('*').single();
   if (error) throw error;
+  notifyRecommendationContextChanged();
   return data as SelfManagementReflection;
 }
 export async function listMySupportRequests(studentId: string): Promise<SupportRequest[]> {

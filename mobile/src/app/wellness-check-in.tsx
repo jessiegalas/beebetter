@@ -16,6 +16,9 @@ const WELLBEING: RatingOption[] = [
 const INTENSITY: RatingOption[] = [
   { value: 1, label: 'Very low' }, { value: 2, label: 'Low' }, { value: 3, label: 'Moderate' }, { value: 4, label: 'High' }, { value: 5, label: 'Very high' },
 ];
+const MOTIVATION: RatingOption[] = [
+  { value: 1, label: 'Very low' }, { value: 2, label: 'Low' }, { value: 3, label: 'Steady' }, { value: 4, label: 'High' }, { value: 5, label: 'Very high' },
+];
 
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -29,6 +32,7 @@ export default function WellnessCheckInScreen() {
   const [wellbeing, setWellbeing] = useState<number | null>(null);
   const [stress, setStress] = useState<number | null>(null);
   const [energy, setEnergy] = useState<number | null>(null);
+  const [motivation, setMotivation] = useState<number | null>(null);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,6 +50,7 @@ export default function WellnessCheckInScreen() {
         setWellbeing(today.overall_wellbeing);
         setStress(today.stress_level);
         setEnergy(today.energy_level);
+        setMotivation(today.motivation_level);
         setNote(today.note ?? '');
       }
     }).catch(error => {
@@ -64,7 +69,7 @@ export default function WellnessCheckInScreen() {
     try {
       await saveMyCheckIn(user.id, {
         check_in_date: localDateKey(), overall_wellbeing: wellbeing, stress_level: stress,
-        energy_level: energy, note: note.trim() || null,
+        energy_level: energy, motivation_level: motivation, note: note.trim() || null,
       });
       setExisting(true);
       setFeedback({ message: existing ? 'Today’s private check-in was updated.' : 'Your private check-in was saved.', tone: 'success' });
@@ -84,7 +89,7 @@ export default function WellnessCheckInScreen() {
               <View style={styles.introIcon}><Ionicons name="sunny-outline" size={24} color={COLORS.honeyDeep} /></View>
               <View style={styles.copy}>
                 <ThemedText style={styles.title}>How are you today?</ThemedText>
-                <ThemedText style={styles.body}>This is optional and does not affect your quests, XP, or recommendations. Scores describe your own experience; they are not a diagnosis.</ThemedText>
+                <ThemedText style={styles.body}>This is optional and never limits your quests or XP. If you choose a motivation score, it may gently personalize the order and explanation of recommendations. Scores describe your own experience; they are not a diagnosis.</ThemedText>
               </View>
             </View>
             {loading ? <View style={styles.loading}><ActivityIndicator color={COLORS.honeyDark} /><ThemedText style={styles.body}>Loading today’s check-in…</ThemedText></View> : (
@@ -95,6 +100,8 @@ export default function WellnessCheckInScreen() {
                 <RatingScale title="Stress" hint="1 means very low stress; 5 means very high stress." value={stress} options={INTENSITY} onChange={setStress} />
                 <View style={styles.divider} />
                 <RatingScale title="Energy" hint="1 means very low energy; 5 means very high energy." value={energy} options={INTENSITY} onChange={setEnergy} />
+                <View style={styles.divider} />
+                <RatingScale title="Motivation (optional)" hint="How ready do you feel to begin something today? Leave this unanswered if you prefer." value={motivation} options={MOTIVATION} onChange={setMotivation} allowClear />
                 <View style={styles.divider} />
                 <View>
                   <ThemedText style={styles.label}>Private note (optional)</ThemedText>

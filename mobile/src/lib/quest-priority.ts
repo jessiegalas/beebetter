@@ -20,6 +20,11 @@ export type PriorityContext = {
   places: ContextPlace[];
   history: CompletionRecord[];
   geofenceEvents?: Record<string, { inside: boolean; timestamp: number }>;
+  wellness?: RecommendationContext | null;
+};
+export type RecommendationContext = {
+  checkIn: { check_in_date: string; overall_wellbeing: number; stress_level: number; energy_level: number; motivation_level: number | null } | null;
+  reflection: { quest_id: string | null; period_end: string; planning_score: number; follow_through_score: number; confidence_score: number } | null;
 };
 export type QuestTier = 'now' | 'next' | 'other' | 'history';
 export type RankedQuest = {
@@ -33,6 +38,8 @@ export type RankedQuest = {
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
+const CHECK_IN_MAX_AGE = 36 * 60 * MINUTE;
+const REFLECTION_MAX_AGE = 14 * DAY;
 export const LOCATION_MAX_AGE = 5 * MINUTE;
 export const TIER_LABELS: Record<QuestTier, string> = {
   now: 'Recommended now', next: 'Up next', other: 'Other quests', history: 'Review & completed',
@@ -65,6 +72,10 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
       completed_at: q.completed_at || q.updated_at,
     })),
   ];
+  const checkInTime = context.wellness?.checkIn ? timestamp(context.wellness.checkIn.check_in_date + 'T23:59:59') : null;
+  const recentCheckIn = checkInTime !== null && checkInTime >= context.now - CHECK_IN_MAX_AGE && checkInTime <= context.now + DAY ? context.wellness!.checkIn : null;
+  const reflectionTime = context.wellness?.reflection ? timestamp(context.wellness.reflection.period_end + 'T23:59:59') : null;
+  const recentReflection = reflectionTime !== null && reflectionTime >= context.now - REFLECTION_MAX_AGE && reflectionTime <= context.now + DAY ? context.wellness!.reflection : null;
   const ranked = quests.map((quest): RankedQuest => {
     let score = 8;
     const signals: { text: string; weight: number }[] = [];
@@ -150,10 +161,34 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
     else if (!waiting && !away && !locationUnknown && (!futureSchedule || urgent) && score >= 35) tier = 'now';
     else if (!waiting && score >= 18) tier = 'next';
 
+    // Private context only makes small, non-negative adjustments inside the tier
+    // established above. Notes and written reflections never enter this engine.
+    let personalWeight = 0;
+    let personalReason: string | null = null;
+    const wantsManageableStep = !!recentCheckIn && (
+      (recentCheckIn.motivation_level !== null && recentCheckIn.motivation_level <= 2) ||
+      recentCheckIn.energy_level <= 2 || recentCheckIn.stress_level >= 4 || recentCheckIn.overall_wellbeing <= 2
+    );
+    const reportedDifficulty = !!recentReflection && (
+      recentReflection.planning_score <= 2 || recentReflection.follow_through_score <= 2 || recentReflection.confidence_score <= 2
+    );
+    if (active && recentReflection?.quest_id === quest.id) {
+      personalWeight = 6; personalReason = 'Connects with your recent reflection';
+    } else if (active && (wantsManageableStep || (reportedDifficulty && !recentReflection?.quest_id)) && quest.xp <= 30) {
+      personalWeight = 4; personalReason = 'A manageable step for today';
+    } else if (active && recentCheckIn?.motivation_level != null && recentCheckIn.motivation_level >= 4 && quest.importance === 'high') {
+      personalWeight = 3; personalReason = 'Matches the momentum you reported';
+    }
+    score += personalWeight;
+
     const reasons = active
       ? [...notes, ...signals.sort((a, b) => b.weight - a.weight).map(s => s.text)].slice(0, 3)
       : [quest.status === 'completed' ? 'Completed' : 'Pending review'];
     if (!reasons.length) reasons.push('Fits whenever you have time');
+    if (personalReason && !reasons.includes(personalReason)) {
+      if (reasons.length >= 3) reasons[2] = personalReason;
+      else reasons.push(personalReason);
+    }
     return { quest, tier, reasons, nearby, distance, score };
   });
   return ranked.sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier) ||

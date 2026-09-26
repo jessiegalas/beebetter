@@ -28,12 +28,14 @@ export function RatingScale({
   value,
   options,
   onChange,
+  allowClear = false,
 }: {
   title: string;
   hint: string;
   value: number | null;
   options: RatingOption[];
-  onChange: (value: number) => void;
+  onChange: (value: number | null) => void;
+  allowClear?: boolean;
 }) {
   return (
     <View style={styles.scaleBlock}>
@@ -48,7 +50,7 @@ export function RatingScale({
             <TouchableOpacity
               key={option.value}
               style={[styles.ratingOption, selected && styles.ratingOptionSelected]}
-              onPress={() => onChange(option.value)}
+              onPress={() => onChange(allowClear && selected ? null : option.value)}
               accessibilityRole="radio"
               accessibilityState={{ selected }}
               accessibilityLabel={`${title}: ${option.value}, ${option.label}`}>

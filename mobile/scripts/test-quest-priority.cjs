@@ -39,6 +39,31 @@ test('no context remains available without fabricated reasons', () => {
   const item = rank([quest('q')], { coords: null })[0];
   assert.equal(item.tier, 'other'); assert.deepEqual(item.reasons, ['Fits whenever you have time']);
 });
+test('recommendations are unchanged when wellness context is absent', () => {
+  const quests = [quest('a', { xp: 20 }), quest('b', { importance: 'high' })];
+  assert.deepEqual(rank(quests).map(item => [item.quest.id, item.tier, item.score]), rank(quests, { wellness: null }).map(item => [item.quest.id, item.tier, item.score]));
+});
+test('recent low-capacity context gently favors a manageable quest within its tier', () => {
+  const wellness = { checkIn: { check_in_date: '2026-09-25', overall_wellbeing: 2, stress_level: 4, energy_level: 2, motivation_level: 2 }, reflection: null };
+  const items = rank([quest('larger', { xp: 50 }), quest('small', { xp: 20 })], { wellness });
+  assert.equal(items[0].quest.id, 'small'); assert(items[0].reasons.includes('A manageable step for today'));
+  assert.equal(items[0].tier, rank([quest('small', { xp: 20 })])[0].tier);
+});
+test('high motivation only complements high importance and does not change its tier', () => {
+  const q = quest('important', { importance: 'high', xp: 50 });
+  const wellness = { checkIn: { check_in_date: '2026-09-25', overall_wellbeing: 4, stress_level: 2, energy_level: 4, motivation_level: 5 }, reflection: null };
+  const before = rank([q])[0]; const after = rank([q], { wellness })[0];
+  assert.equal(after.tier, before.tier); assert.equal(after.score, before.score + 3); assert(after.reasons.includes('Matches the momentum you reported'));
+});
+test('recent reflection association is deterministic and does not read private text', () => {
+  const reflection = { quest_id: 'related', period_end: '2026-09-25', planning_score: 1, follow_through_score: 2, confidence_score: 2 };
+  const items = rank([quest('other'), quest('related')], { wellness: { checkIn: null, reflection } });
+  assert.equal(items[0].quest.id, 'related'); assert(items[0].reasons.includes('Connects with your recent reflection'));
+});
+test('stale wellness context has no effect', () => {
+  const wellness = { checkIn: { check_in_date: '2026-08-01', overall_wellbeing: 1, stress_level: 5, energy_level: 1, motivation_level: 1 }, reflection: { quest_id: 'q', period_end: '2026-08-01', planning_score: 1, follow_through_score: 1, confidence_score: 1 } };
+  assert.equal(rank([quest('q')], { wellness })[0].score, rank([quest('q')])[0].score);
+});
 test('due soon can outrank location alone', () => assert.equal(rank([quest('place', { location_id: 'place' }), quest('due', { deadline_at: iso(45) })])[0].quest.id, 'due'));
 test('importance changes order when context is otherwise equal', () => assert.equal(rank([quest('normal'), quest('high', { importance: 'high' })])[0].quest.id, 'high'));
 test('distance contributes beyond a boolean geofence', () => {
