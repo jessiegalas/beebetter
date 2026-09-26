@@ -126,6 +126,15 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+             <TouchableOpacity style={styles.growthCard} accessibilityRole="button" accessibilityLabel="View skill tree" onPress={() => router.push('/skill-tree')} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.supportCard} accessibilityRole="button" accessibilityLabel="Request support from OSAS" onPress={() => router.push('/support-requests' as any)} activeOpacity={0.8}>
+                <View style={styles.supportIcon}><Ionicons name="people-outline" size={23} color={COLORS.ink} /></View>
+                <View style={styles.copy}>
+                  <ThemedText style={styles.sectionTitle}>Request support</ThemedText>
+                  <ThemedText style={styles.body}>Voluntarily contact authorized OSAS personnel.</ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={19} color={COLORS.muted} />
+              </TouchableOpacity>
               <TouchableOpacity style={styles.growthCard} accessibilityRole="button" accessibilityLabel="View skill tree" onPress={() => router.push('/skill-tree')} activeOpacity={0.8}>
                 <View style={styles.growthIcon}><Ionicons name="git-network-outline" size={23} color={COLORS.ink} /></View>
                 <View style={styles.copy}>
@@ -186,8 +195,10 @@ const styles = StyleSheet.create({
   actionOnDark: { borderTopColor: COLORS.surfaceMuted, marginTop: 4 },
   actionText: { flex: 1, fontSize: 13, lineHeight: 20, fontWeight: '800', color: COLORS.ink },
   actionTextOnDark: { color: COLORS.ink },
-  growthCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18, backgroundColor: COLORS.surfaceWarm, borderRadius: Radii.lg, borderWidth: 1, borderColor: COLORS.surfaceMuted },
+ growthCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18, backgroundColor: COLORS.surfaceWarm, borderRadius: Radii.lg, borderWidth: 1, borderColor: COLORS.surfaceMuted },
   growthIcon: { width: 44, height: 44, borderRadius: Radii.md, backgroundColor: COLORS.mint, alignItems: 'center', justifyContent: 'center' },
+  supportCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18, backgroundColor: COLORS.card, borderRadius: Radii.lg, borderWidth: 1, borderColor: COLORS.surfaceMuted },
+  supportIcon: { width: 44, height: 44, borderRadius: Radii.md, backgroundColor: COLORS.lavender, alignItems: 'center', justifyContent: 'center' },
   wellnessCard: { padding: 17, borderRadius: Radii.lg, backgroundColor: COLORS.card, gap: 13, borderWidth: 1, borderColor: COLORS.surfaceMuted, ...BeeBetterShadow },
   wellnessHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   wellnessIcon: { width: 42, height: 42, borderRadius: Radii.md, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },

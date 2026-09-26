@@ -3,8 +3,11 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
 import { supabase } from './supabase'
+import { getMyOsasPermissions, type OsasPermissions as OsasPermissionState } from './osas-data'
+import { SupportRequests } from './SupportRequests'
+import { OsasPermissions } from './OsasPermissions'
 
-type Section = 'Overview' | 'Users' | 'Quests' | 'Leaderboard' | 'Admins'
+type Section = 'Overview' | 'Users' | 'Quests' | 'Leaderboard' | 'Support Requests' | 'Admins'
 type User = { id: string; studentNumber: string; name: string; email: string; course: string; yearLevel: string; section: string; campus: string; goal: string; joined: string; quests: string; status: 'Active' | 'Inactive' }
 type Quest = { id: string; ownerId: string; title: string; category: string; difficulty: string; completions: string; status: 'Published' | 'Draft'; assignee: string }
 type QuestDraft = { title: string; description: string; category: 'Academics' | 'Habits' | 'Social' | 'Health'; difficulty: 'Easy' | 'Medium' | 'Hard'; assigneeId: string | null; publish: boolean }
@@ -24,6 +27,7 @@ function App() {
   const [questsError, setQuestsError] = useState('')
   const [quests, setQuests] = useState(initialQuests)
   const [adminRole, setAdminRole] = useState<'admin' | 'super_admin' | null>(null)
+  const [osasPermissions, setOsasPermissions] = useState<OsasPermissionState>({ can_view_aggregates: false, can_manage_support_requests: false, is_active: false })
   const [admins, setAdmins] = useState<Admin[]>([])
   const [adminsLoading, setAdminsLoading] = useState(false)
   const [adminsError, setAdminsError] = useState('')
@@ -98,7 +102,20 @@ function App() {
     return current?.is_active ? current.role : null
   }
 
+  const loadOsasPermissions = async () => {
+    try {
+      const permissions = await getMyOsasPermissions()
+      setOsasPermissions(permissions)
+      return permissions
+    } catch {
+      const empty = { can_view_aggregates: false, can_manage_support_requests: false, is_active: false }
+      setOsasPermissions(empty)
+      return empty
+    }
+  }
+
   const loadAdmins = async () => {
+    
     setAdminsLoading(true)
     setAdminsError('')
     const { data, error } = await supabase.rpc('super_admin_list_admins')
@@ -124,6 +141,7 @@ function App() {
       setAuthChecking(false)
       if (session) {
         void loadUsers(); void loadQuests()
+        void loadOsasPermissions()
         void loadAdminRole().then((role) => { if (role === 'super_admin') void loadAdmins() })
       }
     })
@@ -133,8 +151,9 @@ function App() {
       setAuthChecking(false)
       if (session) {
         void loadUsers(); void loadQuests()
+        void loadOsasPermissions()
         void loadAdminRole().then((role) => { if (role === 'super_admin') void loadAdmins() })
-      } else { setUsers([]); setAdmins([]); setAdminRole(null) }
+      } else { setUsers([]); setAdmins([]); setAdminRole(null); setOsasPermissions({ can_view_aggregates: false, can_manage_support_requests: false, is_active: false }) }
     })
 
     return () => subscription.unsubscribe()
@@ -223,13 +242,14 @@ function App() {
 
   if (authChecking) return <div className="auth-shell"><div className="auth-card"><p>Checking admin session...</p></div></div>
   if (!authenticated) return <AuthScreen onSuccess={() => setAuthenticated(true)} dark={dark} onToggleTheme={toggleTheme} />
+  const sections = ['Overview', 'Users', 'Quests', 'Leaderboard', ...(osasPermissions.can_manage_support_requests ? ['Support Requests'] : []), ...(adminRole === 'super_admin' ? ['Admins'] : [])] as Section[]
 
   return (
     <div className={dark ? 'app-shell dark' : 'app-shell'}>
       <aside className="sidebar">
         <Brand />
         <span className="admin-label">ADMIN CONSOLE</span>
-        <nav>{(['Overview', 'Users', 'Quests', 'Leaderboard', ...(adminRole === 'super_admin' ? ['Admins'] : [])] as Section[]).map((item) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item}><span>{item === 'Overview' ? '▦' : item === 'Users' ? '♙' : item === 'Quests' ? '⚑' : item === 'Admins' ? '♙' : '♛'}</span>{item}</button>)}</nav>
+        <nav>{sections.map((item) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item}><span>{item === 'Overview' ? '▦' : item === 'Users' ? '♙' : item === 'Quests' ? '⚑' : item === 'Support Requests' ? '✉' : item === 'Admins' ? '♙' : '♛'}</span>{item}</button>)}</nav>
         <div className="sidebar-tools"><button onClick={toggleTheme}>◐ <span>{dark ? 'Light mode' : 'Dark mode'}</span></button><button onClick={() => void supabase.auth.signOut()}>↪ <span>Sign out</span></button></div>
         <ProfileBadge onClick={() => setProfileOpen((value) => !value)} />
       </aside>
@@ -244,14 +264,15 @@ function App() {
           {notificationsOpen && <div className="popover notification-popover"><b>Notifications</b><p><span className="notification-dot">✦</span> New quest submitted for review</p><p><span className="notification-dot">♙</span> 12 new users joined today</p><button className="link-button" onClick={() => setNotificationsOpen(false)}>Mark all as read</button></div>}
           {profileOpen && <div className="popover profile-popover"><b>Administrator</b><small>Supabase admin account</small><button onClick={toggleTheme}>◐ {dark ? 'Switch to light mode' : 'Switch to dark mode'}</button><button onClick={() => void supabase.auth.signOut()}>↪ Sign out</button></div>}
         </header>
-        <nav className="mobile-nav">{(['Overview', 'Users', 'Quests', 'Leaderboard', ...(adminRole === 'super_admin' ? ['Admins'] : [])] as Section[]).map((item) => <button className={section === item ? 'mobile-nav-item active' : 'mobile-nav-item'} onClick={() => navigate(item)} key={item}>{item}</button>)}</nav>
+        <nav className="mobile-nav">{sections.map((item) => <button className={section === item ? 'mobile-nav-item active' : 'mobile-nav-item'} onClick={() => navigate(item)} key={item}>{item}</button>)}</nav>
         <div className="content">
           <div className="heading-row"><div><span className="eyebrow">TUESDAY, SEPTEMBER 15, 2026</span><h1>{section === 'Overview' ? 'Good evening, Jessie' : section}</h1><p>{section === 'Overview' ? 'Here is what is happening in BeeBetter today.' : `Manage and monitor ${section.toLowerCase()} in your app.`}</p></div>{section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}</div>
           {section === 'Overview' && <Overview navigate={navigate} users={users} quests={quests} onUserClick={setSelectedUser} onQuestClick={setSelectedQuest} />}
           {section === 'Users' && <DataTable kind="users" users={users} loading={usersLoading} error={usersError} onRefresh={loadUsers} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
           {section === 'Quests' && <DataTable kind="quests" quests={quests} loading={questsLoading} error={questsError} onRefresh={loadQuests} onQuestClick={setSelectedQuest} />}
           {section === 'Leaderboard' && <Leaderboard users={users} />}
-          {section === 'Admins' && adminRole === 'super_admin' && <AdminTable admins={admins} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} />}
+          {section === 'Support Requests' && osasPermissions.can_manage_support_requests && <SupportRequests />}
+          {section === 'Admins' && adminRole === 'super_admin' && <><AdminTable admins={admins} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} /><OsasPermissions admins={admins} /></>}
         </div>
       </main>
       {(newQuestOpen || editingQuest) && <QuestModal initialQuest={editingQuest} users={users} onClose={() => { setNewQuestOpen(false); setEditingQuest(null) }} onSave={createQuest} />}

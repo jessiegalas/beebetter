@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 
 export type OsasPermissions = { can_view_aggregates: boolean; can_manage_support_requests: boolean; is_active: boolean };
+export type OsasPermissionRow = OsasPermissions & { user_id: string };
+export type OsasSupportStaff = { id: string; email: string; display_name: string };
 export type ReportGrouping = 'all' | 'course' | 'year_level' | 'campus';
 export type CheckInSummary = {
   period_start: string; period_end: string; group_dimension: ReportGrouping; group_value: string;
@@ -38,6 +40,16 @@ export async function listSupportRequests(status: string | null = null): Promise
   if (error) throw error;
   return (data ?? []) as OsasSupportRequest[];
 }
+export async function listSupportStaff(): Promise<OsasSupportStaff[]> {
+  const { data, error } = await supabase.rpc('osas_list_support_staff');
+  if (error) throw error;
+  return (data ?? []) as OsasSupportStaff[];
+}
+export async function listOsasPermissionRows(): Promise<OsasPermissionRow[]> {
+  const { data, error } = await supabase.from('osas_staff_permissions').select('user_id,can_view_aggregates,can_manage_support_requests,is_active');
+  if (error) throw error;
+  return (data ?? []) as OsasPermissionRow[];
+}
 export async function updateSupportRequest(requestId: string, status: 'acknowledged' | 'in_progress' | 'resolved', assignedTo: string | null, resolutionNote: string | null): Promise<OsasSupportRequest> {
   const { data, error } = await supabase.rpc('osas_update_support_request', {
     request_id: requestId, status_value: status, assigned_to_value: assignedTo, resolution_note_value: resolutionNote,
@@ -45,10 +57,10 @@ export async function updateSupportRequest(requestId: string, status: 'acknowled
   if (error) throw error;
   return data as OsasSupportRequest;
 }
-export async function setOsasPermissions(userId: string, viewAggregates: boolean, manageSupportRequests: boolean, active = true): Promise<OsasPermissions> {
+export async function setOsasPermissions(userId: string, viewAggregates: boolean, manageSupportRequests: boolean, active = true): Promise<OsasPermissions | null> {
   const { data, error } = await supabase.rpc('super_admin_set_osas_permissions', {
     target_user_id: userId, view_aggregates: viewAggregates, manage_support_requests: manageSupportRequests, active,
   });
   if (error) throw error;
-  return data as OsasPermissions;
+  return (data ?? null) as OsasPermissions | null;
 }
