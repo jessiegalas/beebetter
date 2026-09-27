@@ -24,6 +24,7 @@ export default function ProfileScreen() {
   const {
     user,
     profile,
+    completionHistory,
     completedQuests,
     levelProgress,
     isRefreshing,
@@ -197,24 +198,20 @@ export default function ProfileScreen() {
             ))}
           </View>
 
-          {/* Recent Activity */}
-          <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle}>Recent activity</ThemedText><ThemedText style={styles.sectionHint}>Your latest wins</ThemedText></View>
+          {/* Durable completion history remains visible even if a quest is later deleted. */}
+          <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle}>Completion history</ThemedText><ThemedText style={styles.sectionHint}>Your latest recorded wins</ThemedText></View>
           <View style={styles.activityCard}>
-            {completedQuests.length > 0 ? (
-              completedQuests.slice(0, 5).map((quest) => (
-                <View key={quest.id} style={styles.activityRow}>
+            {completionHistory.length > 0 ? (
+              completionHistory.slice(0, 10).map((record) => (
+                <View key={record.id} style={styles.activityRow}>
                   <View style={styles.dot} />
-                  <ThemedText style={styles.activityText} numberOfLines={1}>
-                    Completed {quest.title}
-                  </ThemedText>
-                  <View style={styles.activityTag}>
-                    <XpBadge xp={quest.xp} />
-                  </View>
+                  <View style={styles.activityCopy}><ThemedText style={styles.activityText} numberOfLines={1}>Completed {record.title}</ThemedText><ThemedText style={styles.activityDate}>{new Date(record.completed_at).toLocaleDateString()}</ThemedText></View>
+                  <ThemedText style={styles.activityCategory}>{record.category}</ThemedText>
                 </View>
               ))
             ) : (
               <ThemedText style={styles.emptyActivityText}>
-                No recent activity yet. Mark your quests complete to see your timeline here!
+                No completion history yet. Mark a quest complete to record your first win.
               </ThemedText>
             )}
           </View>
@@ -449,10 +446,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.honeyDark,
   },
   activityText: {
-    flex: 1,
     fontSize: 12,
     color: COLORS.ink,
   },
+  activityCopy: { flex: 1, minWidth: 0 },
+  activityDate: { color: COLORS.muted, fontSize: 9, marginTop: 2 },
+  activityCategory: { color: COLORS.honeyDeep, fontSize: 9, fontWeight: '800', maxWidth: 90 },
   activityTag: {
     backgroundColor: COLORS.honeySoft,
     borderRadius: 12,
@@ -577,4 +576,3 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
-

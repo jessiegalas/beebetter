@@ -186,8 +186,9 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
       : [quest.status === 'completed' ? 'Completed' : 'Pending review'];
     if (!reasons.length) reasons.push('Fits whenever you have time');
     if (personalReason && !reasons.includes(personalReason)) {
-      if (reasons.length >= 3) reasons[2] = personalReason;
-      else reasons.push(personalReason);
+      if (reasons.length === 1 && reasons[0] === 'Fits whenever you have time') reasons[0] = personalReason;
+      else reasons.splice(1, 0, personalReason);
+      reasons.splice(3);
     }
     return { quest, tier, reasons, nearby, distance, score };
   });

@@ -56,6 +56,12 @@ const complete = id => db.query('select public.complete_quest($1)', [id]);
     assert.equal((await db.query('select count(*)::int n from public.quest_completion_history where quest_id=$1', [legacy.id])).rows[0].n, 1);
   });
   const place = (await db.query('insert into public.user_locations(owner_id,name,latitude,longitude) values($1,$2,14.6,121) returning id', [owner, 'Place'])).rows[0].id;
+  await test('saved locations persist activation and deactivation', async () => {
+    await db.query('update public.user_locations set is_active=false where id=$1 and owner_id=$2', [place, owner]);
+    assert.equal((await db.query('select is_active from public.user_locations where id=$1', [place])).rows[0].is_active, false);
+    await db.query('update public.user_locations set is_active=true where id=$1 and owner_id=$2', [place, owner]);
+    assert.equal((await db.query('select is_active from public.user_locations where id=$1', [place])).rows[0].is_active, true);
+  });
   await test('all four location/time combinations persist', async () => {
     for (const location_id of [null, place]) {
       for (const preferred_time of [null, '10:00']) {

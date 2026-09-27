@@ -126,7 +126,6 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-             <TouchableOpacity style={styles.growthCard} accessibilityRole="button" accessibilityLabel="View skill tree" onPress={() => router.push('/skill-tree')} activeOpacity={0.8}>
               <TouchableOpacity style={styles.supportCard} accessibilityRole="button" accessibilityLabel="Request support from OSAS" onPress={() => router.push('/support-requests' as any)} activeOpacity={0.8}>
                 <View style={styles.supportIcon}><Ionicons name="people-outline" size={23} color={COLORS.ink} /></View>
                 <View style={styles.copy}>

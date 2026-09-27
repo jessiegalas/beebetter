@@ -57,7 +57,7 @@ export default function RootLayout() {
             <Stack.Screen name="manage-locations" />
             <Stack.Screen name="wellness-check-in" />
             <Stack.Screen name="self-management-reflection" />
-           <Stack.Screen name="wellness-history" />
+            <Stack.Screen name="wellness-history" />
             <Stack.Screen name="support-requests" />
           </Stack>
         </ThemeProvider>

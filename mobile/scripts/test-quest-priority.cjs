@@ -47,6 +47,7 @@ test('recent low-capacity context gently favors a manageable quest within its ti
   const wellness = { checkIn: { check_in_date: '2026-09-25', overall_wellbeing: 2, stress_level: 4, energy_level: 2, motivation_level: 2 }, reflection: null };
   const items = rank([quest('larger', { xp: 50 }), quest('small', { xp: 20 })], { wellness });
   assert.equal(items[0].quest.id, 'small'); assert(items[0].reasons.includes('A manageable step for today'));
+  assert(items[0].reasons.slice(0, 2).includes('A manageable step for today'));
   assert.equal(items[0].tier, rank([quest('small', { xp: 20 })])[0].tier);
 });
 test('high motivation only complements high importance and does not change its tier', () => {

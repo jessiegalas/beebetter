@@ -60,6 +60,8 @@ async function asUser(id, action) {
   }
   await db.exec(migration('012_wellbeing_and_osas_foundation.sql'));
   await db.exec(migration('012_wellbeing_and_osas_foundation.sql'));
+  await db.exec(migration('014_osas_support_staff_directory.sql'));
+  await db.exec(migration('014_osas_support_staff_directory.sql'));
 
   for (const [index, id] of ids.students.entries()) {
     await asUser(id, () => db.query(
@@ -101,6 +103,7 @@ async function asUser(id, action) {
   await asUser(ids.regularAdmin, async () => {
     assert.equal((await db.query('select count(*)::int count from public.student_check_ins')).rows[0].count, 0);
     await assert.rejects(db.query("select * from public.osas_check_in_summary('2026-09-01','2026-09-30','all')"), /permission/i);
+    await assert.rejects(db.query('select * from public.osas_list_support_staff()'), /permission/i);
   });
 
   await asUser(ids.superAdmin, async () => {
@@ -119,23 +122,76 @@ async function asUser(id, action) {
 
   let supportId;
   await asUser(ids.students[0], async () => {
+    await assert.rejects(db.query(`
+      insert into public.support_requests(student_id,category,message,preferred_contact,consent_to_contact)
+      values($1,'personal','No consent','email',false)
+    `, [ids.students[0]]));
     supportId = (await db.query(`
       insert into public.support_requests(student_id,category,message,preferred_contact,consent_to_contact)
       values($1,'personal','I would like to talk.','email',true) returning id
     `, [ids.students[0]])).rows[0].id;
   });
+  await asUser(ids.students[1], async () => {
+    assert.equal((await db.query('select count(*)::int count from public.support_requests')).rows[0].count, 0);
+    await assert.rejects(db.query('select public.student_withdraw_support_request($1)', [supportId]));
+  });
   await asUser(ids.supportStaff, async () => {
+    const directory = (await db.query('select * from public.osas_list_support_staff()')).rows;
+    assert.deepEqual(directory.map(person => person.id), [ids.supportStaff]);
     const cases = (await db.query('select * from public.osas_list_support_requests(null)')).rows;
     assert.equal(cases.length, 1);
     assert.equal(cases[0].student_id, ids.students[0]);
     assert.equal((await db.query('select count(*)::int count from public.student_check_ins')).rows[0].count, 0);
+    assert.equal((await db.query('select count(*)::int count from public.self_management_reflections')).rows[0].count, 0);
+    await assert.rejects(db.query("select public.osas_update_support_request($1,'in_progress',$2,null)", [supportId, ids.aggregateStaff]), /assignee/i);
     await db.query("select public.osas_update_support_request($1,'in_progress',$2,null)", [supportId, ids.supportStaff]);
   });
   await asUser(ids.students[0], async () => {
     assert.equal((await db.query('select status from public.support_requests where id=$1', [supportId])).rows[0].status, 'in_progress');
+    await db.query('select public.student_withdraw_support_request($1)', [supportId]);
+    assert.equal((await db.query('select status from public.support_requests where id=$1', [supportId])).rows[0].status, 'withdrawn');
+  });
+  await asUser(ids.supportStaff, async () => {
+    await assert.rejects(db.query("select public.osas_update_support_request($1,'resolved',$2,'Completed follow-up')", [supportId, ids.supportStaff]), /withdrawn/i);
   });
 
-  console.log('PASS migration 012 privacy, aggregate, and support authorization checks');
+  let resolvedId;
+  await asUser(ids.students[2], async () => {
+    resolvedId = (await db.query(`insert into public.support_requests(student_id,category,message,preferred_contact,contact_detail,consent_to_contact,priority)
+      values($1,'academic','Need academic guidance.','email','student2@example.invalid',true,'soon') returning id`, [ids.students[2]])).rows[0].id;
+  });
+  await asUser(ids.supportStaff, async () => {
+    await db.query("select public.osas_update_support_request($1,'resolved',$2,'Guidance appointment completed')", [resolvedId, ids.supportStaff]);
+    const resolved = (await db.query('select status,resolution_note,resolved_at from public.support_requests where id=$1', [resolvedId])).rows[0];
+    assert.equal(resolved.status, 'resolved'); assert.equal(resolved.resolution_note, 'Guidance appointment completed'); assert(resolved.resolved_at);
+  });
+  await asUser(ids.superAdmin, async () => {
+    await db.query("select public.super_admin_update_admin($1,'admin',false)", [ids.supportStaff]);
+  });
+  await asUser(ids.supportStaff, async () => {
+    await assert.rejects(db.query('select * from public.osas_list_support_requests(null)'), /permission/i);
+  });
+  await asUser(ids.superAdmin, async () => {
+    await db.query("select public.super_admin_update_admin($1,'admin',true)", [ids.supportStaff]);
+  });
+  await asUser(ids.supportStaff, async () => {
+    assert.equal((await db.query('select * from public.osas_list_support_staff()')).rows.length, 1);
+  });
+
+  await asUser(ids.superAdmin, async () => {
+    await db.query('select public.super_admin_set_osas_permissions($1,false,false,true)', [ids.supportStaff]);
+    await db.query('select public.super_admin_set_osas_permissions($1,false,false,true)', [ids.aggregateStaff]);
+    assert.equal((await db.query('select count(*)::int count from public.osas_staff_permissions')).rows[0].count, 0);
+  });
+  await asUser(ids.supportStaff, async () => {
+    await assert.rejects(db.query('select * from public.osas_list_support_requests(null)'), /permission/i);
+    await assert.rejects(db.query('select * from public.osas_list_support_staff()'), /permission/i);
+  });
+  await asUser(ids.aggregateStaff, async () => {
+    await assert.rejects(db.query("select * from public.osas_check_in_summary('2026-09-01','2026-09-30','all')"), /permission/i);
+  });
+
+  console.log('PASS wellness privacy and Phase 4 support authorization workflows');
   await db.close();
 })().catch(async error => {
   console.error(error);
