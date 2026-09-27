@@ -60,8 +60,11 @@ async function asUser(id, action) {
   }
   await db.exec(migration('012_wellbeing_and_osas_foundation.sql'));
   await db.exec(migration('012_wellbeing_and_osas_foundation.sql'));
+  await db.exec(migration('013_check_in_motivation.sql'));
   await db.exec(migration('014_osas_support_staff_directory.sql'));
   await db.exec(migration('014_osas_support_staff_directory.sql'));
+  await db.exec(migration('015_osas_analytics_dashboard.sql'));
+  await db.exec(migration('015_osas_analytics_dashboard.sql'));
 
   for (const [index, id] of ids.students.entries()) {
     await asUser(id, () => db.query(
@@ -103,6 +106,7 @@ async function asUser(id, action) {
   await asUser(ids.regularAdmin, async () => {
     assert.equal((await db.query('select count(*)::int count from public.student_check_ins')).rows[0].count, 0);
     await assert.rejects(db.query("select * from public.osas_check_in_summary('2026-09-01','2026-09-30','all')"), /permission/i);
+    await assert.rejects(db.query("select public.osas_dashboard_analytics('2026-09-01','2026-09-30',null,null,null)"), /permission/i);
     await assert.rejects(db.query('select * from public.osas_list_support_staff()'), /permission/i);
   });
 
@@ -110,6 +114,10 @@ async function asUser(id, action) {
     await db.query('select public.super_admin_set_osas_permissions($1,true,false,true)', [ids.aggregateStaff]);
     await db.query('select public.super_admin_set_osas_permissions($1,false,true,true)', [ids.supportStaff]);
   });
+  for (const [index, id] of ids.students.entries()) {
+    await db.query(`insert into public.quest_completion_history(owner_id,title,category,completed_at)
+      values($1,$2,'Academics',$3)`, [id, `Completed quest ${index + 1}`, `2026-09-${20 + index}`]);
+  }
 
   await asUser(ids.aggregateStaff, async () => {
     assert.equal((await db.query('select count(*)::int count from public.student_check_ins')).rows[0].count, 0);
@@ -117,6 +125,24 @@ async function asUser(id, action) {
     assert.equal(Number(summary.student_count), 6);
     assert.equal(Number(summary.check_in_count), 6);
     assert.equal((await db.query("select * from public.osas_check_in_summary('2026-09-20','2026-09-23','all')")).rows.length, 0);
+    const dashboard = (await db.query("select public.osas_dashboard_analytics('2026-09-01','2026-09-30',null,null,null) dashboard")).rows[0].dashboard;
+    assert.equal(dashboard.suppressed, false);
+    assert.equal(Number(dashboard.participation.registered_students), 6);
+    assert.equal(Number(dashboard.participation.participating_students), 6);
+    assert.equal(Number(dashboard.participation.completion_events), 6);
+    assert.equal(dashboard.category_participation.length, 1);
+    assert.equal(dashboard.category_participation[0].category, 'Academics');
+    assert.equal(Number(dashboard.wellbeing.student_count), 6);
+    assert.equal(Number(dashboard.wellbeing.check_in_count), 6);
+    assert.equal(dashboard.self_management, null);
+    assert.equal(dashboard.support, null);
+    assert.equal(JSON.stringify(dashboard).includes('Private note'), false);
+    const suppressed = (await db.query("select public.osas_dashboard_analytics('2026-09-01','2026-09-30','Other Campus',null,null) dashboard")).rows[0].dashboard;
+    assert.equal(suppressed.suppressed, true);
+    assert.equal(suppressed.participation, null);
+    const options = (await db.query('select * from public.osas_dashboard_filter_options()')).rows;
+    assert(options.some(option => option.dimension === 'campus' && option.value === 'Main Campus'));
+    await assert.rejects(db.query("select public.osas_dashboard_analytics('2026-09-30','2026-09-01',null,null,null)"), /valid reporting period/i);
     await assert.rejects(db.query('select * from public.osas_list_support_requests(null)'), /permission/i);
   });
 
@@ -178,6 +204,31 @@ async function asUser(id, action) {
     assert.equal((await db.query('select * from public.osas_list_support_staff()')).rows.length, 1);
   });
 
+  for (let index = 1; index < ids.students.length; index += 1) {
+    await asUser(ids.students[index], () => db.query(`insert into public.self_management_reflections(
+      student_id,period_start,period_end,planning_score,follow_through_score,confidence_score
+    ) values($1,'2026-09-20','2026-09-26',4,3,4)`, [ids.students[index]]));
+  }
+  for (const index of [1, 3, 4, 5]) {
+    await asUser(ids.students[index], () => db.query(`insert into public.support_requests(
+      student_id,category,message,preferred_contact,consent_to_contact
+    ) values($1,'academic','Request for academic support.','email',true)`, [ids.students[index]]));
+  }
+  await asUser(ids.aggregateStaff, async () => {
+    const dashboard = (await db.query("select public.osas_dashboard_analytics('2026-09-01','2026-09-30',null,null,null) dashboard")).rows[0].dashboard;
+    assert.equal(Number(dashboard.self_management.student_count), 6);
+    assert.equal(Number(dashboard.self_management.reflection_count), 6);
+    assert.equal(Number(dashboard.support.student_count), 6);
+    assert.equal(Number(dashboard.support.request_count), 6);
+    assert.equal(Number(dashboard.support.submitted_count), 4);
+    assert.equal(Number(dashboard.support.resolved_count), 1);
+    assert.equal(Number(dashboard.support.withdrawn_count), 1);
+    assert.equal(dashboard.support_categories.length, 1);
+    assert.equal(dashboard.support_categories[0].category, 'academic');
+    assert.equal(JSON.stringify(dashboard).includes('Request for academic support'), false);
+    assert.equal(JSON.stringify(dashboard).includes('Private challenge'), false);
+  });
+
   await asUser(ids.superAdmin, async () => {
     await db.query('select public.super_admin_set_osas_permissions($1,false,false,true)', [ids.supportStaff]);
     await db.query('select public.super_admin_set_osas_permissions($1,false,false,true)', [ids.aggregateStaff]);
@@ -189,6 +240,7 @@ async function asUser(id, action) {
   });
   await asUser(ids.aggregateStaff, async () => {
     await assert.rejects(db.query("select * from public.osas_check_in_summary('2026-09-01','2026-09-30','all')"), /permission/i);
+    await assert.rejects(db.query("select public.osas_dashboard_analytics('2026-09-01','2026-09-30',null,null,null)"), /permission/i);
   });
 
   console.log('PASS wellness privacy and Phase 4 support authorization workflows');

@@ -19,6 +19,21 @@ export type OsasSupportRequest = {
   assigned_to: string | null; resolution_note: string | null; resolved_at: string | null;
   created_at: string; updated_at: string;
 };
+export type DashboardFilters = { startDate: string; endDate: string; campus: string | null; course: string | null; yearLevel: string | null };
+export type DashboardFilterOption = { dimension: 'campus' | 'course' | 'year_level'; value: string };
+export type DashboardAnalytics = {
+  suppressed: boolean; minimum_cohort: number; period_start: string; period_end: string;
+  participation: null | { registered_students: number; participating_students: number; completion_events: number; students_with_goals: number; current_quests_created: number; current_quests_completed: number; current_quest_completion_rate: number | null };
+  wellbeing: null | { student_count: number; check_in_count: number; motivation_response_count: number; average_wellbeing: number; average_stress: number; average_energy: number; average_motivation: number | null };
+  self_management: null | { student_count: number; reflection_count: number; average_planning: number; average_follow_through: number; average_confidence: number };
+  support: null | { student_count: number; request_count: number; submitted_count: number; acknowledged_count: number; in_progress_count: number; resolved_count: number; withdrawn_count: number };
+  activity_trends: { bucket_start: string; student_count: number; completion_events: number }[];
+  category_participation: { category: string; student_count: number; completion_events: number }[];
+  wellbeing_trends: { bucket_start: string; student_count: number; check_in_count: number; motivation_response_count: number; average_wellbeing: number; average_stress: number; average_energy: number; average_motivation: number | null }[];
+  reflection_trends: { bucket_start: string; student_count: number; reflection_count: number; average_planning: number; average_follow_through: number; average_confidence: number }[];
+  support_trends: { bucket_start: string; student_count: number; request_count: number }[];
+  support_categories: { category: string; student_count: number; request_count: number }[];
+};
 
 export async function getMyOsasPermissions(): Promise<OsasPermissions> {
   const { data, error } = await supabase.rpc('osas_get_my_permissions');
@@ -34,6 +49,19 @@ export async function getSelfManagementSummary(startDate: string, endDate: strin
   const { data, error } = await supabase.rpc('osas_self_management_summary', { start_date: startDate, end_date: endDate, group_by: groupBy });
   if (error) throw error;
   return (data ?? []) as SelfManagementSummary[];
+}
+export async function getDashboardFilterOptions(): Promise<DashboardFilterOption[]> {
+  const { data, error } = await supabase.rpc('osas_dashboard_filter_options');
+  if (error) throw error;
+  return (data ?? []) as DashboardFilterOption[];
+}
+export async function getDashboardAnalytics(filters: DashboardFilters): Promise<DashboardAnalytics> {
+  const { data, error } = await supabase.rpc('osas_dashboard_analytics', {
+    start_date: filters.startDate, end_date: filters.endDate, campus_filter: filters.campus,
+    course_filter: filters.course, year_level_filter: filters.yearLevel,
+  });
+  if (error) throw error;
+  return data as DashboardAnalytics;
 }
 export async function listSupportRequests(status: string | null = null): Promise<OsasSupportRequest[]> {
   const { data, error } = await supabase.rpc('osas_list_support_requests', { status_filter: status });
