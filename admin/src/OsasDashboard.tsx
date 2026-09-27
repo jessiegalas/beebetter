@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getDashboardAnalytics, getDashboardFilterOptions, type DashboardAnalytics, type DashboardFilterOption, type DashboardFilters, type OsasPermissions } from './osas-data';
+import { getDashboardAnalytics, getDashboardFilterOptions, logDashboardExport, type DashboardAnalytics, type DashboardFilterOption, type DashboardFilters, type OsasPermissions } from './osas-data';
 import { downloadOsasReportCsv } from './osas-report';
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
@@ -20,6 +20,7 @@ export function OsasDashboard({ permissions, onOpenSupport }: { permissions: Osa
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [exportNotice, setExportNotice] = useState('');
+  const [exporting, setExporting] = useState(false);
   const values = (dimension: DashboardFilterOption['dimension']) => options.filter((option) => option.dimension === dimension).map((option) => option.value);
 
   useEffect(() => {
@@ -32,30 +33,32 @@ export function OsasDashboard({ permissions, onOpenSupport }: { permissions: Osa
     void getDashboardAnalytics(filters).then(setData).catch((reason: Error) => { setData(null); setError(reason.message); }).finally(() => setLoading(false));
   }, [filters, permissions.can_view_aggregates, reload]);
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
     if (!data) return;
-    try { downloadOsasReportCsv(data, filters); setExportNotice('CSV report downloaded from the currently displayed aggregate data.'); }
+    setExporting(true); setExportNotice('');
+    try { await logDashboardExport(filters); downloadOsasReportCsv(data, filters); setExportNotice('CSV report downloaded and recorded in the report audit log.'); }
     catch (reason) { setExportNotice(reason instanceof Error ? reason.message : 'Report export failed.'); }
+    finally { setExporting(false); }
   };
 
   if (!permissions.can_view_aggregates) return <section className="panel dashboard-denied"><h2>OSAS reporting permission required</h2><p>This dashboard contains privacy-protected aggregate student information. A Super Admin must explicitly grant Aggregate reporting access.</p></section>;
 
   return <div className="osas-dashboard">
     <section className="panel dashboard-filters">
-      <div><h2>Reporting filters</h2><p>All results use the same period and student cohort. Groups with fewer than five students are withheld.</p></div>
+      <div><h2>Reporting filters</h2><p>Choose one demographic dimension at a time. Small cohorts and small complementary groups are withheld, and queries and exports are audited.</p></div>
       <div className="dashboard-filter-grid">
         <label>FROM<input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} /></label>
         <label>TO<input type="date" value={draft.endDate} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} /></label>
-        <Filter label="CAMPUS" value={draft.campus} options={values('campus')} onChange={(campus) => setDraft({ ...draft, campus })} />
-        <Filter label="PROGRAM" value={draft.course} options={values('course')} onChange={(course) => setDraft({ ...draft, course })} />
-        <Filter label="YEAR LEVEL" value={draft.yearLevel} options={values('year_level')} onChange={(yearLevel) => setDraft({ ...draft, yearLevel })} />
+        <Filter label="CAMPUS" value={draft.campus} options={values('campus')} onChange={(campus) => setDraft({ ...draft, campus, course: null, yearLevel: null })} />
+        <Filter label="PROGRAM" value={draft.course} options={values('course')} onChange={(course) => setDraft({ ...draft, campus: null, course, yearLevel: null })} />
+        <Filter label="YEAR LEVEL" value={draft.yearLevel} options={values('year_level')} onChange={(yearLevel) => setDraft({ ...draft, campus: null, course: null, yearLevel })} />
         <button className="primary-button" onClick={() => setFilters({ ...draft })} disabled={!draft.startDate || !draft.endDate}>Apply filters</button>
       </div>
-      <div className="report-actions"><button className="secondary-button" onClick={exportCsv} disabled={!data || data.suppressed || loading}>Export displayed data as CSV</button>{exportNotice && <span role="status">{exportNotice}</span>}</div>
+      <div className="report-actions"><button className="secondary-button" onClick={() => void exportCsv()} disabled={!data || data.suppressed || loading || exporting}>{exporting ? 'Recording export…' : 'Export displayed data as CSV'}</button>{exportNotice && <span role="status">{exportNotice}</span>}</div>
     </section>
     {loading && <section className="panel dashboard-state">Loading protected aggregate reports…</section>}
-    {error && <section className="panel dashboard-state error">Dashboard could not load: {error}. Apply migration 015 after migrations 012–014.<br /><button className="secondary-button" onClick={() => setReload((value) => value + 1)}>Retry</button></section>}
-    {!loading && !error && data?.suppressed && <section className="panel dashboard-state"><h2>Insufficient cohort size</h2><p>This filter matches fewer than {data.minimum_cohort} registered students, so all results are withheld to protect privacy.</p></section>}
+    {error && <section className="panel dashboard-state error">Dashboard could not load: {error}. Verify migrations through 019 are applied in order.<br /><button className="secondary-button" onClick={() => setReload((value) => value + 1)}>Retry</button></section>}
+    {!loading && !error && data?.suppressed && <section className="panel dashboard-state"><h2>Report withheld for privacy</h2><p>The selected cohort or its complementary group is smaller than {data.minimum_cohort} students, so all results are withheld.</p></section>}
     {!loading && !error && data && !data.suppressed && <DashboardContent data={data} canManageSupport={permissions.can_manage_support_requests} onOpenSupport={onOpenSupport} />}
   </div>;
 }

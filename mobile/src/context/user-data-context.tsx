@@ -206,12 +206,12 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         // Try upserting default profile
         const { data: createdProfile } = await supabase
           .from('profiles')
-          .upsert(defaultProfile, { onConflict: 'id' })
+          .upsert({ id: defaultProfile.id, display_name: defaultProfile.display_name }, { onConflict: 'id' })
           .select('*')
           .maybeSingle();
 
         if (version !== requestVersion.current) return;
-        setProfile((createdProfile as UserProfile) ?? defaultProfile);
+        setProfile(createdProfile ? { ...defaultProfile, ...createdProfile } : defaultProfile);
       }
 
       // Durable history supplements existing completed quests; old databases can still be read.
@@ -246,7 +246,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
 
     const { data, error: studentError } = await supabase
       .from('students')
-      .update({ ...updates, email: profile?.email ?? user.email ?? '', updated_at: new Date().toISOString() })
+      .update({ ...updates, email: profile?.email ?? user.email ?? '' })
       .eq('id', user.id)
       .select('*')
       .single();
@@ -256,7 +256,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     setProfile((current) => current ? { ...current, ...data, display_name: data.name } : current);
-    await supabase.from('profiles').update({ display_name: data.name, updated_at: new Date().toISOString() }).eq('id', user.id);
+    await supabase.from('profiles').update({ display_name: data.name }).eq('id', user.id);
     return { success: true };
   }, [profile?.email, user]);
 
@@ -402,7 +402,6 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         xp: questData.xp,
         is_nearby: Boolean(questData.is_nearby),
         location_id: questData.location_id ?? null,
-        status: 'active' as const,
         ...(questData.requires_proof ? { requires_proof: true } : {}),
         ...contextPayload(questData),
       };
@@ -437,7 +436,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       title: draft.title.trim(), description: draft.description?.trim() || null,
       category: draft.category, location_id: draft.location_id ?? null,
       is_nearby: Boolean(draft.location_id), requires_proof: Boolean(draft.requires_proof),
-      ...contextPayload(draft), updated_at: new Date().toISOString(),
+      ...contextPayload(draft),
     }).eq('id', id).eq('owner_id', user.id).neq('status', 'completed').select('*').single();
     if (updateError) return { success: false, error: databaseQuestError(updateError) };
     setQuests(previous => previous.map(q => q.id === id ? data as Quest : q));
