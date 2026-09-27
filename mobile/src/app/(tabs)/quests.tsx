@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -24,6 +24,7 @@ import { useUserData, Quest, Category, QuestStatus, ProofFile } from '@/hooks/us
 import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useQuestPriority } from '@/context/quest-priority-context';
 import { activeFilterCount, DEFAULT_FILTERS, filterAllQuests, recommendedQuests, type QuestFilters } from '@/lib/quest-discovery';
+import { createRecommendationSession, recordRecommendationEvent } from '@/lib/recommendation-events';
 
 
 
@@ -63,6 +64,8 @@ export default function QuestsScreen() {
   const { ranked, locationAvailable, now } = useQuestPriority();
   const selected = ranked.find(item => item.quest.id === questId);
   const [view, setView] = useState<'context' | 'all'>('context');
+  const recommendationSession = useRef(createRecommendationSession());
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const [appliedFilters, setAppliedFilters] = useState<QuestFilters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<QuestFilters>(DEFAULT_FILTERS);
@@ -71,9 +74,26 @@ export default function QuestsScreen() {
   const filterCount = activeFilterCount(appliedFilters);
   const openFilters = () => { setDraftFilters({ ...appliedFilters }); setFiltersOpen(true); };
   const visibleRanked = useMemo(() => view === 'context'
-    ? recommendedQuests(ranked)
-    : filterAllQuests(ranked, appliedFilters, now), [ranked, appliedFilters, view, now]);
+    ? recommendedQuests(ranked).filter(item => !dismissed.has(item.quest.id))
+    : filterAllQuests(ranked, appliedFilters, now), [ranked, appliedFilters, view, now, dismissed]);
   const visibleQuests = visibleRanked.map(item => item.quest);
+  useEffect(() => {
+    if (view !== 'context' || isLoading || loadError) return;
+    visibleRanked.slice(0, 10).forEach((item, index) => {
+      void recordRecommendationEvent({ questId: item.quest.id, eventType: 'exposure',
+        sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined);
+    });
+  }, [view, isLoading, loadError, visibleRanked]);
+  const openRecommendation = (item: typeof visibleRanked[number], index: number) => {
+    void recordRecommendationEvent({ questId: item.quest.id, eventType: 'selection',
+      sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined);
+    router.setParams({ questId: item.quest.id });
+  };
+  const dismissRecommendation = (item: typeof visibleRanked[number], index: number) => {
+    void recordRecommendationEvent({ questId: item.quest.id, eventType: 'dismissal',
+      sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined);
+    setDismissed(current => new Set(current).add(item.quest.id));
+  };
 
   const handleConfirmDelete = (quest: Quest) => {
     Alert.alert(
@@ -148,7 +168,7 @@ export default function QuestsScreen() {
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close quest details" onPress={() => { dismissReward(); closeDetails(); }} style={{ minHeight: 44, justifyContent: 'center' }}><ThemedText>Close details</ThemedText></TouchableOpacity>
             <SectionTitle title="Quest details" />
             {reward && <QuestReward {...reward} progress={levelProgress} onClose={dismissReward} />}
-            {!reward && (selected ? <QuestCard key={selected.quest.id} quest={selected.quest} completing={completingId === selected.quest.id} reasons={selected.reasons} nearby={selected.nearby} details onEdit={() => { closeDetails(); router.push({ pathname: '/add-quest', params: { id: selected.quest.id } }); }} onComplete={proof => void handleComplete(selected.quest, proof)} onDelete={() => handleConfirmDelete(selected.quest)} /> : <ThemedText>{isLoading ? 'Loading quest...' : 'This quest is no longer available.'}</ThemedText>)}
+            {!reward && (selected ? <QuestCard key={selected.quest.id} quest={selected.quest} completing={completingId === selected.quest.id} reasons={selected.reasons} nearby={selected.nearby} locked={selected.locked} details onEdit={() => { closeDetails(); router.push({ pathname: '/add-quest', params: { id: selected.quest.id } }); }} onComplete={proof => void handleComplete(selected.quest, proof)} onDelete={() => handleConfirmDelete(selected.quest)} /> : <ThemedText>{isLoading ? 'Loading quest...' : 'This quest is no longer available.'}</ThemedText>)}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -164,7 +184,7 @@ export default function QuestsScreen() {
               tintColor={COLORS.honeyDark}
             />
           }>
-          {questsHasMore && <ThemedText style={styles.contextHint}>Showing the newest 200 actionable quests. Refine or complete older assignments to reduce the active list.</ThemedText>}
+          {questsHasMore && <ThemedText style={styles.contextHint}>More quests are loading. Recommendations may reorder when loading finishes.</ThemedText>}
           <View style={styles.questHero}>
             <View style={styles.questHeroIcon}><Ionicons name="sparkles" size={29} color={COLORS.honeyDeep} /></View>
             <View style={styles.questHeroCopy}>
@@ -224,7 +244,9 @@ export default function QuestsScreen() {
                 reasons={item.reasons}
                 priority={view === 'context' ? index + 1 : undefined}
                 nearby={item.nearby}
-                onOpen={view === 'context' ? () => router.setParams({ questId: item.quest.id }) : undefined}
+                locked={item.locked}
+                onDismiss={view === 'context' ? () => dismissRecommendation(item, index) : undefined}
+                onOpen={view === 'context' ? () => openRecommendation(item, index) : undefined}
                 onComplete={(proof) => void handleComplete(item.quest, proof)}
                 onDelete={() => handleConfirmDelete(item.quest)}
               />
@@ -252,7 +274,9 @@ function QuestCard({
   reasons,
   priority,
   nearby = false,
+  locked = false,
   onOpen,
+  onDismiss,
   details = false,
   completing = false,
   onEdit,
@@ -263,7 +287,9 @@ function QuestCard({
   reasons: string[];
   priority?: number;
   nearby?: boolean;
+  locked?: boolean;
   onOpen?: () => void;
+  onDismiss?: () => void;
   details?: boolean;
   completing?: boolean;
   onEdit?: () => void;
@@ -333,6 +359,7 @@ function QuestCard({
         </ThemedText>
 
         {(priority !== undefined || details) && !isCompleted && <ThemedText style={styles.reasonText}>{reasons.slice(0, 2).join(' / ')}</ThemedText>}
+        {locked && <ThemedText style={styles.lockedText}>Locked until its prerequisite quest is completed.</ThemedText>}
         {(quest.scheduled_at || quest.preferred_time || quest.deadline_at) && (
           <ThemedText style={styles.questSubtitle}>
             {[
@@ -351,7 +378,7 @@ function QuestCard({
 
       {/* Action Buttons */}
       <View style={styles.questActions}>
-        {onOpen ? <TouchableOpacity style={styles.rewardAction} accessibilityRole="button" onPress={onOpen}><ThemedText style={styles.filterTextActive}>View quest</ThemedText><XpBadge xp={quest.xp} /></TouchableOpacity> : !isCompleted ? (
+        {onOpen ? <><TouchableOpacity style={styles.rewardAction} accessibilityRole="button" onPress={onOpen}><ThemedText style={styles.filterTextActive}>View quest</ThemedText><XpBadge xp={quest.xp} /></TouchableOpacity>{onDismiss && <TouchableOpacity style={styles.dismissButton} accessibilityRole="button" onPress={onDismiss}><ThemedText style={styles.contextHint}>Not now</ThemedText></TouchableOpacity>}</> : !isCompleted ? (
           <>
             {quest.requires_proof && (
               <View style={styles.proofActions}>
@@ -379,7 +406,7 @@ function QuestCard({
               <TouchableOpacity
                 style={[styles.proofSubmitButton, !proof && styles.xpBadgeDisabled]}
                 onPress={() => onComplete(proof)}
-                disabled={!proof || completing}
+                disabled={!proof || completing || locked}
                 activeOpacity={0.7}
                 accessibilityLabel={`Submit proof and complete quest for ${quest.xp} XP`}>
                 <Ionicons name="cloud-upload-outline" size={14} color={COLORS.ink} />
@@ -391,12 +418,12 @@ function QuestCard({
               <TouchableOpacity
                 style={styles.rewardAction}
                 accessibilityRole="button"
-                disabled={completing}
-                accessibilityState={{ busy: completing, disabled: completing }}
+                disabled={completing || locked}
+                accessibilityState={{ busy: completing, disabled: completing || locked }}
                 onPress={() => onComplete()}
                 activeOpacity={0.7}
                 accessibilityLabel={`Complete quest and earn ${quest.xp} XP`}>
-                <Ionicons name="checkmark-circle-outline" size={20} color={COLORS.honeyDeep} /><ThemedText style={styles.filterTextActive}>{completing ? 'Completing...' : 'Complete quest'}</ThemedText><XpBadge xp={quest.xp} />
+                <Ionicons name="checkmark-circle-outline" size={20} color={COLORS.honeyDeep} /><ThemedText style={styles.filterTextActive}>{locked ? 'Prerequisite required' : completing ? 'Completing...' : 'Complete quest'}</ThemedText><XpBadge xp={quest.xp} />
               </TouchableOpacity>
             )}
 
@@ -474,6 +501,8 @@ const styles = StyleSheet.create({
   viewToggle: { flexDirection: 'row', gap: 10 },
   contextHint: { fontSize: 12, lineHeight: 18, color: COLORS.muted },
   questGroup: { gap: 10 },
+  lockedText: { color: COLORS.danger, fontSize: 11, lineHeight: 16, marginTop: 4 },
+  dismissButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10 },
   reasonText: { fontSize: 12, lineHeight: 18, color: COLORS.honeyDeep, marginTop: 5 },
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },

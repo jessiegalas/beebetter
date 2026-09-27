@@ -9,7 +9,7 @@ import { getMyRecommendationWellnessContext, subscribeRecommendationContext, typ
 const QuestPriorityContext = createContext<{ ranked: RankedQuest[]; locationAvailable: boolean; now: number } | null>(null);
 
 export function QuestPriorityProvider({ children }: { children: ReactNode }) {
-  const { user, quests, completionHistory } = useUserData();
+  const { user, profile, quests, completionHistory } = useUserData();
   const { coords, locationUpdatedAt, locations, permissionStatus } = useLocationContext();
   const [now, setNow] = useState(Date.now);
   const [geofenceEvents, setGeofenceEvents] = useState<GeofenceEvents>({});
@@ -39,8 +39,8 @@ export function QuestPriorityProvider({ children }: { children: ReactNode }) {
   const context = useMemo(() => ({
     now: Math.max(now, locationUpdatedAt ?? now), coords: permissionStatus === 'granted' ? coords : null,
     locationUpdatedAt, places: locations, history: completionHistory,
-    geofenceEvents: permissionStatus === 'granted' ? geofenceEvents : {}, wellness,
-  }), [now, coords, permissionStatus, locationUpdatedAt, locations, completionHistory, geofenceEvents, wellness]);
+    geofenceEvents: permissionStatus === 'granted' ? geofenceEvents : {}, wellness, personalGoal: profile?.goal ?? null,
+  }), [now, coords, permissionStatus, locationUpdatedAt, locations, completionHistory, geofenceEvents, wellness, profile?.goal]);
   const value = useMemo(() => ({
     ranked: prioritizeQuests(quests, context),
     now: context.now,

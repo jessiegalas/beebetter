@@ -241,20 +241,27 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 2. Fetch Quests
-      const { data: questsData, error: questsErr, count: questsCount } = await supabase
-        .from('quests')
-        .select('*', { count: 'exact' })
-        .eq('owner_id', currentUser.id)
-        .neq('status', 'completed')
-        .order('created_at', { ascending: false })
-        .limit(200);
+      const allCandidates: Quest[] = [];
+      const candidatePageSize = 200;
+      let candidateOffset = 0;
+      let candidateError: { code?: string; message: string } | null = null;
+      do {
+        const { data, error } = await supabase.rpc('student_list_recommendation_candidates', {
+          page_size: candidatePageSize, page_offset: candidateOffset,
+        });
+        if (error) { candidateError = error; break; }
+        const page = (data ?? []) as Quest[];
+        allCandidates.push(...page);
+        candidateOffset += page.length;
+        if (page.length < candidatePageSize) break;
+      } while (version === requestVersion.current);
 
       if (version !== requestVersion.current) return;
-      if (questsErr) {
-        setError(questsErr.code === '42P01' ? 'Run the Supabase SQL migration before loading quests.' : questsErr.message);
-      } else if (questsData) {
-        setQuests(questsData as Quest[]);
-        setQuestsHasMore(Number(questsCount ?? 0) > questsData.length);
+      if (candidateError) {
+        setError(candidateError.code === 'PGRST202' ? 'Run Supabase migration 023 before loading recommendations.' : candidateError.message);
+      } else {
+        setQuests(allCandidates);
+        setQuestsHasMore(false);
       }
     } catch (err) {
       if (version === requestVersion.current) setError(err instanceof Error ? err.message : 'Failed to load user data');

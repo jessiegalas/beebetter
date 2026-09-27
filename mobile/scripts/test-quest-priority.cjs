@@ -189,4 +189,32 @@ test('date validation permits anytime current minute and future with ordered dea
   assert.throws(() => validateQuestDates(iso(60), iso(30), now), /on or after/);
   assert.throws(() => validateQuestDates(iso(1), null, now + 120000), /past/);
 });
+
+test('unscheduled quests remain eligible without deadline or schedule urgency', () => {
+  const item = rank([quest('anytime')])[0];
+  assert.equal(item.tier, 'other');
+  assert.deepEqual(item.reasons, ['Fits whenever you have time']);
+  assert(!item.reasonCodes.some(code => code.startsWith('deadline_') || code.startsWith('schedule_')));
+});
+test('reason codes exactly match visible scoring explanations', () => {
+  const item = rank([quest('timed', { location_id: 'place', deadline_at: iso(30), importance: 'high' })])[0];
+  assert(item.reasons.includes('Due soon'));
+  assert(item.reasonCodes.includes('deadline_soon'));
+  assert(item.reasonCodes.includes('location_at'));
+  assert(!item.reasonCodes.includes('goal_alignment'));
+});
+test('goal alignment is scored and explained only on actual token overlap', () => {
+  const match = rank([quest('study', { title: 'Finish thesis chapter' })], { personalGoal: 'Complete my thesis research' })[0];
+  const miss = rank([quest('exercise', { title: 'Morning walk' })], { personalGoal: 'Complete my thesis research' })[0];
+  assert(match.score > miss.score);
+  assert(match.reasons.includes('Matches your personal goal'));
+  assert(match.reasonCodes.includes('goal_alignment'));
+  assert(!miss.reasonCodes.includes('goal_alignment'));
+});
+test('waiting prerequisites expose a deterministic locked state', () => {
+  const item = rank([quest('child', { prerequisite_quest_id: 'missing', deadline_at: iso(-10) })])[0];
+  assert.equal(item.locked, true);
+  assert(item.reasons.includes('Prerequisite unavailable'));
+  assert.equal(rank([quest('parent', { status: 'completed' }), quest('ready', { prerequisite_quest_id: 'parent' })]).find(i => i.quest.id === 'ready').locked, false);
+});
 console.log(count + ' context-aware tests passed.');

@@ -12,12 +12,12 @@ const CANVAS = 300;
 const CENTER = { x: 150, y: 150 };
 
 const habitNodes = [
-  { id: 1, label: 'Focus', x: 70, y: 65, minXp: 25 },
-  { id: 2, label: 'Discipline', x: 230, y: 65, minXp: 50 },
-  { id: 3, label: 'Fitness', x: 38, y: 155, minXp: 75 },
-  { id: 4, label: 'Nutrition', x: 262, y: 155, minXp: 100 },
-  { id: 5, label: 'Study', x: 70, y: 245, minXp: 125 },
-  { id: 6, label: 'Rest', x: 230, y: 245, minXp: 150 },
+  { id: 1, label: '25 XP', x: 70, y: 65, minXp: 25 },
+  { id: 2, label: '50 XP', x: 230, y: 65, minXp: 50 },
+  { id: 3, label: '75 XP', x: 38, y: 155, minXp: 75 },
+  { id: 4, label: '100 XP', x: 262, y: 155, minXp: 100 },
+  { id: 5, label: '125 XP', x: 70, y: 245, minXp: 125 },
+  { id: 6, label: '150 XP', x: 230, y: 245, minXp: 150 },
 ];
 
 export default function SkillTreeScreen() {
@@ -56,7 +56,7 @@ export default function SkillTreeScreen() {
     },
   ];
 
-  const totalSkillsUnlocked = habitNodes.filter((node) => totalXp >= node.minXp).length;
+  const totalSkillsReached = habitNodes.filter((node) => totalXp >= node.minXp).length;
 
   return (
     <View style={styles.container}>
@@ -74,9 +74,9 @@ export default function SkillTreeScreen() {
           }>
           <View style={styles.skillHero}>
             <View style={styles.skillHeroTop}><BeeMark size={58} /><View style={styles.skillHeroBadge}><Ionicons name="sparkles" size={14} color={COLORS.honeyDeep} /><ThemedText style={styles.skillHeroBadgeText}>{totalXp} XP</ThemedText></View></View>
-            <ThemedText style={styles.skillHeroEyebrow}>YOUR GROWTH MAP</ThemedText>
-            <ThemedText style={styles.skillHeroTitle}>Watch your strengths bloom.</ThemedText>
-            <ThemedText style={styles.skillHeroSubtitle}>{totalSkillsUnlocked} of {habitNodes.length} milestones unlocked. Keep exploring.</ThemedText>
+            <ThemedText style={styles.skillHeroEyebrow}>QUEST ACTIVITY</ThemedText>
+            <ThemedText style={styles.skillHeroTitle}>Track the quests you complete.</ThemedText>
+            <ThemedText style={styles.skillHeroSubtitle}>{totalSkillsReached} of {habitNodes.length} XP milestones reached. XP records quest activity, not verified mastery.</ThemedText>
           </View>
 
           {/* Category Summary Cards */}
@@ -88,10 +88,10 @@ export default function SkillTreeScreen() {
           <View style={styles.diagramHeader}>
             <View style={styles.diagramHeaderLeft}>
               <Ionicons name="git-network-outline" size={16} color={COLORS.ink} />
-              <ThemedText style={styles.sectionTitle}>Progression Tree</ThemedText>
+              <ThemedText style={styles.sectionTitle}>XP Milestones</ThemedText>
             </View>
             <ThemedText style={styles.seeAll}>
-              {totalSkillsUnlocked}/{habitNodes.length} Unlocked
+              {totalSkillsReached}/{habitNodes.length} Reached
             </ThemedText>
           </View>
 
@@ -116,7 +116,7 @@ export default function SkillTreeScreen() {
 
               {/* Center Core Node */}
               <View style={[styles.centerNode, { left: CENTER.x - 36, top: CENTER.y - 16 }]}>
-                <ThemedText style={styles.centerNodeText}>Core Hive</ThemedText>
+                <ThemedText style={styles.centerNodeText}>Quest XP</ThemedText>
               </View>
 
               {/* Orbital Nodes */}

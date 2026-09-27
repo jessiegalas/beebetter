@@ -21,7 +21,12 @@ export type PriorityContext = {
   history: CompletionRecord[];
   geofenceEvents?: Record<string, { inside: boolean; timestamp: number }>;
   wellness?: RecommendationContext | null;
+  personalGoal?: string | null;
 };
+export type RecommendationReasonCode = 'location_at' | 'location_nearby' | 'deadline_overdue' | 'deadline_soon' |
+  'deadline_day' | 'deadline_days' | 'schedule_now' | 'schedule_soon' | 'schedule_earlier' | 'preferred_now' |
+  'preferred_soon' | 'importance_high' | 'activity_gap' | 'activity_variety' | 'unlocks_quest' |
+  'goal_alignment' | 'reflection_related' | 'manageable_step' | 'reported_momentum';
 export type RecommendationContext = {
   checkIn: { check_in_date: string; overall_wellbeing: number; stress_level: number; energy_level: number; motivation_level: number | null } | null;
   reflection: { quest_id: string | null; period_end: string; planning_score: number; follow_through_score: number; confidence_score: number } | null;
@@ -31,6 +36,8 @@ export type RankedQuest = {
   quest: Quest;
   tier: QuestTier;
   reasons: string[];
+  reasonCodes: RecommendationReasonCode[];
+  locked: boolean;
   nearby: boolean;
   distance: number | null;
   score: number; // Internal only. UI renders tier + reasons, never this value.
@@ -78,9 +85,9 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
   const recentReflection = reflectionTime !== null && reflectionTime >= context.now - REFLECTION_MAX_AGE && reflectionTime <= context.now + DAY ? context.wellness!.reflection : null;
   const ranked = quests.map((quest): RankedQuest => {
     let score = 8;
-    const signals: { text: string; weight: number }[] = [];
+    const signals: { text: string; weight: number; code: RecommendationReasonCode }[] = [];
     const notes: string[] = [];
-    const add = (weight: number, text: string) => { score += weight; signals.push({ text, weight }); };
+    const add = (weight: number, text: string, code: RecommendationReasonCode) => { score += weight; signals.push({ text, weight, code }); };
     let nearby = false;
     let distance: number | null = null;
     let away = false;
@@ -90,14 +97,14 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
       const event = context.geofenceEvents?.[quest.location_id];
       if (place?.is_active && event && context.now >= event.timestamp &&
           context.now - event.timestamp <= LOCATION_MAX_AGE && event.timestamp > (context.locationUpdatedAt ?? 0)) {
-        if (event.inside) { nearby = true; add(32, "You're at " + place.name); }
+        if (event.inside) { nearby = true; add(32, "You're at " + place.name, 'location_at'); }
         else { notes.push('Outside your saved place'); score -= 8; }
       } else if (place?.is_active && hasFreshPosition(context) && context.coords &&
           (context.coords.accuracy == null || context.coords.accuracy <= Math.max(place.radius, 150))) {
         distance = distanceMeters(context.coords, place);
         nearby = distance <= place.radius + 500;
-        if (distance <= place.radius) add(32, "You're at " + place.name);
-        else if (nearby) add(14 + 14 * (1 - (distance - place.radius) / 500), "You're nearby");
+        if (distance <= place.radius) add(32, "You're at " + place.name, 'location_at');
+        else if (nearby) add(14 + 14 * (1 - (distance - place.radius) / 500), "You're nearby", 'location_nearby');
         else { score -= 20; away = true; notes.push('Away from your saved place'); }
       } else {
         locationUnknown = true;
@@ -108,10 +115,10 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
     const deadline = timestamp(quest.deadline_at);
     const dueMinutes = deadline === null ? null : (deadline - context.now) / MINUTE;
     if (dueMinutes !== null) {
-      if (dueMinutes < 0) add(46, 'Overdue');
-      else if (dueMinutes <= 120) add(40, 'Due soon');
-      else if (dueMinutes <= 1440) add(24, 'Due within a day');
-      else if (dueMinutes <= 4320) add(10, 'Due in a few days');
+      if (dueMinutes < 0) add(46, 'Overdue', 'deadline_overdue');
+      else if (dueMinutes <= 120) add(40, 'Due soon', 'deadline_soon');
+      else if (dueMinutes <= 1440) add(24, 'Due within a day', 'deadline_day');
+      else if (dueMinutes <= 4320) add(10, 'Due in a few days', 'deadline_days');
     }
 
     let timeMatch = false;
@@ -119,20 +126,20 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
     const scheduled = timestamp(quest.scheduled_at);
     if (scheduled !== null) {
       const minutes = (scheduled - context.now) / MINUTE;
-      if (minutes >= -60 && minutes <= 30) { add(36, 'Good time now'); timeMatch = true; }
-      else if (minutes > 30 && minutes <= 120) { add(26, 'Scheduled soon'); timeMatch = true; }
+      if (minutes >= -60 && minutes <= 30) { add(36, 'Good time now', 'schedule_now'); timeMatch = true; }
+      else if (minutes > 30 && minutes <= 120) { add(26, 'Scheduled soon', 'schedule_soon'); timeMatch = true; }
       else if (minutes > 120) { score -= 12; futureSchedule = true; notes.push('Scheduled for later'); }
-      else add(8, 'Scheduled earlier');
+      else add(8, 'Scheduled earlier', 'schedule_earlier');
     } else if (quest.preferred_time && /^([01]\d|2[0-3]):[0-5]\d(:00)?$/.test(quest.preferred_time)) {
       const [hour, minute] = quest.preferred_time.split(':').map(Number);
       const now = new Date(context.now);
       const difference = (hour * 60 + minute - now.getHours() * 60 - now.getMinutes() + 1440) % 1440;
-      if (difference <= 30 || difference >= 1380) { add(32, 'Good time now'); timeMatch = true; }
-      else if (difference <= 120) { add(22, 'Preferred time soon'); timeMatch = true; }
+      if (difference <= 30 || difference >= 1380) { add(32, 'Good time now', 'preferred_now'); timeMatch = true; }
+      else if (difference <= 120) { add(22, 'Preferred time soon', 'preferred_soon'); timeMatch = true; }
       else { score -= 8; notes.push('Outside your preferred time'); }
     }
     if (nearby && timeMatch) score += 12;
-    if (quest.importance === 'high') add(14, 'High importance');
+    if (quest.importance === 'high') add(14, 'High importance', 'importance_high');
     else if (quest.importance === 'low') score -= 5;
 
     const validHistory = history.filter(h => h.category === quest.category &&
@@ -142,7 +149,7 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
     if (relevant.length) {
       const latest = Math.max(...relevant.map(h => timestamp(h.completed_at)!));
       const days = (context.now - latest) / DAY;
-      if (days >= 3) add(Math.min(14, 6 + days), sameActivity.length ? 'Not done recently' : 'A change of activity');
+      if (days >= 3) add(Math.min(14, 6 + days), sameActivity.length ? 'Not done recently' : 'A change of activity', sameActivity.length ? 'activity_gap' : 'activity_variety');
       else if (days < 0.25 && sameActivity.length) score -= 12;
     }
     const created = timestamp(quest.created_at);
@@ -152,7 +159,11 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
     const waiting = !!quest.prerequisite_quest_id && dependency?.status !== 'completed';
     if (waiting) { score -= 35; notes.unshift(dependency ? 'Do after: ' + dependency.title : 'Prerequisite unavailable'); }
     const dependents = quests.filter(q => q.prerequisite_quest_id === quest.id && (q.status === 'active' || q.status === 'rejected'));
-    if (dependents.length) add(Math.min(12, dependents.length * 6), 'Helps you start another quest');
+    if (dependents.length) add(Math.min(12, dependents.length * 6), 'Helps you start another quest', 'unlocks_quest');
+
+    const goalTokens = new Set((context.personalGoal ?? '').toLocaleLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+    const questWords = (quest.title + ' ' + (quest.description ?? '') + ' ' + quest.category).toLocaleLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+    if (goalTokens.size && questWords.some(word => goalTokens.has(word))) add(5, 'Matches your personal goal', 'goal_alignment');
 
     const active = quest.status === 'active' || quest.status === 'rejected';
     const urgent = dueMinutes !== null && dueMinutes <= 120;
@@ -180,6 +191,9 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
       personalWeight = 3; personalReason = 'Matches the momentum you reported';
     }
     score += personalWeight;
+    const personalCode: RecommendationReasonCode | null = personalReason === 'Connects with your recent reflection' ? 'reflection_related' :
+      personalReason === 'A manageable step for today' ? 'manageable_step' :
+      personalReason === 'Matches the momentum you reported' ? 'reported_momentum' : null;
 
     const reasons = active
       ? [...notes, ...signals.sort((a, b) => b.weight - a.weight).map(s => s.text)].slice(0, 3)
@@ -190,7 +204,10 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
       else reasons.splice(1, 0, personalReason);
       reasons.splice(3);
     }
-    return { quest, tier, reasons, nearby, distance, score };
+    const shownSignals = signals.filter(signal => reasons.includes(signal.text));
+    const reasonCodes = shownSignals.map(signal => signal.code);
+    if (personalCode && reasons.includes(personalReason!)) reasonCodes.push(personalCode);
+    return { quest, tier, reasons, reasonCodes: [...new Set(reasonCodes)], locked: waiting, nearby, distance, score };
   });
   return ranked.sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier) ||
     b.score - a.score || a.quest.created_at.localeCompare(b.quest.created_at) || a.quest.id.localeCompare(b.quest.id));
