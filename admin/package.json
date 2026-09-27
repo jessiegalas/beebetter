@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test:report": "node scripts/test-osas-report.cjs",
     "preview": "vite preview"
   },
   "dependencies": {

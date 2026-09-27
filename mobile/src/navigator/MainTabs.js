@@ -1,10 +1,10 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
-import HomeScreen from '../screens/HomeScreen';
-import QuestsScreen from '../screens/QuestsScreen';
-import SkillTreeScreen from '../screens/SkillTreeScreen';
-import ProfileScreen from '../screens/ProfileScreen';
+import HomeScreen from './screens/HomeScreen';
+import QuestsScreen from './screens/QuestsScreen';
+import SkillTreeScreen from './screens/SkillTreeScreen';
+import ProfileScreen from './screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
