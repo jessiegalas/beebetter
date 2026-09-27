@@ -11,9 +11,9 @@ const reportModule = new Module(filename, module); reportModule.filename = filen
 const { buildOsasReportCsv } = reportModule.exports;
 
 const data = {
-  suppressed: false, minimum_cohort: 5, period_start: '2026-09-01', period_end: '2026-09-30',
-  participation: { registered_students: 6, participating_students: 6, completion_events: 7, students_with_goals: 5, current_quests_created: 4, current_quests_completed: 3, current_quest_completion_rate: 75 },
-  wellbeing: { student_count: 6, check_in_count: 8, motivation_response_count: 5, average_wellbeing: 3.5, average_stress: 2.75, average_energy: 4, average_motivation: 3.2 },
+  suppressed: false, minimum_cohort: 5, period_start: '2026-09-01', period_end: '2026-09-30', institutional_timezone: 'Asia/Manila', cohort_as_of: '2026-09-30',
+  participation: { registered_students: 6, participating_students: 6, completion_events: 7, students_with_goals: 5, quests_created: 4, quests_completed: 3, quest_completion_rate: 75 },
+  wellbeing: { student_count: 6, check_in_count: 8, motivation_response_count: 5, averaging_method: 'equal weight per participating student', average_wellbeing: 3.5, average_stress: 2.75, average_energy: 4, average_motivation: 3.2 },
   self_management: null,
   support: { student_count: 5, request_count: 6, submitted_count: 2, acknowledged_count: 1, in_progress_count: 1, resolved_count: 1, withdrawn_count: 1 },
   activity_trends: [{ bucket_start: '2026-09-20', student_count: 5, completion_events: 6 }],

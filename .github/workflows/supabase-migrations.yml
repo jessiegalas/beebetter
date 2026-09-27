@@ -1,0 +1,32 @@
+name: Supabase migration verification
+
+on:
+  pull_request:
+    paths: ['supabase/**', '.github/workflows/supabase-migrations.yml']
+  push:
+    branches: [main]
+    paths: ['supabase/**', '.github/workflows/supabase-migrations.yml']
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start disposable Supabase stack
+        run: |
+          supabase init --force
+          supabase start
+      - name: Apply ordered BeeBetter migrations
+        shell: pwsh
+        run: |
+          $line = supabase status -o env | Select-String '^DB_URL='
+          if (-not $line) { throw 'Local Supabase DB_URL was not reported.' }
+          $url = ($line.Line -replace '^DB_URL=', '').Trim('"')
+          ./supabase/verify-local-supabase.ps1 -DatabaseUrl $url
+      - name: Stop disposable stack
+        if: always()
+        run: supabase stop --no-backup

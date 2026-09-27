@@ -11,7 +11,7 @@ import { useQuestPriority } from '@/context/quest-priority-context';
 import { useUserData } from '@/hooks/use-user-data';
 
 export default function HomeScreen() {
-  const { user, profile, quests, completedQuests, isLoading, isRefreshing, error, levelProgress, refresh } = useUserData();
+  const { user, profile, quests, progressSummary, isLoading, isRefreshing, error, levelProgress, refresh } = useUserData();
   const displayName = profile?.display_name?.trim() || profile?.name?.trim() || user?.email?.split('@')[0] || (user ? 'Explorer' : 'Guest');
   const { ranked, locationAvailable } = useQuestPriority();
   const recommendations = ranked.filter(({ quest, tier }) => tier !== 'history' && (!quest.prerequisite_quest_id || quests.some(q => q.id === quest.prerequisite_quest_id && q.status === 'completed'))).slice(0, 1);
@@ -90,7 +90,7 @@ export default function HomeScreen() {
                 {user ? (
                   <>
                     <XpProgress progress={levelProgress} />
-                    <ThemedText style={styles.progressText}>{completedQuests.length} quests completed</ThemedText>
+                    <ThemedText style={styles.progressText}>{progressSummary.totalCompleted} quests completed</ThemedText>
                     <OverviewAction label="View profile & achievements" onPress={() => router.push('/profile')} onDark />
                   </>
                 ) : (

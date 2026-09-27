@@ -25,7 +25,7 @@ export default function ProfileScreen() {
     user,
     profile,
     completionHistory,
-    completedQuests,
+    progressSummary,
     levelProgress,
     isRefreshing,
     refresh,
@@ -51,7 +51,7 @@ export default function ProfileScreen() {
 
   const streakDays = profile?.current_streak ?? 0;
   const totalXp = profile?.total_xp ?? 0;
-  const questsDone = completedQuests.length;
+  const questsDone = progressSummary.totalCompleted;
 
   const startEditing = () => {
     if (!profile) return;

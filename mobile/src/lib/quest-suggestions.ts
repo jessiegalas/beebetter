@@ -8,7 +8,6 @@ export type SuggestedQuest = {
   category: Category;
   xp: number;
   icon: keyof typeof Ionicons.glyphMap;
-  is_nearby?: boolean;
   reason: { text: string; icon: keyof typeof Ionicons.glyphMap };
 };
 

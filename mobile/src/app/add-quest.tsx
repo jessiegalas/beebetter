@@ -69,7 +69,7 @@ function QuestForm({ quest }: { quest?: Quest }) {
       if (hasDeadline && !deadline_at) throw new Error('Choose a deadline or turn it off.');
       validateQuestDates(scheduled_at, deadline_at);
       savingRef.current = true; setSaving(true);
-      const draft = { title: title.trim(), description: description.trim(), category, xp, scheduled_at, preferred_time, deadline_at, importance, location_id: location, is_nearby: !!location, requires_proof: proof, prerequisite_quest_id: prerequisite };
+      const draft = { title: title.trim(), description: description.trim(), category, xp, scheduled_at, preferred_time, deadline_at, importance, location_id: location, requires_proof: proof, prerequisite_quest_id: prerequisite };
       const result = quest ? await updateQuest(quest.id, draft) : await addQuest(draft);
       if (!result.success) throw new Error(result.error || 'Could not save quest. Please try again.');
       router.back();

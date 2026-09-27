@@ -45,6 +45,7 @@ export default function QuestsScreen() {
   const {
     user,
     levelProgress,
+    questsHasMore,
     isLoading,
     isRefreshing,
     error: loadError,
@@ -163,6 +164,7 @@ export default function QuestsScreen() {
               tintColor={COLORS.honeyDark}
             />
           }>
+          {questsHasMore && <ThemedText style={styles.contextHint}>Showing the newest 200 actionable quests. Refine or complete older assignments to reduce the active list.</ThemedText>}
           <View style={styles.questHero}>
             <View style={styles.questHeroIcon}><Ionicons name="sparkles" size={29} color={COLORS.honeyDeep} /></View>
             <View style={styles.questHeroCopy}>

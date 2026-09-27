@@ -23,7 +23,7 @@ export type QuestContextFields = {
 
 export type QuestDraft = QuestContextFields & {
   title: string; description?: string; category: Category; xp: number;
-  is_nearby?: boolean; location_id?: string | null; requires_proof?: boolean;
+  location_id?: string | null; requires_proof?: boolean;
 };
 
 export type Quest = QuestContextFields & {
@@ -34,7 +34,6 @@ export type Quest = QuestContextFields & {
   category: Category;
   xp: number;
   status: QuestStatus;
-  is_nearby: boolean;
   location_id: string | null;
   created_at: string;
   completed_at?: string | null;
@@ -76,6 +75,7 @@ export type LevelProgress = {
   xpForNextLevel: number;
   progressPercent: number;
 };
+export type ProgressSummary = { totalCompleted: number; byCategory: Record<string, number> };
 
 export function calculateLevel(totalXp: number): LevelProgress {
   const XP_PER_LEVEL = 100;
@@ -90,9 +90,11 @@ interface UserDataContextType {
   user: User | null;
   profile: UserProfile | null;
   quests: Quest[];
+  questsHasMore: boolean;
   completionHistory: CompletionRecord[];
+  completionHistoryHasMore: boolean;
+  progressSummary: ProgressSummary;
   activeQuests: Quest[];
-  completedQuests: Quest[];
   isLoading: boolean;
   isRefreshing: boolean;
   error: string | null;
@@ -119,7 +121,10 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [quests, setQuests] = useState<Quest[]>([]);
+  const [questsHasMore, setQuestsHasMore] = useState(false);
   const [completionHistory, setCompletionHistory] = useState<CompletionRecord[]>([]);
+  const [completionHistoryHasMore, setCompletionHistoryHasMore] = useState(false);
+  const [progressSummary, setProgressSummary] = useState<ProgressSummary>({ totalCompleted: 0, byCategory: {} });
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +138,10 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setProfile(null);
       setQuests([]);
+      setQuestsHasMore(false);
       setCompletionHistory([]);
+      setCompletionHistoryHasMore(false);
+      setProgressSummary({ totalCompleted: 0, byCategory: {} });
       setIsLoading(false);
       return;
     }
@@ -151,6 +159,8 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       if (profileErr) {
         console.warn('Could not fetch profile:', profileErr.message);
       }
+
+      const { data: calculatedStreak } = await supabase.rpc('student_get_current_streak');
 
       const { data: studentData, error: studentErr } = await supabase
         .from('students')
@@ -178,7 +188,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
           status: studentData?.status ?? 'Active',
           level: profileData?.level ?? 1,
           total_xp: profileData?.total_xp ?? 0,
-          current_streak: profileData?.current_streak ?? 1,
+          current_streak: typeof calculatedStreak === 'number' ? calculatedStreak : profileData?.current_streak ?? 0,
           created_at: profileData?.created_at ?? studentData?.created_at ?? new Date().toISOString(),
           updated_at: profileData?.updated_at ?? studentData?.updated_at ?? new Date().toISOString(),
         });
@@ -198,7 +208,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
           status: 'Active',
           level: 1,
           total_xp: 0,
-          current_streak: 1,
+          current_streak: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
@@ -215,24 +225,36 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Durable history supplements existing completed quests; old databases can still be read.
-      const { data: historyData } = await supabase.from('quest_completion_history')
-        .select('id,quest_id,title,category,completed_at').eq('owner_id', currentUser.id)
-        .order('completed_at', { ascending: false }).limit(1000);
+      const [{ data: historyData, error: historyError }, { data: progressData, error: progressError }] = await Promise.all([
+        supabase.rpc('student_list_completion_history', { page_size: 100, page_offset: 0 }),
+        supabase.rpc('student_progress_summary'),
+      ]);
       if (version !== requestVersion.current) return;
-      setCompletionHistory((historyData as CompletionRecord[]) ?? []);
+      if (historyError) console.warn('Could not fetch bounded completion history:', historyError.message);
+      const historyRows = (historyData ?? []) as (CompletionRecord & { total_count: number })[];
+      setCompletionHistory(historyRows);
+      setCompletionHistoryHasMore(Number(historyRows[0]?.total_count ?? 0) > historyRows.length);
+      if (!progressError && progressData?.[0]) {
+        const value = progressData[0];
+        setProgressSummary({ totalCompleted: Number(value.total_completed), byCategory: { Academics: Number(value.academics_completed), Habits: Number(value.habits_completed), Social: Number(value.social_completed), Health: Number(value.health_completed) } });
+        setProfile(current => current ? { ...current, total_xp: Number(value.total_xp), level: Number(value.level), current_streak: Number(value.current_streak) } : current);
+      }
 
       // 2. Fetch Quests
-      const { data: questsData, error: questsErr } = await supabase
+      const { data: questsData, error: questsErr, count: questsCount } = await supabase
         .from('quests')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('owner_id', currentUser.id)
-        .order('created_at', { ascending: false });
+        .neq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (version !== requestVersion.current) return;
       if (questsErr) {
         setError(questsErr.code === '42P01' ? 'Run the Supabase SQL migration before loading quests.' : questsErr.message);
       } else if (questsData) {
         setQuests(questsData as Quest[]);
+        setQuestsHasMore(Number(questsCount ?? 0) > questsData.length);
       }
     } catch (err) {
       if (version === requestVersion.current) setError(err instanceof Error ? err.message : 'Failed to load user data');
@@ -400,7 +422,6 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         description: questData.description?.trim() || null,
         category: questData.category,
         xp: questData.xp,
-        is_nearby: Boolean(questData.is_nearby),
         location_id: questData.location_id ?? null,
         ...(questData.requires_proof ? { requires_proof: true } : {}),
         ...contextPayload(questData),
@@ -435,7 +456,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     const { data, error: updateError } = await supabase.from('quests').update({
       title: draft.title.trim(), description: draft.description?.trim() || null,
       category: draft.category, location_id: draft.location_id ?? null,
-      is_nearby: Boolean(draft.location_id), requires_proof: Boolean(draft.requires_proof),
+      requires_proof: Boolean(draft.requires_proof),
       ...contextPayload(draft),
     }).eq('id', id).eq('owner_id', user.id).neq('status', 'completed').select('*').single();
     if (updateError) return { success: false, error: databaseQuestError(updateError) };
@@ -461,12 +482,13 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setProfile(null);
     setQuests([]);
+    setQuestsHasMore(false);
     setCompletionHistory([]);
+    setCompletionHistoryHasMore(false);
+    setProgressSummary({ totalCompleted: 0, byCategory: {} });
   }, []);
 
   const activeQuests = useMemo(() => quests.filter((q) => q.status === 'active'), [quests]);
-  const completedQuests = useMemo(() => quests.filter((q) => q.status === 'completed'), [quests]);
-
   const levelProgress = useMemo(() => {
     return calculateLevel(profile?.total_xp ?? 0);
   }, [profile?.total_xp]);
@@ -476,9 +498,11 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       user,
       profile,
       quests,
+      questsHasMore,
       completionHistory,
+      completionHistoryHasMore,
+      progressSummary,
       activeQuests,
-      completedQuests,
       isLoading,
       isRefreshing,
       error,
@@ -495,9 +519,11 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       user,
       profile,
       quests,
+      questsHasMore,
       completionHistory,
+      completionHistoryHasMore,
+      progressSummary,
       activeQuests,
-      completedQuests,
       isLoading,
       isRefreshing,
       error,

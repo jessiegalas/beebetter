@@ -9,7 +9,7 @@ import { useUserData } from '@/hooks/use-user-data';
 import { useQuestPriority } from '@/context/quest-priority-context';
 
 export default function NotificationsScreen() {
-  const { completedQuests, levelProgress, completeQuest } = useUserData();
+  const { completionHistory, levelProgress, completeQuest } = useUserData();
   const { ranked } = useQuestPriority();
   const activeQuests = ranked.filter(item => item.tier !== 'history').map(item => item.quest);
 
@@ -41,9 +41,9 @@ export default function NotificationsScreen() {
           },
         ]
       : []),
-    ...completedQuests.slice(0, 4).map((q) => ({
+    ...completionHistory.slice(0, 4).map((q) => ({
       id: `quest-${q.id}`,
-      text: `You completed "${q.title}" and earned +${q.xp} XP!`,
+      text: `You completed "${q.title}". Nice work!`,
       time: 'Completed',
       icon: 'trophy-outline' as const,
     })),

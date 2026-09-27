@@ -16,28 +16,30 @@ export function buildOsasReportCsv(data: DashboardAnalytics, filters: DashboardF
   add('BeeBetter OSAS Student Development and Well-being Report');
   add('Generated at', generatedAt.toISOString());
   add('Reporting period', data.period_start, data.period_end);
+  add('Institutional timezone', data.institutional_timezone);
+  add('Enrollment cohort as of', data.cohort_as_of);
   add('Campus', filters.campus ?? 'All'); add('Program', filters.course ?? 'All'); add('Year level', filters.yearLevel ?? 'All');
   add('Privacy threshold', `${data.minimum_cohort} distinct students`);
   add('Privacy notice', 'This aggregate report excludes student identities, wellness notes, written reflections, support messages, case notes, quest details, and precise location data.');
   add('Interpretation notice', 'Self-ratings are voluntary and descriptive. Quest participation is not evidence of clinical status or verified personal improvement.');
   add(); add('Section', 'Metric', 'Value', 'Distinct students / denominator', 'Definition or limitation');
-  add('Participation', 'Registered students', p.registered_students, p.registered_students, 'Current student records matching the demographic filters; admin accounts are excluded.');
+  add('Participation', 'Registered students', p.registered_students, p.registered_students, 'Effective-dated enrollment records matching the cohort at period end; admin accounts are excluded.');
   add('Participation', 'Students with quest activity', p.participating_students, p.registered_students, 'Unique students with a quest created or a durable completion event during the period.');
   add('Participation', 'Completion events', p.completion_events, p.participating_students, 'Durable quest completion-history records during the period; deleted quests remain counted.');
   add('Participation', 'Students with goals', p.students_with_goals, p.registered_students, 'Current matching students with a non-empty, non-placeholder goal.');
-  add('Participation', 'Surviving quests created', p.current_quests_created, p.registered_students, 'Current quest rows created during the reporting period.');
-  add('Participation', 'Surviving quests completed', p.current_quests_completed, p.current_quests_created, 'Surviving quests created in the period and completed by its end.');
-  add('Participation', 'Current quest completion rate (%)', p.current_quest_completion_rate, p.current_quests_created || 'No valid denominator', 'Completed surviving quests divided by surviving quests created in the period. Deleted quests cannot be included in this denominator.');
+  add('Participation', 'Quests created', p.quests_created, p.registered_students, 'Immutable lifecycle creation events during the reporting period, including quests later deleted.');
+  add('Participation', 'Created quests completed', p.quests_completed, p.quests_created, 'Quests created in the period with a completion event by period end.');
+  add('Participation', 'Lifecycle quest completion rate (%)', p.quest_completion_rate, p.quests_created || 'No privacy-safe denominator', 'Completed created quests divided by all lifecycle creation events in the period.');
   if (data.wellbeing) {
     const w = data.wellbeing;
     add('Well-being', 'Participating students', w.student_count, p.registered_students, 'Distinct students submitting voluntary check-ins.'); add('Well-being', 'Check-ins', w.check_in_count, w.student_count, 'Total voluntary check-in submissions.');
-    add('Well-being', 'Average reported well-being (1-5)', w.average_wellbeing, w.check_in_count, 'Average across check-in responses; 1 is low and 5 is high.'); add('Well-being', 'Average reported stress (1-5)', w.average_stress, w.check_in_count, 'Average across check-in responses; higher means greater reported stress.');
-    add('Well-being', 'Average reported energy (1-5)', w.average_energy, w.check_in_count, 'Average across check-in responses; 1 is low and 5 is high.'); add('Well-being', 'Average reported motivation (1-5)', w.average_motivation, w.motivation_response_count || 'No responses', 'Average across optional motivation responses only.');
+    add('Well-being', 'Average reported well-being (1-5)', w.average_wellbeing, w.student_count, 'Mean of each participating student’s mean; every student has equal weight.'); add('Well-being', 'Average reported stress (1-5)', w.average_stress, w.student_count, 'Student-weighted mean; higher means greater reported stress.');
+    add('Well-being', 'Average reported energy (1-5)', w.average_energy, w.student_count, 'Student-weighted mean; 1 is low and 5 is high.'); add('Well-being', 'Average reported motivation (1-5)', w.average_motivation, w.student_count, 'Mean of student-level averages among students providing optional motivation responses.');
   } else add('Well-being', 'Aggregate indicators', unavailable, '', 'Suppressed unless at least five distinct students contributed check-ins.');
   if (data.self_management) {
     const s = data.self_management;
     add('Self-management', 'Participating students', s.student_count, p.registered_students, 'Distinct students submitting voluntary reflections.'); add('Self-management', 'Reflections', s.reflection_count, s.student_count, 'Total voluntary reflection submissions.');
-    add('Self-management', 'Average planning (1-5)', s.average_planning, s.reflection_count, 'Average self-rating across reflections.'); add('Self-management', 'Average follow-through (1-5)', s.average_follow_through, s.reflection_count, 'Average self-rating across reflections.'); add('Self-management', 'Average confidence (1-5)', s.average_confidence, s.reflection_count, 'Average self-rating across reflections.');
+    add('Self-management', 'Average planning (1-5)', s.average_planning, s.student_count, 'Mean of each participating student’s mean; every student has equal weight.'); add('Self-management', 'Average follow-through (1-5)', s.average_follow_through, s.student_count, 'Student-weighted mean across reflections.'); add('Self-management', 'Average confidence (1-5)', s.average_confidence, s.student_count, 'Student-weighted mean across reflections.');
   } else add('Self-management', 'Aggregate indicators', unavailable, '', 'Suppressed unless at least five distinct students contributed reflections.');
   if (data.support) {
     const s = data.support;

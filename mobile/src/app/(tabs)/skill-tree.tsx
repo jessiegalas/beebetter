@@ -21,12 +21,12 @@ const habitNodes = [
 ];
 
 export default function SkillTreeScreen() {
-  const { profile, completedQuests, isRefreshing, refresh } = useUserData();
+  const { profile, progressSummary, isRefreshing, refresh } = useUserData();
 
   const totalXp = profile?.total_xp ?? 0;
 
   const getCategoryCount = (category: Category) => {
-    return completedQuests.filter((q) => q.category === category).length;
+    return progressSummary.byCategory[category] ?? 0;
   };
 
   const categories = [
