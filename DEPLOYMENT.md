@@ -36,7 +36,7 @@ Only publishable/anon credentials belong in clients. Never place a database pass
 
 ## Database migration order
 
-Apply `supabase/001_initial_schema.sql` through `supabase/025_semester_section_management.sql` in numeric order. Each migration must succeed before continuing. Review and apply manually to staging before production. Migration 022 is required for paginated admin lists, bounded activity history, and progression summaries. Migration 023 is required for complete paged recommendation candidates and privacy-bounded recommendation effectiveness events. Migration 024 prevents students from deleting proof objects while a quest still references them. Migration 025 adds academic semesters, semester-scoped sections, and durable student enrollment associations.
+Apply `supabase/001_initial_schema.sql` through `supabase/026_database_normalization.sql` in numeric order. Each migration must succeed before continuing. Review and apply manually to staging before production. Migration 022 is required for paginated admin lists, bounded activity history, and progression summaries. Migration 023 is required for complete paged recommendation candidates and privacy-bounded recommendation effectiveness events. Migration 024 prevents students from deleting proof objects while a quest still references them. Migration 025 adds academic semesters, semester-scoped sections, and durable student enrollment associations. Migration 026 adds canonical quest-category references and consistency constraints for enrollment and derived levels.
 
 Migration 025 places existing enrollment options and students into an active `Legacy / Current` semester so no academic year is invented during migration. After deployment, an active administrator must create the real upcoming semester as a draft, explicitly add its valid sections, and activate it. Activation archives the previous active semester. Sections are not copied automatically.
 
@@ -50,7 +50,7 @@ PGlite provides fast adversarial tests, but releases must also verify all migrat
 2. Start a disposable project with `supabase init` and `supabase start`.
 3. Obtain its local PostgreSQL URL from `supabase status`.
 4. Confirm the hostname is `localhost` or `127.0.0.1`.
-5. Run `./supabase/verify-local-supabase.ps1 -DatabaseUrl <local-db-url>`; it refuses non-local hosts and applies all numbered migrations, currently 001-025, with `ON_ERROR_STOP`.
+5. Run `./supabase/verify-local-supabase.ps1 -DatabaseUrl <local-db-url>`; it refuses non-local hosts and applies all numbered migrations, currently 001-026, with `ON_ERROR_STOP`.
 6. Run the targeted `supabase/test_*.cjs` suites.
 7. Destroy it with `supabase stop --no-backup`.
 
