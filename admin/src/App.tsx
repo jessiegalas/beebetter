@@ -13,6 +13,7 @@ const PAGE_SIZE = 50
 const SupportRequests=lazy(()=>import('./SupportRequests').then(module=>({default:module.SupportRequests})))
 const OsasPermissions=lazy(()=>import('./OsasPermissions').then(module=>({default:module.OsasPermissions})))
 const OsasDashboard=lazy(()=>import('./OsasDashboard').then(module=>({default:module.OsasDashboard})))
+const SemesterManagement=lazy(()=>import('./SemesterManagement').then(module=>({default:module.SemesterManagement})))
 
 
 
@@ -277,7 +278,7 @@ function App() {
   if (authChecking || (authenticated && adminChecking)) return <div className="auth-shell"><div className="auth-card"><p>Checking admin access...</p></div></div>
   if (!authenticated) return <AuthScreen onSuccess={() => { setAuthenticated(true); setAdminChecking(true) }} dark={dark} onToggleTheme={toggleTheme} />
   if (!adminRole) return <div className={dark ? 'auth-shell dark' : 'auth-shell'}><div className="auth-card"><span className="eyebrow">ADMIN ACCESS</span><h2>Access unavailable</h2><p>This account is not an active BeeBetter administrator.</p><button className="auth-submit" onClick={() => void supabase.auth.signOut()}>Sign out</button></div></div>
-  const sections = ['Overview', 'Users', 'Quests', ...(osasPermissions.can_manage_support_requests ? ['Support Requests'] : []), ...(adminRole === 'super_admin' ? ['Admins'] : [])] as Section[]
+  const sections = ['Overview', 'Users', 'Quests', 'Semesters & Sections', ...(osasPermissions.can_manage_support_requests ? ['Support Requests'] : []), ...(adminRole === 'super_admin' ? ['Admins'] : [])] as Section[]
 
   return (
     <div className={dark ? 'app-shell dark' : 'app-shell'}>
@@ -304,6 +305,7 @@ function App() {
           {section === 'Overview' && <OsasDashboard permissions={osasPermissions} onOpenSupport={() => navigate('Support Requests')} />}
           {section === 'Users' && <DataTable kind="users" users={users} total={userTotal} query={userQuery} loading={usersLoading} error={usersError} onRefresh={loadUsers} onQueryChange={setUserQuery} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
           {section === 'Quests' && <DataTable kind="quests" quests={quests} total={questTotal} query={questQuery} loading={questsLoading} error={questsError} onRefresh={loadQuests} onQueryChange={setQuestQuery} onQuestClick={setSelectedQuest} />}
+          {section === 'Semesters & Sections' && <SemesterManagement />}
           {section === 'Support Requests' && osasPermissions.can_manage_support_requests && <SupportRequests />}
           {section === 'Admins' && adminRole === 'super_admin' && <><AdminTable admins={admins} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} /><OsasPermissions admins={admins} /></>}
           </Suspense>

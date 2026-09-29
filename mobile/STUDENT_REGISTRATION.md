@@ -1,8 +1,10 @@
 # Student registration and standardized information
 
-Apply `supabase/011_student_registration_validation.sql` after migrations 001-010 before deploying this registration form. No hosted database changes are made by the code or test scripts.
+Apply the numbered migrations through `supabase/025_semester_section_management.sql` before deploying this registration form. No hosted database changes are made by the code or test scripts.
 
-The migration adds a small `student_enrollment_options` catalogue containing only campus/program/year/section combinations. It seeds recognizable combinations from existing student records, without rewriting those records. Review seeded entries for spelling or duplicate school names. If there are no valid existing combinations, an administrator must populate this table with the school's official options before new students can register. Do not insert example campuses or sections into production. Active admins can maintain the catalogue under row-level security; anonymous visitors can only read these non-personal dropdown options, not student records.
+Migration 011 adds the original enrollment catalogue. Migration 025 scopes that catalogue to `academic_semesters`, records the selected semester and option on each student and enrollment-history period, and moves all catalogue writes behind active-admin RPCs. Registration and profile/admin enrollment dropdowns receive only active sections from the one active semester. Archived semesters and their sections remain available to authorized administrators as read-only history. Anonymous visitors can read the non-personal active-semester options through `registration_enrollment_options()`, but cannot read student or historical enrollment records.
+
+On upgrade, existing options are assigned to an active `Legacy / Current` semester rather than guessing an academic year. In Semester and Section Management, create the real upcoming semester as a draft, add its approved sections explicitly, then activate it. Activation archives the previous active semester. Sections never carry forward automatically.
 
 Programs BSCS, BSIT, BSHM and BSCrim are available alongside Others. Others saves the actual specified program, not the word "Others"; its campus/year/section combination must also be configured in the catalogue. Years use 1st Year through 5th Year. Selecting a different program, year, or campus clears the old section. Sections are filtered using all three fields.
 

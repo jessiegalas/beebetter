@@ -71,7 +71,7 @@ export function StudentModal({ user, onClose, onSave }: { user: User; onClose: (
     const controller = new AbortController()
     void (async () => {
       try {
-        const { data, error } = await supabase.from('student_enrollment_options').select('id,course,year_level,campus,section').order('campus').order('section').abortSignal(controller.signal)
+        const { data, error } = await supabase.rpc('registration_enrollment_options').abortSignal(controller.signal)
         if (!controller.signal.aborted) { setOptions(data ?? []); setOptionError(error ? 'Could not load school options.' : '') }
       } catch { if (!controller.signal.aborted) setOptionError('Could not load school options.') }
     })()
@@ -100,7 +100,7 @@ export function StudentModal({ user, onClose, onSave }: { user: User; onClose: (
       <label>Year level *<select value={draft.year_level} onChange={e => change('year_level', e.target.value)}><option value="">Choose year</option>{legacy('year_level', [...YEARS]).map(value => <option key={value}>{value}</option>)}</select>{message('year_level')}</label>
       <label>Campus *<select value={draft.campus} onChange={e => change('campus', e.target.value)}><option value="">Choose campus</option>{campuses.map(value => <option key={value}>{value}</option>)}</select>{message('campus')}</label>
       <label>Section *<select value={draft.section} onChange={e => change('section', e.target.value)}><option value="">Choose section</option>{sections.map(value => <option key={value}>{value}</option>)}</select>{message('section')}</label>
-      {!sections.length && <p>No sections configured for this combination. Update student_enrollment_options in Supabase with approved school values.</p>}
+      {!sections.length && <p>No active-semester sections are configured for this combination. Add one in Semester and Section Management.</p>}
       <label>Goal *<input value={draft.goal} maxLength={LIMITS.goal} onChange={e => change('goal', e.target.value)} />{message('goal')}</label>
       <label>Status<select value={status} onChange={e => setStatus(e.target.value as User['status'])}><option>Active</option><option>Inactive</option></select></label>
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={Object.keys(errors).length > 0}>Save student</button></div>

@@ -8,7 +8,7 @@ export function useEnrollmentOptions() {
     const controller = new AbortController();
     void (async () => {
       try {
-        const { data, error } = await supabase.from('student_enrollment_options').select('id,course,year_level,campus,section').order('campus').order('section').abortSignal(controller.signal);
+        const { data, error } = await supabase.rpc('registration_enrollment_options').abortSignal(controller.signal);
         if (!controller.signal.aborted) setResult({ attempt, options: error ? [] : data ?? [], error: error ? 'Student options could not be loaded. Please try again.' : null });
       } catch { if (!controller.signal.aborted) setResult({ attempt, options: [], error: 'Student options could not be loaded. Please try again.' }); }
     })();
