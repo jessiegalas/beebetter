@@ -36,7 +36,7 @@ Only publishable/anon credentials belong in clients. Never place a database pass
 
 ## Database migration order
 
-Apply `supabase/001_initial_schema.sql` through `supabase/026_database_normalization.sql` in numeric order. Each migration must succeed before continuing. Review and apply manually to staging before production. Migration 022 is required for paginated admin lists, bounded activity history, and progression summaries. Migration 023 is required for complete paged recommendation candidates and privacy-bounded recommendation effectiveness events. Migration 024 prevents students from deleting proof objects while a quest still references them. Migration 025 adds academic semesters, semester-scoped sections, and durable student enrollment associations. Migration 026 adds canonical quest-category references and consistency constraints for enrollment and derived levels.
+Apply `supabase/001_initial_schema.sql` through `supabase/027_student_auth_access.sql` in numeric order. Each migration must succeed before continuing. Review and apply manually to staging before production. Migration 022 is required for paginated admin lists, bounded activity history, and progression summaries. Migration 023 is required for complete paged recommendation candidates and privacy-bounded recommendation effectiveness events. Migration 024 prevents students from deleting proof objects while a quest still references them. Migration 025 adds academic semesters, semester-scoped sections, and durable student enrollment associations. Migration 026 adds canonical quest-category references and consistency constraints for enrollment and derived levels.
 
 Migration 025 places existing enrollment options and students into an active `Legacy / Current` semester so no academic year is invented during migration. After deployment, an active administrator must create the real upcoming semester as a draft, explicitly add its valid sections, and activate it. Activation archives the previous active semester. Sections are not copied automatically.
 
@@ -50,8 +50,8 @@ PGlite provides fast adversarial tests, but releases must also verify all migrat
 2. Start a disposable project with `supabase init` and `supabase start`.
 3. Obtain its local PostgreSQL URL from `supabase status`.
 4. Confirm the hostname is `localhost` or `127.0.0.1`.
-5. Run `./supabase/verify-local-supabase.ps1 -DatabaseUrl <local-db-url>`; it refuses non-local hosts and applies all numbered migrations, currently 001-026, with `ON_ERROR_STOP`.
-6. Run the targeted `supabase/test_*.cjs` suites.
+5. Run `./supabase/verify-local-supabase.ps1 -DatabaseUrl <local-db-url>`; it refuses non-local hosts and applies all numbered migrations, currently 001-027, with `ON_ERROR_STOP`.
+6. Enable the Auth hook and run `node supabase/test_account_access.cjs` as described below. This suite covers account access, not the entire database.
 7. Destroy it with `supabase stop --no-backup`.
 
 Never run verification scripts against production.
@@ -100,3 +100,35 @@ Run it at least daily. Do not delete rows directly from `storage.objects`.
 - Mobile displays the newest 100 completion events. All-time totals and categories come from `student_progress_summary`.
 - Mobile retrieves unresolved/non-completed quests in bounded 200-row pages before ranking. The RPC rejects offsets above 100,000; use keyset pagination if a single student can exceed that operational bound.
 - Pre-migration enrollment changes and deleted quests cannot be reconstructed.
+
+## Student suspension and Auth hook (027)
+
+Migration 027 installs `public.student_access_token_hook(event jsonb)`. **Applying SQL alone does not enable it.** After applying 001-027 to the authorized target, open Supabase Dashboard > Authentication > Hooks > Custom Access Token, choose the Postgres function `public.student_access_token_hook`, and enable/save it. Inspect any existing Custom Access Token hook before changing this setting; its claim transformations must be preserved when integrating this check.
+
+For a disposable CLI project, add this to that project's `supabase/config.toml` and restart its local stack:
+
+```toml
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/student_access_token_hook"
+```
+
+The hook checks current database status on login and refresh. It rejects existing `Inactive` students with "Your account is suspended. Contact your administrator." and preserves active administrator access for legacy identities with student rows. Allowed requests retain their original claims. Only `supabase_auth_admin` may execute the hook; it has column-level read grants and dedicated SELECT policies. Mobile independently requires an `Active` student row before opening protected routes, including for administrator identities.
+
+Existing JWTs are not immediately revoked. Existing active-student write guards still apply; unchanged read policies may permit previously issued tokens until expiration. Mobile revalidates on launch, auth events, resume, and every 60 seconds while foregrounded. Verification errors lock protected screens and offer retry/sign-out. This release does not provide immediate push revocation or an Auth user ban.
+
+### Disposable Auth integration test
+
+Requires a running local Supabase with 001-027 applied, the hook enabled, and at least one active-semester enrollment option. The test creates two synthetic Auth users, grants one administrator access, changes their statuses, then deletes both users. Use an authorized disposable stack only; retained anonymous history can remain until the stack is discarded. The test refuses non-loopback URLs.
+
+Set `BEEBETTER_TEST_DISPOSABLE=yes`, `BEEBETTER_TEST_URL`, `BEEBETTER_TEST_PUBLISHABLE_KEY`, and `BEEBETTER_TEST_SERVICE_ROLE_KEY` in the trusted test runner's environment. Do not store the privileged test key in either client environment file. With mobile dependencies installed, run from the repository root:
+
+```powershell
+node supabase/test_account_access.cjs
+```
+
+This verifies active login, suspension through the real admin RPC, denied password login/refresh, old-token write rejection, hook execution denial for clients, suspended logout, reactivation, and the active-administrator exemption. Run on both a clean stack and an upgraded disposable copy containing synthetic pre-027 data. Verify sign-up/email confirmation on staging as well. An absent or disabled hook must cause the inactive-login assertion to fail.
+
+Run `npm run test:auth` in `mobile/` for mocked admission, logout, routing, storage, notification, and location race regressions. These do not establish native Android navigation behavior. Complete the physical-device matrix in [ACCOUNT_ACCESS_VERIFICATION.md](ACCOUNT_ACCESS_VERIFICATION.md) before release.
+
+Deploy the migration and enable/test the hook before releasing the mobile build. Monitor Auth hook errors and login failures, especially active-student and administrator failures. If the hook unexpectedly blocks eligible accounts, restore the previous hook configuration while investigating and retain the mobile access guard; server-side suspension enforcement is incomplete during that rollback. Do not remove historical migrations or data.

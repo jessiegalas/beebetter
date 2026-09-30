@@ -4,7 +4,7 @@ Read [the root guide](../AGENTS.md) first. Paths here are relative to `mobile/` 
 
 ## Entry points and ownership
 
-- `package.json` uses `expo-router/entry`. `src/app/_layout.tsx` nests UserData, Location, and QuestPriority providers around AuthGuard and the router stack. AuthGuard redirects by session presence; database active-account checks remain authoritative.
+- `package.json` uses `expo-router/entry`. `src/app/_layout.tsx` nests UserData, Location, and QuestPriority providers around a persistently mounted router stack. `Stack.Protected` admits verified active students only; the provider owns admission, session invalidation, and logout. Database active-account checks remain authoritative.
 - `src/app/(tabs)/_layout.tsx` delegates to `src/components/app-tabs.tsx` (native tabs) or `src/components/app-tabs.web.tsx` (Expo Router UI). Active tabs: Home (`index`), Quests, Skill Tree, Profile. Other stack routes: auth, notifications, add-quest, manage-locations, wellness-check-in, self-management-reflection, wellness-history, support-requests.
 - `src/context/user-data-context.tsx` owns session/profile/quest state, RPC reads, mutations, proof uploads, notification responses, refreshes, and sign-out. `src/hooks/use-user-data.ts` is a compatibility re-export, not another state implementation.
 - `src/supabase.ts` handles the client, AsyncStorage session persistence, and web-rendering guards. `app.config.js` extends `app.json` with the Android Maps key; `eas.json` defines build profiles. Do not expose environment values in logs.
@@ -33,9 +33,10 @@ npx tsc --noEmit
 npm run lint
 npm run test:context
 npm run test:students
+npm run test:auth
 ```
 
-Tests are Node `.cjs` scripts transpiling pure TypeScript, not a Jest/device suite. For shared student-validation edits also run the admin checks. For native changes, test foreground allowed/denied, background denied, stale GPS, overlapping regions, resume, sign-out cleanup, and proof-required completion on physical hardware. Android Maps requires `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` and the native configuration; Expo Go/web cannot establish background-geofencing correctness.
+Tests are Node `.cjs` scripts transpiling TypeScript, not a Jest/device suite. The Auth suite uses a small hook lifecycle harness and mocked service/native APIs; see `../ACCOUNT_ACCESS_VERIFICATION.md` for device acceptance. For shared student-validation edits also run the admin checks. For native changes, test foreground allowed/denied, background denied, stale GPS, overlapping regions, resume, sign-out cleanup, and proof-required completion on physical hardware. Android Maps requires `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` and the native configuration; Expo Go/web cannot establish background-geofencing correctness.
 
 `scripts/test-context-database.cjs` requires optional external PGlite (not an app dependency), accepts its module path as an argument, and executes selected older migrations through 011 using fake Auth/Storage. Do not run it during no-migration tasks or treat it as current-schema coverage. See [Supabase guidance](../supabase/AGENTS.md).
 

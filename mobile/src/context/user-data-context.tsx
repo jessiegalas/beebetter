@@ -3,11 +3,13 @@ import { AppState } from 'react-native';
 import type { CompletionRecord } from '@/lib/quest-priority';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/supabase';
+import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
 import * as Notifications from 'expo-notifications';
 import {
   COMPLETE_QUEST_ACTION,
   configureQuestNotifications,
   scheduleQuestNotifications,
+  cancelQuestNotifications,
 } from '@/lib/quest-notifications';
 
 export type Category = string;
@@ -88,6 +90,10 @@ export function calculateLevel(totalXp: number): LevelProgress {
 
 interface UserDataContextType {
   user: User | null;
+  access: AccountAccess;
+  accessMessage: string | null;
+  isSigningOut: boolean;
+  beginAuthentication: () => boolean;
   profile: UserProfile | null;
   quests: Quest[];
   questsHasMore: boolean;
@@ -117,8 +123,16 @@ const UserDataContext = createContext<UserDataContextType | undefined>(undefined
 
 export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const requestVersion = useRef(0);
+  const [fence] = useState(() => new SessionFence());
+  const sessionUser = useRef<User | null>(null);
+  const cleanupFailed = useRef(false);
+  const logoutTask = useRef<Promise<void> | null>(null);
+  const [access, setAccess] = useState<AccountAccess>('checking');
+  const [accessMessage, setAccessMessage] = useState<string | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const completingQuests = useRef(new Set<string>());
   const [user, setUser] = useState<User | null>(null);
+  const isAdmittedSession = useMemo(() => fence.capture(user?.id), [user, fence]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [quests, setQuests] = useState<Quest[]>([]);
   const [questsHasMore, setQuestsHasMore] = useState(false);
@@ -129,49 +143,94 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const clearUserData = useCallback(() => {
+    setUser(null);
+    setProfile(null);
+    setQuests([]);
+    setQuestsHasMore(false);
+    setCompletionHistory([]);
+    setCompletionHistoryHasMore(false);
+    setProgressSummary({ totalCompleted: 0, byCategory: {} });
+    setIsLoading(false);
+    setIsRefreshing(false);
+    setError(null);
+    completingQuests.current.clear();
+  }, []);
+
+  const endSession = useCallback((reason?: string): Promise<void> => {
+    if (logoutTask.current) return logoutTask.current;
+    fence.close();
+    requestVersion.current += 1;
+    sessionUser.current = null;
+    clearUserData();
+    setAccess(reason ? 'blocked' : 'signed_out');
+    setAccessMessage(reason ?? null);
+    setIsSigningOut(true);
+    // Defer out of onAuthStateChange; never await Auth calls inside its lock.
+    const task = Promise.resolve().then(async () => {
+      const results = await Promise.allSettled([
+        supabase.auth.signOut({ scope: reason ? 'local' : 'global' }).then(({ error }) => { if (error) throw error; }),
+        cancelQuestNotifications(),
+      ]);
+      const authFailure = results[0].status === 'rejected';
+      cleanupFailed.current = authFailure;
+      if (authFailure) {
+        setAccessMessage([reason, 'Sign-out could not finish. Your app access is locked. Retry sign-out before signing in again.'].filter(Boolean).join(' '));
+        setAccess('blocked');
+      }
+      results.forEach(result => { if (result.status === 'rejected') console.warn('Session cleanup failed:', result.reason); });
+    }).catch(() => {
+      cleanupFailed.current = true;
+      setAccess('blocked');
+      setAccessMessage('Sign-out could not finish. Retry sign-out before signing in again.');
+    }).finally(() => { logoutTask.current = null; setIsSigningOut(false); });
+    logoutTask.current = task;
+    return task;
+  }, [clearUserData, fence]);
+
+  const beginAuthentication = useCallback(() => {
+    if (logoutTask.current || cleanupFailed.current) return false;
+    fence.beginAuthentication();
+    sessionUser.current = null;
+    requestVersion.current += 1;
+    clearUserData();
+    setAccess('signed_out');
+    setAccessMessage(null);
+    return true;
+  }, [clearUserData, fence]);
+
   const fetchUserData = useCallback(async (currentUser: User | null, showLoading = false) => {
+    if (!fence.accept(currentUser?.id ?? null)) return;
+    const isSessionCurrent = fence.capture();
     const version = ++requestVersion.current;
+    const isCurrent = () => isSessionCurrent() && version === requestVersion.current;
     if (showLoading) setIsLoading(true);
     setError(null);
 
     if (!currentUser) {
-      setUser(null);
-      setProfile(null);
-      setQuests([]);
-      setQuestsHasMore(false);
-      setCompletionHistory([]);
-      setCompletionHistoryHasMore(false);
-      setProgressSummary({ totalCompleted: 0, byCategory: {} });
-      setIsLoading(false);
+      clearUserData();
+      setAccess(current => current === 'blocked' ? current : 'signed_out');
       return;
     }
 
-    setUser(currentUser);
-
     try {
-      // 1. Fetch Profile
-      const { data: profileData, error: profileErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentUser.id)
-        .maybeSingle();
-
-      if (profileErr) {
-        console.warn('Could not fetch profile:', profileErr.message);
-      }
-
-      const { data: calculatedStreak } = await supabase.rpc('student_get_current_streak');
-
+      // Admission is authoritative student data, never Auth metadata or a default.
       const { data: studentData, error: studentErr } = await supabase
-        .from('students')
-        .select('*')
-        .eq('id', currentUser.id)
-        .maybeSingle();
+        .from('students').select('*').eq('id', currentUser.id).maybeSingle();
+      if (!isCurrent()) return;
+      if (studentErr) throw studentErr;
+      const denied = studentAccessMessage(studentData);
+      if (denied) { await endSession(denied); return; }
+      setUser(previous => previous?.id === currentUser.id ? previous : currentUser);
+      setAccess('active');
+      setAccessMessage(null);
 
-      if (version !== requestVersion.current) return;
-      if (studentErr) {
-        console.warn('Could not fetch student information:', studentErr.message);
-      }
+      const { data: profileData, error: profileErr } = await supabase
+        .from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+      if (!isCurrent()) return;
+      if (profileErr) console.warn('Could not fetch profile:', profileErr.message);
+      const { data: calculatedStreak } = await supabase.rpc('student_get_current_streak');
+      if (!isCurrent()) return;
 
       if (profileData || studentData) {
         setProfile({
@@ -185,43 +244,13 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
           section: studentData?.section ?? 'Not specified',
           campus: studentData?.campus ?? 'Not specified',
           goal: studentData?.goal ?? '',
-          status: studentData?.status ?? 'Active',
+          status: 'Active',
           level: profileData?.level ?? 1,
           total_xp: profileData?.total_xp ?? 0,
           current_streak: typeof calculatedStreak === 'number' ? calculatedStreak : profileData?.current_streak ?? 0,
           created_at: profileData?.created_at ?? studentData?.created_at ?? new Date().toISOString(),
           updated_at: profileData?.updated_at ?? studentData?.updated_at ?? new Date().toISOString(),
         });
-      } else {
-        // Fallback default profile if trigger hasn't fired yet
-        const defaultProfile: UserProfile = {
-          id: currentUser.id,
-          display_name: currentUser.user_metadata?.display_name || currentUser.email?.split('@')[0] || 'Bee Explorer',
-          student_number: `LEGACY-${currentUser.id.replaceAll('-', '').slice(0, 8).toUpperCase()}`,
-          name: currentUser.user_metadata?.name || currentUser.user_metadata?.display_name || 'Bee Explorer',
-          email: currentUser.email || '',
-          course: 'Undeclared',
-          year_level: 'Not specified',
-          section: 'Not specified',
-          campus: 'Not specified',
-          goal: '',
-          status: 'Active',
-          level: 1,
-          total_xp: 0,
-          current_streak: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-
-        // Try upserting default profile
-        const { data: createdProfile } = await supabase
-          .from('profiles')
-          .upsert({ id: defaultProfile.id, display_name: defaultProfile.display_name }, { onConflict: 'id' })
-          .select('*')
-          .maybeSingle();
-
-        if (version !== requestVersion.current) return;
-        setProfile(createdProfile ? { ...defaultProfile, ...createdProfile } : defaultProfile);
       }
 
       // Durable history supplements existing completed quests; old databases can still be read.
@@ -229,7 +258,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         supabase.rpc('student_list_completion_history', { page_size: 100, page_offset: 0 }),
         supabase.rpc('student_progress_summary'),
       ]);
-      if (version !== requestVersion.current) return;
+      if (!isCurrent()) return;
       if (historyError) console.warn('Could not fetch bounded completion history:', historyError.message);
       const historyRows = (historyData ?? []) as (CompletionRecord & { total_count: number })[];
       setCompletionHistory(historyRows);
@@ -254,72 +283,126 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         allCandidates.push(...page);
         candidateOffset += page.length;
         if (page.length < candidatePageSize) break;
-      } while (version === requestVersion.current);
+      } while (isCurrent());
 
-      if (version !== requestVersion.current) return;
+      if (!isCurrent()) return;
       if (candidateError) {
         setError(candidateError.code === 'PGRST202' ? 'Run Supabase migration 023 before loading recommendations.' : candidateError.message);
       } else {
         setQuests(allCandidates);
         setQuestsHasMore(false);
       }
-    } catch (err) {
-      if (version === requestVersion.current) setError(err instanceof Error ? err.message : 'Failed to load user data');
+    } catch {
+      if (isCurrent()) {
+        // Fail closed on verification/network errors, retaining the raw session for retry.
+        fence.invalidate();
+        fence.accept(null);
+        clearUserData();
+        setAccess('verification_error');
+        setAccessMessage(VERIFICATION_MESSAGE);
+      }
     } finally {
-      if (version === requestVersion.current) { setIsLoading(false); setIsRefreshing(false); }
+      if (isCurrent()) { setIsLoading(false); setIsRefreshing(false); }
     }
-  }, []);
+  }, [clearUserData, endSession, fence]);
 
   const updateProfile = useCallback(async (updates: StudentProfileUpdates) => {
-    if (!user) return { success: false, error: 'User is not signed in.' };
+    if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };
+    const isCurrent = fence.capture(user.id);
 
-    const { data, error: studentError } = await supabase
-      .from('students')
-      .update({ ...updates, email: profile?.email ?? user.email ?? '' })
-      .eq('id', user.id)
-      .select('*')
-      .single();
+    try {
+      const { data, error: studentError } = await supabase
+        .from('students')
+        .update({ ...updates, email: profile?.email ?? user.email ?? '' })
+        .eq('id', user.id)
+        .select('*')
+        .single();
 
-    if (studentError) {
-      return { success: false, error: studentError.message };
+      if (!isCurrent()) return { success: false, error: 'Session ended.' };
+      if (studentError) {
+        return { success: false, error: studentError.message };
+      }
+
+      setProfile((current) => current ? { ...current, ...data, display_name: data.name } : current);
+      await supabase.from('profiles').update({ display_name: data.name }).eq('id', user.id);
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Could not update profile.' };
     }
-
-    setProfile((current) => current ? { ...current, ...data, display_name: data.name } : current);
-    await supabase.from('profiles').update({ display_name: data.name }).eq('id', user.id);
-    return { success: true };
-  }, [profile?.email, user]);
+  }, [profile, user, isAdmittedSession, fence]);
 
   useEffect(() => {
     let isMounted = true;
-
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!isMounted) return;
-      void fetchUserData(session?.user ?? null, true);
-    });
-
-    // Listen to real-time auth changes
+    let authEventReceived = false;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    const receiveSession = (nextUser: User | null) => {
+      if (!isMounted || !fence.accept(nextUser?.id ?? null)) return;
+      const changed = sessionUser.current?.id !== nextUser?.id;
+      sessionUser.current = nextUser;
+      requestVersion.current += 1;
+      if (changed || !nextUser) clearUserData();
+      if (!nextUser) {
+        void cancelQuestNotifications().catch(error => console.warn('Reminder cleanup failed:', error));
+        setAccess(current => current === 'blocked' ? current : 'signed_out');
+        return;
+      }
+      if (changed) setAccess('checking');
+      const isCurrent = fence.capture();
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        if (isMounted && isCurrent()) void fetchUserData(nextUser, changed);
+      }, 0);
+      timers.add(timer);
+    };
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!isMounted) return;
-      void fetchUserData(session?.user ?? null, false);
+      authEventReceived = true;
+      receiveSession(session?.user ?? null);
     });
-
+    void supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (!isMounted || authEventReceived) return;
+      if (error) throw error;
+      receiveSession(session?.user ?? null);
+    }).catch(() => {
+      if (!isMounted || authEventReceived) return;
+      clearUserData();
+      setAccess('verification_error');
+      setAccessMessage(VERIFICATION_MESSAGE);
+    });
     return () => {
       isMounted = false;
+      fence.invalidate();
+      requestVersion.current += 1;
+      timers.forEach(clearTimeout);
       subscription.unsubscribe();
     };
-  }, [fetchUserData]);
+  }, [clearUserData, fetchUserData, fence]);
 
   const refresh = useCallback(async () => {
+    const isCurrent = fence.capture();
+    if (!isCurrent()) return;
     setIsRefreshing(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    await fetchUserData(session?.user ?? null, false);
-  }, [fetchUserData]);
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (!isCurrent()) return;
+      if (error) throw error;
+      sessionUser.current = session?.user ?? null;
+      await fetchUserData(sessionUser.current);
+    } catch {
+      if (isCurrent()) {
+        fence.invalidate();
+        fence.accept(null);
+        clearUserData();
+        setAccess('verification_error');
+        setAccessMessage(VERIFICATION_MESSAGE);
+      }
+    } finally { if (isCurrent()) setIsRefreshing(false); }
+  }, [clearUserData, fetchUserData, fence]);
 
   const completeQuest = useCallback(async (questId: string, proof?: ProofFile): Promise<{ success: boolean; error?: string }> => {
-    if (!user) {
+    if (!user || !isAdmittedSession()) {
       return { success: false, error: 'User is not signed in.' };
     }
+    const isCurrent = fence.capture(user.id);
 
     const targetQuest = quests.find((q) => q.id === questId);
     if (!targetQuest) {
@@ -327,7 +410,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (targetQuest.status === 'completed') {
-      return { success: true };
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     }
 
     if (targetQuest.requires_proof && !proof) {
@@ -345,12 +428,14 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         proofPath = `${user.id}/${questId}/${Date.now()}.${extension}`;
         const response = await fetch(proof.uri);
         const fileBuffer = await response.arrayBuffer();
+        if (!isCurrent()) return { success: false, error: 'Session ended.' };
         const { error: uploadError } = await supabase.storage
           .from('quest-proofs')
           .upload(proofPath, fileBuffer, { contentType: proof.mimeType, upsert: false });
         if (uploadError) throw uploadError;
       }
 
+      if (!isCurrent()) return { success: false, error: 'Session ended.' };
       const { error: completionError } = await supabase.rpc('complete_quest', {
         quest_id_value: questId,
         proof_path_value: proofPath,
@@ -361,46 +446,53 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         throw completionError;
       }
       // Refresh server timestamps, durable history and XP together.
-      await fetchUserData(user);
-      return { success: true };
+      if (isCurrent()) await fetchUserData(user);
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
-      if (proofPath) {
-        await supabase.storage.from('quest-proofs').remove([proofPath]);
+      if (proofPath && isCurrent()) {
+        await supabase.storage.from('quest-proofs').remove([proofPath]).catch(() => {});
       }
       return {
         success: false,
         error: err instanceof Error ? err.message : (err as { message?: string })?.message || 'Failed to complete quest.',
       };
-    } finally { completingQuests.current.delete(questId); }
-  }, [user, quests, fetchUserData]);
+    } finally { if (isCurrent()) completingQuests.current.delete(questId); }
+  }, [user, quests, fetchUserData, isAdmittedSession, fence]);
 
   useEffect(() => {
     if (!user) return;
 
     let isMounted = true;
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const action = response.actionIdentifier;
-      const data = response.notification.request.content.data as { questId?: unknown };
-      if (action === COMPLETE_QUEST_ACTION && typeof data.questId === 'string') {
-        void completeQuest(data.questId);
-      }
-    });
+    const isCurrent = fence.capture(user.id);
+    let responseSubscription: ReturnType<typeof Notifications.addNotificationResponseReceivedListener> | undefined;
+    try {
+      responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+        const action = response.actionIdentifier;
+        const data = response.notification.request.content.data as { questId?: unknown };
+        if (isCurrent() && action === COMPLETE_QUEST_ACTION && typeof data?.questId === 'string') {
+          void completeQuest(data.questId).catch(error => console.warn('Notification action failed:', error));
+        }
+      });
+    } catch (error) { console.warn('Notification listener unavailable:', error); }
 
     void configureQuestNotifications().then((configured) => {
-      if (isMounted && configured) {
-        return scheduleQuestNotifications(quests);
+      if (isMounted && isCurrent() && configured) {
+        return scheduleQuestNotifications(quests, () => isMounted && isCurrent());
       }
       return undefined;
-    });
+    }).catch(error => console.warn('Notification setup failed:', error));
 
     return () => {
       isMounted = false;
-      responseSubscription.remove();
+      try { responseSubscription?.remove(); }
+      catch (error) { console.warn('Notification listener cleanup failed:', error); }
+      void cancelQuestNotifications().catch(error => console.warn('Reminder cleanup failed:', error));
     };
-  }, [user, quests, completeQuest]);
+  }, [user, quests, completeQuest, fence]);
 
   const deleteQuest = useCallback(async (questId: string): Promise<{ success: boolean; error?: string }> => {
-    if (!user) return { success: false, error: 'User is not signed in.' };
+    if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };
+    const isCurrent = fence.capture(user.id);
 
     const previousQuests = [...quests];
     // Optimistic removal
@@ -409,18 +501,19 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     try {
       const { error: delError } = await supabase.from('quests').delete().eq('id', questId);
       if (delError) throw delError;
-      return { success: true };
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
-      setQuests(previousQuests);
+      if (isCurrent()) setQuests(previousQuests);
       return {
         success: false,
         error: err instanceof Error ? err.message : 'Failed to delete quest.',
       };
     }
-  }, [user, quests]);
+  }, [user, quests, isAdmittedSession, fence]);
 
   const addQuest = useCallback(async (questData: QuestDraft): Promise<{ success: boolean; error?: string }> => {
-    if (!user) return { success: false, error: 'User is not signed in.' };
+    if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };
+    const isCurrent = fence.capture(user.id);
 
     try {
       const questInsert = {
@@ -446,54 +539,50 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         }
         throw new Error(databaseQuestError(insertError));
       }
-      if (data) {
+      if (data && isCurrent()) {
         setQuests((prev) => [data as Quest, ...prev]);
       }
-      return { success: true };
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
       return {
         success: false,
         error: err instanceof Error ? err.message : 'Failed to create quest.',
       };
     }
-  }, [user]);
+  }, [user, isAdmittedSession, fence]);
 
   const updateQuest = useCallback(async (id: string, draft: QuestDraft) => {
-    if (!user) return { success: false, error: 'User is not signed in.' };
-    const { data, error: updateError } = await supabase.from('quests').update({
-      title: draft.title.trim(), description: draft.description?.trim() || null,
-      category: draft.category, location_id: draft.location_id ?? null,
-      requires_proof: Boolean(draft.requires_proof),
-      ...contextPayload(draft),
-    }).eq('id', id).eq('owner_id', user.id).neq('status', 'completed').select('*').single();
-    if (updateError) return { success: false, error: databaseQuestError(updateError) };
-    setQuests(previous => previous.map(q => q.id === id ? data as Quest : q));
-    return { success: true };
-  }, [user]);
+    if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };
+    const isCurrent = fence.capture(user.id);
+    try {
+      const { data, error: updateError } = await supabase.from('quests').update({
+        title: draft.title.trim(), description: draft.description?.trim() || null,
+        category: draft.category, location_id: draft.location_id ?? null,
+        requires_proof: Boolean(draft.requires_proof),
+        ...contextPayload(draft),
+      }).eq('id', id).eq('owner_id', user.id).neq('status', 'completed').select('*').single();
+      if (!isCurrent()) return { success: false, error: 'Session ended.' };
+      if (updateError) return { success: false, error: databaseQuestError(updateError) };
+      setQuests(previous => previous.map(q => q.id === id ? data as Quest : q));
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Could not update quest.' };
+    }
+  }, [user, isAdmittedSession, fence]);
 
-  // Refresh remote edits and approvals even when Realtime isn't enabled in Supabase.
+  // Revalidate restored/open sessions even when Realtime is not enabled.
   useEffect(() => {
-    if (!user) return;
-    const poll = setInterval(() => {
-      if (AppState.currentState === 'active') void fetchUserData(user);
-    }, 60_000);
+    const revalidate = () => {
+      if (sessionUser.current && AppState.currentState === 'active') void fetchUserData(sessionUser.current);
+    };
+    const poll = setInterval(revalidate, 60_000);
     const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void fetchUserData(user);
+      if (state === 'active') revalidate();
     });
     return () => { clearInterval(poll); subscription.remove(); };
-  }, [user, fetchUserData]);
+  }, [fetchUserData]);
 
-  const signOut = useCallback(async () => {
-    requestVersion.current += 1;
-    await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
-    setQuests([]);
-    setQuestsHasMore(false);
-    setCompletionHistory([]);
-    setCompletionHistoryHasMore(false);
-    setProgressSummary({ totalCompleted: 0, byCategory: {} });
-  }, []);
+  const signOut = useCallback(() => endSession(), [endSession]);
 
   const activeQuests = useMemo(() => quests.filter((q) => q.status === 'active'), [quests]);
   const levelProgress = useMemo(() => {
@@ -503,6 +592,10 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       user,
+      access,
+      accessMessage,
+      isSigningOut,
+      beginAuthentication,
       profile,
       quests,
       questsHasMore,
@@ -524,6 +617,10 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       user,
+      access,
+      accessMessage,
+      isSigningOut,
+      beginAuthentication,
       profile,
       quests,
       questsHasMore,

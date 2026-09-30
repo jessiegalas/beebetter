@@ -1,4 +1,5 @@
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo, useLayoutEffect } from 'react';
+import { SessionFence } from '@/lib/account-access';
 import { supabase } from '@/supabase';
 import { useUserData } from '@/hooks/use-user-data';
 
@@ -25,13 +26,22 @@ export type NewLocation = {
 
 export function useUserLocations() {
   const { user } = useUserData();
+  const [fence] = useState(() => new SessionFence());
+  useLayoutEffect(() => {
+    fence.accept(user?.id ?? null);
+    return () => { fence.invalidate(); };
+  }, [user?.id, fence]);
   const [locations, setLocations] = useState<UserLocation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchLocations = useCallback(async () => {
+    const isCurrent = fence.capture(user?.id);
+    if (!isCurrent()) return;
     if (!user) {
       setLocations([]);
+      setIsLoading(false);
+      setError(null);
       return;
     }
     setIsLoading(true);
@@ -43,18 +53,20 @@ export function useUserLocations() {
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false });
 
+      if (!isCurrent()) return;
       if (fetchError) throw fetchError;
       const next = (data as UserLocation[]) ?? [];
       setLocations(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load locations');
+      if (isCurrent()) setError(err instanceof Error ? err.message : 'Failed to load locations');
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
-  }, [user]);
+  }, [user, fence]);
 
   const addLocation = useCallback(async (newLoc: NewLocation): Promise<{ success: boolean; error?: string }> => {
-    if (!user) return { success: false, error: 'Not signed in' };
+    if (!user || !fence.capture(user.id)()) return { success: false, error: 'Not signed in' };
+    const isCurrent = fence.capture(user.id);
 
     try {
       const { data, error: insertError } = await supabase
@@ -72,20 +84,21 @@ export function useUserLocations() {
         .single();
 
       if (insertError) throw insertError;
-      if (data) {
+      if (data && isCurrent()) {
         setLocations((prev) => [data as UserLocation, ...prev]);
       }
-      return { success: true };
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Failed to add location' };
     }
-  }, [user]);
+  }, [user, fence]);
 
   const updateLocation = useCallback(async (
     id: string,
     updates: Partial<Pick<UserLocation, 'name' | 'label' | 'latitude' | 'longitude' | 'radius' | 'is_active'>>
   ): Promise<{ success: boolean; error?: string }> => {
-    if (!user) return { success: false, error: 'Not signed in' };
+    if (!user || !fence.capture(user.id)()) return { success: false, error: 'Not signed in' };
+    const isCurrent = fence.capture(user.id);
 
     try {
       const { error: updateError } = await supabase
@@ -95,15 +108,16 @@ export function useUserLocations() {
         .eq('owner_id', user.id);
 
       if (updateError) throw updateError;
-      setLocations((prev) => prev.map((loc) => (loc.id === id ? { ...loc, ...updates } : loc)));
-      return { success: true };
+      if (isCurrent()) setLocations((prev) => prev.map((loc) => (loc.id === id ? { ...loc, ...updates } : loc)));
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Failed to update location' };
     }
-  }, [user]);
+  }, [user, fence]);
 
   const deleteLocation = useCallback(async (id: string): Promise<{ success: boolean; error?: string }> => {
-    if (!user) return { success: false, error: 'Not signed in' };
+    if (!user || !fence.capture(user.id)()) return { success: false, error: 'Not signed in' };
+    const isCurrent = fence.capture(user.id);
 
     try {
       const { error: deleteError } = await supabase
@@ -113,23 +127,24 @@ export function useUserLocations() {
         .eq('owner_id', user.id);
 
       if (deleteError) throw deleteError;
-      setLocations((prev) => prev.filter((loc) => loc.id !== id));
-      return { success: true };
+      if (isCurrent()) setLocations((prev) => prev.filter((loc) => loc.id !== id));
+      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Failed to delete location' };
     }
-  }, [user]);
+  }, [user, fence]);
 
   const toggleActive = useCallback(async (id: string, isActive: boolean) => {
     return updateLocation(id, { is_active: isActive });
   }, [updateLocation]);
 
-  // Active locations only (for geofencing)
-  const activeLocations = useMemo(() => locations.filter((l) => l.is_active), [locations]);
+  // Never expose a previous account's places while the new fetch is pending.
+  const visibleLocations = useMemo(() => user ? locations.filter(location => location.owner_id === user.id) : [], [locations, user]);
+  const activeLocations = useMemo(() => visibleLocations.filter((l) => l.is_active), [visibleLocations]);
 
   return {
     user,
-    locations,
+    locations: visibleLocations,
     activeLocations,
     isLoading,
     error,

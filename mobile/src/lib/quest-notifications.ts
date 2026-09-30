@@ -53,13 +53,32 @@ export async function configureQuestNotifications(): Promise<boolean> {
   return true;
 }
 
-export async function scheduleQuestNotifications(quests: Quest[]): Promise<void> {
-  if (!isConfigured || Platform.OS === 'web') return;
+let notificationGeneration = 0;
+let notificationQueue: Promise<void> = Promise.resolve();
+
+export function cancelQuestNotifications(): Promise<void> {
+  notificationGeneration += 1;
+  notificationQueue = notificationQueue.catch(() => {}).then(async () => {
+    if (Platform.OS !== 'web') await Notifications.cancelAllScheduledNotificationsAsync();
+  });
+  return notificationQueue.catch(error => { console.warn('Could not cancel reminders:', error); });
+}
+
+export function scheduleQuestNotifications(quests: Quest[], isSessionCurrent: () => boolean = () => true): Promise<void> {
+  const generation = ++notificationGeneration;
+  const isCurrent = () => generation === notificationGeneration && isSessionCurrent();
+  notificationQueue = notificationQueue.catch(() => {}).then(() => scheduleCurrentQuestNotifications(quests, isCurrent));
+  return notificationQueue;
+}
+
+async function scheduleCurrentQuestNotifications(quests: Quest[], isCurrent: () => boolean): Promise<void> {
+  if (!isConfigured || Platform.OS === 'web' || !isCurrent()) return;
 
   await Notifications.cancelAllScheduledNotificationsAsync();
   const activeQuests = quests.filter((quest) => quest.status === 'active').slice(0, 3);
 
   for (const quest of activeQuests) {
+    if (!isCurrent()) return;
     const nextReminder = new Date();
     nextReminder.setHours(18, 0, 0, 0);
     if (nextReminder.getTime() <= Date.now()) {

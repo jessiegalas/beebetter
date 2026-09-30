@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TextInput, TouchableOpacity, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { useUserData } from '@/hooks/use-user-data';
 
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
@@ -12,6 +12,7 @@ import { validateStudent, studentPayload, emailError, passwordError, LIMITS, typ
 import { supabase } from '@/supabase';
 
 export default function AuthScreen() {
+  const { access, accessMessage, isSigningOut, isRefreshing, refresh, signOut, beginAuthentication } = useUserData();
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [student, setStudent] = useState<StudentFields>({ name: '', student_number: '', course: '', year_level: '', section: '', campus: '', goal: '' });
   const enrollment = useEnrollmentOptions();
@@ -63,9 +64,10 @@ export default function AuthScreen() {
   };
 
   const submit = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || isSigningOut || access === 'checking') return;
     const normalizedEmail = email.trim().toLowerCase();
     if (invalid) { setMessage('Check the highlighted fields before continuing.'); return; }
+    if (!beginAuthentication()) { setMessage('Please retry sign-out before signing in again.'); return; }
     const normalizedStudent = studentPayload(student);
 
     setIsSubmitting(true);
@@ -86,23 +88,18 @@ export default function AuthScreen() {
         });
         if (error) throw error;
 
-        if (data.session) {
-          router.replace('/(tabs)');
-          return;
-        }
+        if (data.session) return;
 
         setMessage('Account created. Check your email to confirm it, then sign in.', 'success');
         setConfirmationPending(true);
         setMode('sign-in');
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
           email: normalizedEmail,
           password,
         });
         if (error) throw error;
-        if (data.session) {
-          router.replace('/(tabs)');
-        }
+
       }
     } catch (error) {
       setMessage(getAuthErrorMessage(error));
@@ -132,6 +129,22 @@ export default function AuthScreen() {
       setIsResending(false);
     }
   };
+
+  if (access === 'checking' || access === 'verification_error') {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', padding: 24 }]}>
+        {access === 'checking' ? <ActivityIndicator color={COLORS.honeyDark} /> : <>
+          <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>
+          <TouchableOpacity disabled={isRefreshing || isSigningOut} onPress={() => void refresh()} style={styles.modeButton}>
+            <ThemedText>{isRefreshing ? 'Checking account...' : 'Retry'}</ThemedText>
+          </TouchableOpacity>
+          <TouchableOpacity disabled={isSigningOut} onPress={() => void signOut()} style={styles.modeButton}>
+            <ThemedText>{isSigningOut ? 'Signing out...' : 'Sign out'}</ThemedText>
+          </TouchableOpacity>
+        </>}
+      </SafeAreaView>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -226,6 +239,13 @@ export default function AuthScreen() {
           </View>
 
           {(passwordTouched || !!password) && passwordValidation && <ThemedText style={styles.feedback}>{passwordValidation}</ThemedText>}
+          {accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>}
+          {access === 'blocked' && !isSigningOut && (
+            <TouchableOpacity onPress={() => void signOut()} style={styles.modeButton}>
+              <ThemedText>Retry sign-out</ThemedText>
+            </TouchableOpacity>
+          )}
+          {isSigningOut && <ThemedText>Signing out...</ThemedText>}
           {feedback && <ThemedText style={[styles.feedback, feedbackTone === 'success' && styles.successFeedback]}>{feedback}</ThemedText>}
 
           {confirmationPending && mode === 'sign-in' && (
@@ -245,11 +265,11 @@ export default function AuthScreen() {
 
           {/* Submit Button */}
           <TouchableOpacity
-            style={[styles.submitButton, (isSubmitting || invalid) && styles.submitButtonDisabled]}
+            style={[styles.submitButton, (isSubmitting || isSigningOut || invalid) && styles.submitButtonDisabled]}
             onPress={submit}
-            disabled={isSubmitting || invalid}
+            disabled={isSubmitting || isSigningOut || invalid}
             accessibilityRole="button"
-            accessibilityState={{ disabled: isSubmitting || invalid, busy: isSubmitting }}
+            accessibilityState={{ disabled: isSubmitting || isSigningOut || invalid, busy: isSubmitting }}
             activeOpacity={0.8}>
             {isSubmitting ? (
               <ActivityIndicator color="#FFFFFF" />

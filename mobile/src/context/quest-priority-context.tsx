@@ -12,7 +12,8 @@ export function QuestPriorityProvider({ children }: { children: ReactNode }) {
   const { user, profile, quests, completionHistory } = useUserData();
   const { coords, locationUpdatedAt, locations, permissionStatus } = useLocationContext();
   const [now, setNow] = useState(Date.now);
-  const [geofenceEvents, setGeofenceEvents] = useState<GeofenceEvents>({});
+  const [geofenceSnapshot, setGeofenceSnapshot] = useState<{ user: typeof user; events: GeofenceEvents } | null>(null);
+  const geofenceEvents = useMemo(() => geofenceSnapshot?.user === user ? geofenceSnapshot?.events ?? {} : {}, [geofenceSnapshot, user]);
   const [wellness, setWellness] = useState<RecommendationWellnessContext | null>(null);
   useEffect(() => {
     let alive = true;
@@ -26,16 +27,19 @@ export function QuestPriorityProvider({ children }: { children: ReactNode }) {
   }, [user]);
   useEffect(() => {
     let alive = true;
+    let readVersion = 0;
+    if (!user) return;
     const update = () => {
+      const version = ++readVersion;
       setNow(Date.now());
-      void readGeofenceEvents().then(events => { if (alive) setGeofenceEvents(events); });
+      void readGeofenceEvents().then(events => { if (alive && version === readVersion) setGeofenceSnapshot({ user, events }); });
     };
     update();
     const timer = setInterval(() => { if (AppState.currentState === 'active') update(); }, 30_000);
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') update(); });
-    const unsubscribe = subscribeGeofenceEvents(events => { setGeofenceEvents(events); setNow(Date.now()); });
+    const unsubscribe = subscribeGeofenceEvents(events => { readVersion += 1; setGeofenceSnapshot({ user, events }); setNow(Date.now()); });
     return () => { alive = false; clearInterval(timer); subscription.remove(); unsubscribe(); };
-  }, []);
+  }, [user]);
   const context = useMemo(() => ({
     now: Math.max(now, locationUpdatedAt ?? now), coords: permissionStatus === 'granted' ? coords : null,
     locationUpdatedAt, places: locations, history: completionHistory,

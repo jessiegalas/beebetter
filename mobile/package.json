@@ -57,7 +57,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test:context": "node scripts/test-quest-priority.cjs",
-    "test:students": "node scripts/test-student-validation.cjs"
+    "test:students": "node scripts/test-student-validation.cjs",
+    "test:auth": "node scripts/test-account-access.cjs"
   },
   "private": true
 }

@@ -31,6 +31,7 @@ export default function ProfileScreen() {
     refresh,
     updateProfile,
     signOut,
+    isSigningOut,
   } = useUserData();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<StudentProfileUpdates | null>(null);
@@ -102,15 +103,13 @@ export default function ProfileScreen() {
   ];
 
   const handleSignOut = () => {
+    if (isSigningOut) return;
     Alert.alert('Sign Out', 'Are you sure you want to sign out of BeeBetter?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out',
         style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          router.replace('/auth');
-        },
+        onPress: () => { void signOut(); },
       },
     ]);
   };
@@ -132,7 +131,7 @@ export default function ProfileScreen() {
           <View style={styles.profileHero}>
             <View style={styles.profileHeroTop}>
               <BeeMark size={64} />
-              <TouchableOpacity style={styles.headerButton} onPress={handleSignOut} accessibilityLabel="Sign Out">
+              <TouchableOpacity style={styles.headerButton} onPress={handleSignOut} disabled={isSigningOut} accessibilityLabel="Sign Out">
                 <Ionicons name="log-out-outline" size={19} color={COLORS.danger} />
               </TouchableOpacity>
             </View>
@@ -271,7 +270,7 @@ export default function ProfileScreen() {
 
           {/* Account Actions */}
           <View style={styles.actionSection}>
-            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} disabled={isSigningOut} activeOpacity={0.8}>
               <Ionicons name="log-out-outline" size={17} color={COLORS.danger} />
               <ThemedText style={styles.signOutButtonText}>Sign Out</ThemedText>
             </TouchableOpacity>

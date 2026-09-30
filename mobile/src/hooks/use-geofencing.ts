@@ -16,30 +16,47 @@ TaskManager.defineTask<GeofenceTaskData>(GEOFENCE_TASK_NAME, async ({ data, erro
     return null;
   }
 
-  const { eventType, region } = data;
-  if (region?.identifier) await recordGeofenceEvent(region.identifier, eventType === Location.GeofencingEventType.Enter);
+  const { eventType, region } = data ?? {};
+  try {
+    if (region?.identifier) await recordGeofenceEvent(region.identifier, eventType === Location.GeofencingEventType.Enter);
+  } catch (error) { console.warn('Could not record geofence event:', error); }
   return null;
 });
 
 export type GeofenceRegion = Location.LocationRegion & { identifier: string };
 
-export async function registerGeofences(locations: UserLocation[]): Promise<{ success: boolean; error?: string }> {
+let generation = 0;
+let syncQueue: Promise<unknown> = Promise.resolve();
+
+export function registerGeofences(locations: UserLocation[]): Promise<{ success: boolean; error?: string }> {
+  const version = ++generation;
+  const task = syncQueue.catch(() => {}).then(() => registerCurrentGeofences(locations, () => version === generation));
+  syncQueue = task;
+  return task;
+}
+
+async function registerCurrentGeofences(locations: UserLocation[], isCurrent: () => boolean): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!isCurrent()) return { success: true };
     if (!(await TaskManager.isAvailableAsync())) {
       return { success: false, error: 'Background geofencing is unavailable in this app environment' };
     }
 
+    if (!isCurrent()) return { success: true };
     const isAvailable = await Location.hasServicesEnabledAsync();
     if (!isAvailable) {
       return { success: false, error: 'Location services disabled' };
     }
 
+    if (!isCurrent()) return { success: true };
     const { status } = await Location.getBackgroundPermissionsAsync();
     if (status !== 'granted') {
       return { success: false, error: 'Background location permission not granted' };
     }
 
-    await unregisterAllGeofences();
+    if (!isCurrent()) return { success: true };
+    await stopGeofences();
+    if (!isCurrent()) return { success: true };
 
     const activeLocations = locations.filter((l) => l.is_active);
     if (activeLocations.length === 0) {
@@ -64,7 +81,14 @@ export async function registerGeofences(locations: UserLocation[]): Promise<{ su
   }
 }
 
-export async function unregisterAllGeofences(): Promise<void> {
+export function unregisterAllGeofences(): Promise<void> {
+  generation += 1;
+  const task = syncQueue.catch(() => {}).then(stopGeofences);
+  syncQueue = task;
+  return task;
+}
+
+async function stopGeofences(): Promise<void> {
   try {
     if (await Location.hasStartedGeofencingAsync(GEOFENCE_TASK_NAME)) {
       await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
@@ -85,13 +109,9 @@ export async function getRegisteredGeofences(): Promise<GeofenceRegion[]> {
   }
 }
 
-let syncQueue = Promise.resolve();
-export function syncGeofences(locations: UserLocation[]): Promise<void> {
-  syncQueue = syncQueue.catch(() => {}).then(async () => {
-    const result = await registerGeofences(locations);
-    if (!result.success && result.error !== 'Background geofencing is unavailable in this app environment') {
-      console.warn('Geofence sync skipped:', result.error);
-    }
-  });
-  return syncQueue;
+export async function syncGeofences(locations: UserLocation[]): Promise<void> {
+  const result = await registerGeofences(locations);
+  if (!result.success && result.error !== 'Background geofencing is unavailable in this app environment') {
+    console.warn('Geofence sync skipped:', result.error);
+  }
 }

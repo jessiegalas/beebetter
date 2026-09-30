@@ -18,8 +18,9 @@ Review all definitions of a changed function/policy in numeric order. An early d
 | `020_longitudinal_data_foundation.sql`, `021_osas_longitudinal_analytics.sql` | Institutional timezone, enrollment periods, lifecycle events, streaks; current dashboard/export definitions with historical cohorts and student-weighted averages. |
 | `022_scalable_data_access.sql`, `023_recommendation_quality.sql`, `024_final_integration_fixes.sql` | Paginated lists, progression summary, removal of writable is_nearby; recommendation candidates/events; referenced-proof deletion protection. |
 | `025_semester_section_management.sql`, `026_database_normalization.sql` | Semester-scoped sections/admin RPCs and enrollment associations; canonical category FK, enrollment composite FKs, derived-level constraint. |
+| `027_student_auth_access.sql` | Auth-only access-token hook rejecting inactive students while preserving active administrator access; requires separate Auth configuration. |
 
-Current definitions to start with: `complete_quest` in 018; `admin_update_student` in 011 plus validation triggers replaced by 025; admin quest writes in 017; dashboard/export in 021; list/summary RPCs in 022; candidates/events in 023; enrollment validation/history in 025; category validation/grants in 026.
+Current definitions to start with: `complete_quest` in 018; `admin_update_student` in 011 plus validation triggers replaced by 025; admin quest writes in 017; dashboard/export in 021; list/summary RPCs in 022; candidates/events in 023; enrollment validation/history in 025; category validation/grants in 026; the student access-token hook in 027.
 
 ## Database invariants
 
@@ -36,9 +37,9 @@ Current definitions to start with: `complete_quest` in 018; `admin_update_studen
 
 ## Schema changes and operations
 
-- Add the next unused three-digit migration (027 at this review), with the existing transactional style and explicit security declarations. Do not edit applied migrations or assume the full chain is idempotent: 001 contains unguarded policy creation.
+- Add the next unused three-digit migration (028 at this review), with the existing transactional style and explicit security declarations. Do not edit applied migrations or assume the full chain is idempotent: 001 contains unguarded policy creation.
 - Inspect both clients' RPC signatures, selected columns, statuses, category labels, and nullable values before changing SQL. Preserve compatibility projections and event snapshots. Test clean setup and upgrades with existing/legacy data, including backfill anomalies and constraint validation failures.
-- Apply 001-026 in ascending order only in an authorized operation; each file must succeed before continuing. Auth and Storage schemas/roles must exist first. Database changes precede dependent client releases.
+- Apply 001-027 in ascending order only in an authorized operation; each file must succeed before continuing. Auth and Storage schemas/roles must exist first. Database changes precede dependent client releases.
 - Read [DEPLOYMENT.md](../DEPLOYMENT.md) for rollout/rollback and worker operations and [DATABASE_NORMALIZATION_AUDIT.md](../DATABASE_NORMALIZATION_AUDIT.md) for 026 preflight queries. Do not run hosted migrations, deploy, reset, or merge without explicit authorization. Never use a documentation/review task as permission to run local migrations either.
 
 ## Verification and current gaps
@@ -51,6 +52,6 @@ There is no package manifest/test command in this directory. `verify-local-supab
 
 This is a **mutating migration runner**, not a dry run or an assertion suite. It accepts loopback hosts only, enumerates numbered SQL files, and runs psql with ON_ERROR_STOP. Use only when local migration execution is authorized. Do not execute it during review-only/no-migration tasks.
 
-`../DEPLOYMENT.md` refers to a `supabase/test_*.cjs` suite pattern relative to the repository root, but no such files are checked in. `../mobile/scripts/test-context-database.cjs` is an optional PGlite fixture suite (external dependency/module-path argument) that executes selected migrations through 011 in test-specific order. It does not validate 012-026, real Auth/Storage, or concurrent PostgreSQL sessions. Report this gap; do not invent missing commands or silently install dependencies.
+`test_account_access.cjs` exercises real Auth and student suspension on an explicitly configured disposable loopback stack with hook 027 enabled. See `../DEPLOYMENT.md` for environment variables and invocation. It is not full-schema regression coverage. `../mobile/scripts/test-context-database.cjs` is an optional PGlite fixture suite (external dependency/module-path argument) that executes selected migrations through 011 in test-specific order. It does not validate 012-027, real Auth/Storage, or concurrent PostgreSQL sessions. Report this gap; do not invent missing commands or silently install dependencies.
 
 For a future SQL change, establish appropriate disposable-stack regressions: direct unauthorized writes, cross-owner access, inactive-account writes, duplicate/concurrent completion, proof metadata/deletion, history after quest deletion, unchanged legacy enrollment edits, semester activation/archival and FK compatibility, OSAS grant revocation/cohort suppression/export auditing, and support-event retention. Run affected client checks from their guides. For documentation-only changes, verify paths, migration references, commands, and `git diff --check`; do not execute migrations.

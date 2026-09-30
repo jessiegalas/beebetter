@@ -13,30 +13,15 @@ if (!supabaseUrl || !supabasePublishableKey) {
 
 const isServer = Platform.OS === 'web' && typeof window === 'undefined';
 
+// Storage failures must reach Auth callers; silently swallowing removal errors
+// can make a failed logout look successful while credentials remain persisted.
 const safeStorage = {
-  getItem: async (key: string): Promise<string | null> => {
-    if (isServer) return null;
-    try {
-      return await AsyncStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  },
+  getItem: async (key: string): Promise<string | null> => isServer ? null : AsyncStorage.getItem(key),
   setItem: async (key: string, value: string): Promise<void> => {
-    if (isServer) return;
-    try {
-      await AsyncStorage.setItem(key, value);
-    } catch {
-      // Ignore write errors on SSR
-    }
+    if (!isServer) await AsyncStorage.setItem(key, value);
   },
   removeItem: async (key: string): Promise<void> => {
-    if (isServer) return;
-    try {
-      await AsyncStorage.removeItem(key);
-    } catch {
-      // Ignore remove errors on SSR
-    }
+    if (!isServer) await AsyncStorage.removeItem(key);
   },
 };
 
