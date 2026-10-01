@@ -1,188 +1,141 @@
-import { Alert, StyleSheet, View, ScrollView, TouchableOpacity } from 'react-native';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Linking, Platform, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-
 import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
-import { useUserData } from '@/hooks/use-user-data';
+import { useUserData, type Quest } from '@/hooks/use-user-data';
 import { useQuestPriority } from '@/context/quest-priority-context';
+import { configureQuestNotifications, questNeedsOpen, scheduleQuestNotifications, useQuestNotificationStatus } from '@/lib/quest-notifications';
+
+const dateLabel = (value: string) => new Date(value).toLocaleString(undefined, {
+  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+});
+const statusCopy = {
+  checking: 'Checking notification setup', ready: 'Push enabled on this device',
+  denied: 'Notifications are turned off', unavailable: 'Push reminders are available on Android',
+  error: 'Push setup needs attention',
+};
 
 export default function NotificationsScreen() {
-  const { completionHistory, levelProgress, completeQuest } = useUserData();
+  const { user, quests, completionHistory, completeQuest, refresh, isLoading, isRefreshing, error } = useUserData();
   const { ranked } = useQuestPriority();
-  const activeQuests = ranked.filter(item => item.tier !== 'history').map(item => item.quest);
-
-  const handleQuickComplete = async (quest: (typeof activeQuests)[number]) => {
-    if (quest.requires_proof) {
-      Alert.alert('Proof required', 'Open the quest board to attach proof before completing this quest.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open quests', onPress: () => router.replace('/quests') },
+  const status = useQuestNotificationStatus();
+  const busy = useRef(false);
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const active = ranked.filter(item => item.quest.status === 'active');
+  const open = (quest: Quest) => router.push({ pathname: '/quests', params: { questId: quest.id } });
+  const act = async (quest: Quest) => {
+    if (questNeedsOpen(quest)) { open(quest); return; }
+    if (busy.current) return;
+    busy.current = true;
+    setCompletingId(quest.id);
+    setFeedback(null);
+    try {
+      const result = await completeQuest(quest.id);
+      if (result.success) setFeedback('Quest complete. Your progress has been saved.');
+      else Alert.alert('Could not complete quest', result.error || 'Please try again.', [
+        { text: 'Dismiss', style: 'cancel' }, { text: 'Open', onPress: () => open(quest) },
       ]);
-      return;
-    }
-
-    const result = await completeQuest(quest.id);
-    if (result.success) {
-      Alert.alert('Quest complete!', `+${quest.xp} XP earned. Nice work.`);
-    } else {
-      Alert.alert('Could not complete quest', result.error || 'Please try again.');
-    }
+    } finally { busy.current = false; setCompletingId(null); }
   };
-
-  const dynamicNotifications = [
-    ...(levelProgress.level > 1
-      ? [
-          {
-            id: 'level-up',
-            text: `You have reached Level ${levelProgress.level}! Keep pushing forward.`,
-            time: 'Achievement',
-            icon: 'star-outline' as const,
-          },
-        ]
-      : []),
-    ...completionHistory.slice(0, 4).map((q) => ({
-      id: `quest-${q.id}`,
-      text: `You completed "${q.title}". Nice work!`,
-      time: 'Completed',
-      icon: 'trophy-outline' as const,
-    })),
-    ...(ranked.some(item => item.nearby && item.tier !== 'history')
-      ? [
-          {
-            id: 'nearby-alert',
-            text: 'You have quests nearby ready to explore.',
-            time: 'Location',
-            icon: 'location-outline' as const,
-          },
-        ]
-      : []),
-    {
-      id: 'welcome',
-      text: 'Welcome to BeeBetter! Turn your daily tasks into rewarding quests.',
-      time: 'Tip',
-      icon: 'sparkles-outline' as const,
-    },
-  ];
+  const retry = async () => {
+    if (retrying || !user) return;
+    setRetrying(true);
+    try {
+      if (status === 'denied') { await Linking.openSettings(); return; }
+      if (await configureQuestNotifications()) await scheduleQuestNotifications(quests);
+    } catch { Alert.alert('Push setup unavailable', 'Check your connection and try again. If this continues, the app notification service may need configuration.'); }
+    finally { setRetrying(false); }
+  };
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <ThemedText style={styles.headerTitle}>Notifications</ThemedText>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <Ionicons name="close" size={20} color={COLORS.ink} />
+          <View style={styles.copy}><ThemedText style={styles.title}>Notifications</ThemedText><ThemedText style={styles.subtitle}>A little nudge toward your next win.</ThemedText></View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close notifications" style={styles.close} onPress={() => router.back()}>
+            <Ionicons name="close" size={22} color={COLORS.ink} />
           </TouchableOpacity>
         </View>
-
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {activeQuests.length > 0 && (
-            <View style={styles.actionSection}>
-              <View style={styles.sectionHeading}>
-                <ThemedText style={styles.sectionTitle}>Ready when you are</ThemedText>
-                <ThemedText style={styles.sectionHint}>One-tap progress</ThemedText>
-              </View>
-              {activeQuests.slice(0, 3).map((quest) => (
-                <View key={`action-${quest.id}`} style={styles.actionCard}>
-                  <View style={styles.actionIcon}>
-                    <Ionicons name={quest.requires_proof ? 'attach-outline' : 'checkmark'} size={19} color={COLORS.honeyDark} />
-                  </View>
-                  <View style={styles.actionCopy}>
-                    <ThemedText style={styles.actionTitle} numberOfLines={1}>{quest.title}</ThemedText>
-                    <ThemedText style={styles.actionSubtitle}>
-                      {quest.requires_proof ? 'Attach proof on the quest board' : `Complete for +${quest.xp} XP`}
-                    </ThemedText>
-                  </View>
-                  <TouchableOpacity style={styles.quickButton} onPress={() => void handleQuickComplete(quest)} activeOpacity={0.8}>
-                    <ThemedText style={styles.quickButtonText}>{quest.requires_proof ? 'Open' : 'Done'}</ThemedText>
+        <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void refresh()} tintColor={COLORS.honeyDark} />}>
+          <View style={styles.statusCard}>
+            <Ionicons name={status === 'ready' ? 'notifications-outline' : 'notifications-off-outline'} size={22} color={COLORS.honeyDeep} />
+            <View style={styles.copy}>
+              <ThemedText style={styles.cardTitle}>{statusCopy[status]}</ThemedText>
+              <ThemedText style={styles.detail}>At scheduled start, one hour before a deadline, and when you enter a saved quest location.</ThemedText>
+            </View>
+            {Platform.OS === 'android' && status !== 'ready' && (
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={status === 'denied' ? 'Open notification settings' : 'Retry notification setup'} disabled={retrying} onPress={() => void retry()} style={styles.secondaryButton}>
+                {retrying ? <ActivityIndicator color={COLORS.honeyDeep} /> : <ThemedText style={styles.buttonText}>{status === 'denied' ? 'Settings' : 'Retry'}</ThemedText>}
+              </TouchableOpacity>
+            )}
+          </View>
+          {feedback && <View style={styles.success} accessibilityLiveRegion="polite"><Ionicons name="checkmark-circle" size={20} color={COLORS.success} /><ThemedText style={styles.feedback}>{feedback}</ThemedText></View>}
+          <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle}>Your quests</ThemedText><ThemedText style={styles.count}>{active.length} active</ThemedText></View>
+          <ThemedText style={styles.hint}>Complete a simple quest here. Open quests that need proof or a prerequisite check.</ThemedText>
+          {isLoading && <ActivityIndicator color={COLORS.honeyDark} accessibilityLabel="Loading quests" />}
+          {error && <ThemedText style={styles.error}>{error}</ThemedText>}
+          {!isLoading && !error && active.length === 0 && (
+            <View style={styles.empty}><Ionicons name="checkmark-done-outline" size={32} color={COLORS.success} /><ThemedText style={styles.cardTitle}>All clear for now</ThemedText><ThemedText style={styles.detail}>Your active quests will appear here.</ThemedText></View>
+          )}
+          {active.map(({ quest, nearby }) => {
+            const needsOpen = questNeedsOpen(quest);
+            const working = completingId === quest.id;
+            return (
+              <View key={quest.id} style={styles.questCard}>
+                <View style={styles.row}>
+                  <View style={[styles.icon, nearby && styles.nearbyIcon]}><Ionicons name={nearby ? 'location-outline' : quest.requires_proof ? 'attach-outline' : 'flag-outline'} size={22} color={COLORS.honeyDeep} /></View>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={'Open ' + quest.title} onPress={() => open(quest)} style={styles.copy}>
+                    <ThemedText style={styles.cardTitle}>{quest.title}</ThemedText>
+                    <ThemedText style={styles.detail}>{quest.category} · +{quest.xp} XP</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={(needsOpen ? 'Open ' : 'Complete ') + quest.title} accessibilityState={{ disabled: !!completingId, busy: working }} disabled={!!completingId} onPress={() => void act(quest)} style={[styles.action, needsOpen && styles.openAction, !!completingId && styles.disabled]}>
+                    {working ? <ActivityIndicator color={COLORS.honeyDeep} /> : <ThemedText style={styles.buttonText}>{needsOpen ? 'Open' : 'Complete'}</ThemedText>}
                   </TouchableOpacity>
                 </View>
-              ))}
-            </View>
-          )}
-          {dynamicNotifications.map((n) => (
-            <View key={n.id} style={styles.notifCard}>
-              <View style={styles.iconWrap}>
-                <Ionicons name={n.icon} size={18} color={COLORS.honeyDark} />
+                <View style={styles.meta}>
+                  {nearby && <ThemedText style={styles.tag}>Nearby</ThemedText>}
+                  {quest.requires_proof && <ThemedText style={styles.tag}>Proof required</ThemedText>}
+                  {!!quest.prerequisite_quest_id && <ThemedText style={styles.tag}>Prerequisite check</ThemedText>}
+                </View>
+                {quest.scheduled_at && <ThemedText style={styles.detail}>Starts {dateLabel(quest.scheduled_at)}</ThemedText>}
+                {quest.deadline_at && <ThemedText style={styles.detail}>Due {dateLabel(quest.deadline_at)}</ThemedText>}
+                {!quest.scheduled_at && !quest.deadline_at && <ThemedText style={styles.detail}>No timed reminder set</ThemedText>}
               </View>
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.notifText}>{n.text}</ThemedText>
-                <ThemedText style={styles.notifTime}>{n.time}</ThemedText>
-              </View>
-            </View>
-          ))}
+            );
+          })}
+          {completionHistory.length > 0 && <>
+            <ThemedText style={styles.sectionTitle}>Recent activity</ThemedText>
+            {completionHistory.slice(0, 5).map(item => <View key={item.id} style={styles.activity}>
+              <Ionicons name="checkmark-circle-outline" size={23} color={COLORS.success} />
+              <View style={styles.copy}><ThemedText style={styles.cardTitle}>{item.title}</ThemedText><ThemedText style={styles.detail}>Completed · {dateLabel(item.completed_at)}</ThemedText></View>
+            </View>)}
+          </>}
         </ScrollView>
       </SafeAreaView>
     </View>
   );
 }
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  safeArea: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 15,
-  },
-  headerTitle: { color: COLORS.ink, fontSize: 19, fontWeight: '800' },
-  closeButton: {
-    width: 38,
-    height: 38,
-    borderRadius: Radii.md,
-    backgroundColor: COLORS.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...BeeBetterShadow,
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-    gap: 10,
-  },
-  actionSection: { gap: 8, marginBottom: 5 },
-  sectionHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 2 },
-  sectionTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '800' },
-  sectionHint: { color: COLORS.muted, fontSize: 10, fontWeight: '700' },
-  actionCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.honeyDeep, borderRadius: Radii.lg, padding: 14, ...BeeBetterShadow },
-  actionIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
-  actionCopy: { flex: 1 },
-  actionTitle: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
-  actionSubtitle: { color: '#D4D4D4', fontSize: 10, marginTop: 2 },
-  quickButton: { backgroundColor: COLORS.honey, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 8 },
-  quickButtonText: { color: COLORS.ink, fontSize: 11, fontWeight: '800' },
-  notifCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: COLORS.card,
-    borderRadius: Radii.md,
-    padding: 14,
-    ...BeeBetterShadow,
-  },
-  iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: COLORS.honeySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.ink,
-    lineHeight: 18,
-  },
-  notifTime: {
-    fontSize: 11,
-    color: COLORS.muted,
-    marginTop: 3,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background }, safeArea: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20, paddingVertical: 16 },
+  title: { fontSize: 24, fontWeight: '800', color: COLORS.ink }, subtitle: { fontSize: 12, color: COLORS.muted, marginTop: 4 },
+  close: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.md, backgroundColor: COLORS.card },
+  content: { paddingHorizontal: 20, paddingBottom: 40, gap: 12, width: '100%', maxWidth: 800, alignSelf: 'center' },
+  statusCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.honeySoft, borderRadius: Radii.md, padding: 14 },
+  copy: { flex: 1, minWidth: 100 }, cardTitle: { color: COLORS.ink, fontSize: 14, fontWeight: '700' }, detail: { color: COLORS.muted, fontSize: 12, lineHeight: 18, marginTop: 3 },
+  sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: COLORS.ink, marginTop: 8 }, count: { color: COLORS.muted, fontSize: 12 }, hint: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
+  questCard: { backgroundColor: COLORS.card, borderRadius: Radii.lg, padding: 16, ...BeeBetterShadow }, row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
+  icon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honeySoft }, nearbyIcon: { backgroundColor: COLORS.mint },
+  action: { backgroundColor: COLORS.honey, minHeight: 44, minWidth: 80, paddingHorizontal: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  openAction: { backgroundColor: COLORS.surfaceWarm }, secondaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }, buttonText: { color: COLORS.honeyDeep, fontSize: 12, fontWeight: '800' }, disabled: { opacity: 0.5 },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }, tag: { color: COLORS.honeyDeep, backgroundColor: COLORS.surfaceWarm, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, fontSize: 11 },
+  activity: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: COLORS.card, borderRadius: Radii.md },
+  empty: { padding: 28, gap: 8, alignItems: 'center', backgroundColor: COLORS.card, borderRadius: Radii.lg },
+  success: { padding: 14, flexDirection: 'row', gap: 8, backgroundColor: COLORS.mint, borderRadius: Radii.md }, feedback: { flex: 1, fontSize: 13, color: COLORS.ink }, error: { color: COLORS.danger, fontSize: 13 },
 });

@@ -1,7 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 
+import { QuestNotificationResponse } from '@/components/quest-notification-response';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { UserDataProvider, useUserData } from '@/context/user-data-context';
 import { QuestPriorityProvider } from '@/context/quest-priority-context';
@@ -40,6 +41,7 @@ export default function RootLayout() {
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <AnimatedSplashOverlay />
             <AppNavigator />
+            {Platform.OS === 'android' && <QuestNotificationResponse />}
           </ThemeProvider>
         </QuestPriorityProvider>
       </LocationProvider>

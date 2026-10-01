@@ -69,7 +69,7 @@ function load(relative, mocks = {}, globals = {}) {
   vm.runInNewContext(code, {
     module, exports: module.exports,
     require: name => { if (name in mocks) return mocks[name]; throw new Error(`Unexpected import ${name} in ${relative}`); },
-    React: mocks.react, console: silentConsole, setTimeout, clearTimeout,
+    React: mocks.react, AbortController, console: silentConsole, setTimeout, clearTimeout,
     setInterval: () => 0, clearInterval() {}, ...globals,
   }, { filename: relative });
   return module.exports;
@@ -140,7 +140,7 @@ function provider(initialUser = user('a')) {
     react: h.react,
     'react-native': { AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallback = fn; return { remove() {} }; } } },
     '@/supabase': { supabase }, '@/lib/account-access': access,
-    'expo-notifications': { addNotificationResponseReceivedListener: () => { if (state.listenerError) throw new Error('Native listener failure'); return { remove() { if (state.listenerCleanupError) throw new Error('Native listener removal failure'); } }; } },
+    'expo-notifications': { addPushTokenListener: () => { if (state.listenerError) throw new Error('Native listener failure'); return { remove() { if (state.listenerCleanupError) throw new Error('Native listener removal failure'); } }; } },
     '@/lib/quest-notifications': notifications,
   }, { setInterval: fn => { state.poll = fn; return 0; } });
   h.mount(() => mod.UserDataProvider({ children: null }));
@@ -291,7 +291,8 @@ test('all private routes are excluded for every non-active access state', () => 
   const layout = load('src/app/_layout.tsx', {
     react, 'expo-router': { Stack: stack, ThemeProvider: pass },
     'expo-splash-screen': { preventAutoHideAsync: async () => {} },
-    'react-native': { useColorScheme: () => 'light' },
+    'react-native': { useColorScheme: () => 'light', Platform: { OS: 'android' } },
+    '@/components/quest-notification-response': { QuestNotificationResponse: () => null },
     '@/components/animated-icon': { AnimatedSplashOverlay: () => null },
     '@/context/user-data-context': { UserDataProvider: pass, useUserData: () => ({ access: currentAccess }) },
     '@/context/location-context': { LocationProvider: pass },
@@ -313,29 +314,38 @@ test('all private routes are excluded for every non-active access state', () => 
   assert(privateRoutes.includes('support-requests')); assert(!privateRoutes.includes('auth'));
 });
 
-test('logout cancels a reminder already being scheduled and skips later ones', async () => {
-  const wait = deferred(); const scheduled = new Set(); let schedules = 0;
+test('logout revokes a push registration already in flight', async () => {
+  const wait = deferred(); let stored = null; const calls = [];
   const notifications = load('src/lib/quest-notifications.ts', {
+    react: { useSyncExternalStore() {} },
+    'expo-constants': { expoConfig: { extra: { eas: { projectId: 'project' } } } },
+    '@react-native-async-storage/async-storage': {
+      getItem: async () => stored, setItem: async (_, value) => { stored = value; }, removeItem: async () => { stored = null; },
+    },
+    '@/supabase': { supabase: {
+      auth: { getSession: async () => ({ data: { session: { user: { id: 'a' } } } }) },
+      rpc: (_, args) => ({ abortSignal: async () => { calls.push(args.enabled_value); if (args.enabled_value) await wait.promise; return { error: null }; } }),
+    } },
     'react-native': { Platform: { OS: 'android' } },
     'expo-notifications': {
       setNotificationHandler() {}, setNotificationChannelAsync: async () => {},
       getPermissionsAsync: async () => ({ granted: true }), setNotificationCategoryAsync: async () => {},
-      AndroidImportance: { DEFAULT: 1 }, SchedulableTriggerInputTypes: { DATE: 'date' },
-      cancelAllScheduledNotificationsAsync: async () => { scheduled.clear(); },
-      scheduleNotificationAsync: async item => { schedules++; await wait.promise; scheduled.add(item.identifier); },
+      AndroidImportance: { DEFAULT: 1 }, getExpoPushTokenAsync: async () => ({ data: 'ExpoPushToken[test]' }),
+      getAllScheduledNotificationsAsync: async () => [], cancelAllScheduledNotificationsAsync: async () => {}, dismissAllNotificationsAsync: async () => {},
     },
   });
   await notifications.configureQuestNotifications();
-  const task = notifications.scheduleQuestNotifications([quest, { ...quest, id: 'q2' }]);
+  const task = notifications.scheduleQuestNotifications([quest]);
   await flush();
   const cleanup = notifications.cancelQuestNotifications();
   wait.resolve(); await Promise.all([task, cleanup]);
-  assert.equal(schedules, 1); assert.equal(scheduled.size, 0);
+  assert.deepEqual(calls, [true, false]); assert.equal(stored, null);
 });
 
 test('queued geofence registration cannot restart tracking after logout', async () => {
   const wait = deferred(); let starts = 0, running = false;
   const geofencing = load('src/hooks/use-geofencing.ts', {
+    '@react-native-async-storage/async-storage': {}, 'expo-notifications': {}, '@/supabase': {}, '@/lib/quest-notifications': {},
     '@/lib/geofence-events': { recordGeofenceEvent: async () => {} },
     'expo-task-manager': { defineTask() {}, isAvailableAsync: () => wait.promise },
     'expo-location': {

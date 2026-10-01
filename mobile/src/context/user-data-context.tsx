@@ -1,12 +1,11 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { AppState } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import type { CompletionRecord } from '@/lib/quest-priority';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/supabase';
 import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
-import * as Notifications from 'expo-notifications';
 import {
-  COMPLETE_QUEST_ACTION,
   configureQuestNotifications,
   scheduleQuestNotifications,
   cancelQuestNotifications,
@@ -168,9 +167,10 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     setIsSigningOut(true);
     // Defer out of onAuthStateChange; never await Auth calls inside its lock.
     const task = Promise.resolve().then(async () => {
+      // Revoke push registration before Auth removes the session.
+      await cancelQuestNotifications().catch(error => console.warn('Push cleanup pending:', error));
       const results = await Promise.allSettled([
         supabase.auth.signOut({ scope: reason ? 'local' : 'global' }).then(({ error }) => { if (error) throw error; }),
-        cancelQuestNotifications(),
       ]);
       const authFailure = results[0].status === 'rejected';
       cleanupFailed.current = authFailure;
@@ -464,17 +464,12 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
 
     let isMounted = true;
     const isCurrent = fence.capture(user.id);
-    let responseSubscription: ReturnType<typeof Notifications.addNotificationResponseReceivedListener> | undefined;
+    let tokenSubscription: ReturnType<typeof Notifications.addPushTokenListener> | undefined;
     try {
-      responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
-        const action = response.actionIdentifier;
-        const data = response.notification.request.content.data as { questId?: unknown };
-        if (isCurrent() && action === COMPLETE_QUEST_ACTION && typeof data?.questId === 'string') {
-          void completeQuest(data.questId).catch(error => console.warn('Notification action failed:', error));
-        }
+      tokenSubscription = Notifications.addPushTokenListener(() => {
+        void scheduleQuestNotifications(quests, () => isMounted && isCurrent(), true).catch(error => console.warn('Push token refresh failed:', error));
       });
-    } catch (error) { console.warn('Notification listener unavailable:', error); }
-
+    } catch { /* Native push is unavailable in web/test environments. */ }
     void configureQuestNotifications().then((configured) => {
       if (isMounted && isCurrent() && configured) {
         return scheduleQuestNotifications(quests, () => isMounted && isCurrent());
@@ -484,9 +479,8 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted = false;
-      try { responseSubscription?.remove(); }
-      catch (error) { console.warn('Notification listener cleanup failed:', error); }
-      void cancelQuestNotifications().catch(error => console.warn('Reminder cleanup failed:', error));
+      try { tokenSubscription?.remove(); }
+      catch (error) { console.warn('Push listener cleanup failed:', error); }
     };
   }, [user, quests, completeQuest, fence]);
 

@@ -12,7 +12,8 @@ function readLocalMapsKey() {
   }
 }
 
-const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || readLocalMapsKey();
+const googleMapsApiKey =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || readLocalMapsKey();
 
 if (!googleMapsApiKey) {
   console.warn(
@@ -22,8 +23,19 @@ if (!googleMapsApiKey) {
 
 module.exports = {
   ...baseConfig,
+
+  android: {
+    ...baseConfig.android,
+    googleServicesFile:
+      process.env.GOOGLE_SERVICES_JSON || '../google-services.json',
+  },
+
   plugins: [
-    ...baseConfig.plugins,
+    ...(baseConfig.plugins ?? []),
+
+    'expo-image',
+    'expo-web-browser',
+
     [
       'react-native-maps',
       {
