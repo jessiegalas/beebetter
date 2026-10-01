@@ -32,6 +32,12 @@ yarn-error.*
 
 # local env files
 .env*.local
+# Environment files
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
 
 # Sensitive / Secrets (extra safety for public API usage)
 *.pem
@@ -71,3 +77,9 @@ example
 # generated native folders
 /mobile/ios
 /mobile/android
+
+# Supabase local/temp files
+supabase/.temp/
+
+# Logs
+*.log
