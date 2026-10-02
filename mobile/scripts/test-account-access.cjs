@@ -84,7 +84,8 @@ const ok = data => ({ data, error: null });
 
 function provider(initialUser = user('a')) {
   const h = hooks();
-  let authCallback, appCallback;
+  let authCallback;
+  const appCallbacks = new Set();
   const state = { session: initialUser ? { user: initialUser } : null, status: 'Active', queries: [], signouts: [], cancellations: 0 };
   const emit = (next, event = next ? 'SIGNED_IN' : 'SIGNED_OUT') => {
     state.session = next ? { user: next } : null;
@@ -138,13 +139,13 @@ function provider(initialUser = user('a')) {
   };
   const mod = load('src/context/user-data-context.tsx', {
     react: h.react,
-    'react-native': { AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallback = fn; return { remove() {} }; } } },
+    'react-native': { AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallbacks.add(fn); return { remove() { appCallbacks.delete(fn); } }; } } },
     '@/supabase': { supabase }, '@/lib/account-access': access,
     'expo-notifications': { addPushTokenListener: () => { if (state.listenerError) throw new Error('Native listener failure'); return { remove() { if (state.listenerCleanupError) throw new Error('Native listener removal failure'); } }; } },
     '@/lib/quest-notifications': notifications,
-  }, { setInterval: fn => { state.poll = fn; return 0; } });
+  }, { setInterval: (fn, delay) => { if (delay === 60_000) state.poll = fn; return 0; } });
   h.mount(() => mod.UserDataProvider({ children: null }));
-  return { h, state, emit, resume: () => appCallback('active'), close: () => h.unmount() };
+  return { h, state, emit, resume: () => [...appCallbacks].forEach(fn => fn('active')), close: () => h.unmount() };
 }
 
 const cases = [];
@@ -265,6 +266,29 @@ test('late quest insertion and deletion rollback cannot restore logged-out data'
   assert.equal(added.success, false);
   assert.equal(p.h.value.quests.length, 0); p.close();
 });
+test('newly assigned uncached quest uses an owned lookup and server completion', async () => {
+  const p = provider(); await flush(); let completions = 0;
+  p.state.query = table => table === 'quests' ? ok({ status: 'active', requires_proof: false }) : undefined;
+  p.state.rpc = name => { if (name === 'complete_quest') { completions++; return ok(null); } };
+  assert.equal((await p.h.value.completeQuest('new-quest')).success, true);
+  assert.equal(completions, 1); assert.ok(p.state.queries.includes('quests:select')); p.close();
+});
+test('missing or proof-required uncached quests do not dispatch completion', async () => {
+  const p = provider(); await flush(); let completions = 0;
+  p.state.rpc = name => { if (name === 'complete_quest') { completions++; return ok(null); } };
+  assert.equal((await p.h.value.completeQuest('foreign-quest')).success, false);
+  p.state.query = table => table === 'quests' ? ok({ status: 'active', requires_proof: true }) : undefined;
+  assert.match((await p.h.value.completeQuest('proof-quest')).error, /proof/);
+  assert.equal(completions, 0); p.close();
+});
+test('logout during an uncached quest lookup prevents completion', async () => {
+  const p = provider(); await flush(); const wait = deferred(); let completions = 0;
+  p.state.query = table => table === 'quests' ? wait.promise : undefined;
+  p.state.rpc = name => { if (name === 'complete_quest') { completions++; return ok(null); } };
+  const completing = p.h.value.completeQuest('new-quest'); await p.h.value.signOut();
+  wait.resolve(ok({ status: 'active', requires_proof: false }));
+  assert.equal((await completing).success, false); assert.equal(completions, 0); p.close();
+});
 test('completion finishing after logout does not trigger another user load', async () => {
   const p = provider(); await flush(); const wait = deferred();
   p.state.rpc = name => name === 'complete_quest' ? wait.promise : undefined;
@@ -317,6 +341,7 @@ test('all private routes are excluded for every non-active access state', () => 
 test('logout revokes a push registration already in flight', async () => {
   const wait = deferred(); let stored = null; const calls = [];
   const notifications = load('src/lib/quest-notifications.ts', {
+    'expo-task-manager': { isTaskDefined: () => false, defineTask() {}, isTaskRegisteredAsync: async () => false },
     react: { useSyncExternalStore() {} },
     'expo-constants': { expoConfig: { extra: { eas: { projectId: 'project' } } } },
     '@react-native-async-storage/async-storage': {
@@ -328,7 +353,7 @@ test('logout revokes a push registration already in flight', async () => {
     } },
     'react-native': { Platform: { OS: 'android' } },
     'expo-notifications': {
-      setNotificationHandler() {}, setNotificationChannelAsync: async () => {},
+      setNotificationHandler() {}, setNotificationChannelAsync: async () => {}, registerTaskAsync: async () => {},
       getPermissionsAsync: async () => ({ granted: true }), setNotificationCategoryAsync: async () => {},
       AndroidImportance: { DEFAULT: 1 }, getExpoPushTokenAsync: async () => ({ data: 'ExpoPushToken[test]' }),
       getAllScheduledNotificationsAsync: async () => [], cancelAllScheduledNotificationsAsync: async () => {}, dismissAllNotificationsAsync: async () => {},

@@ -9,15 +9,19 @@ import { supabase } from '@/supabase';
 /** Handles both warm taps and the notification that launched the app. */
 export function QuestNotificationResponse() {
   const response = Notifications.useLastNotificationResponse();
-  const { user, access, isLoading, refresh } = useUserData();
+  const { user, access, isLoading, refresh, completeQuest } = useUserData();
   const userId = user?.id;
+  const admissionRef = useRef({ userId, access });
+  useEffect(() => { admissionRef.current = { userId, access }; }, [userId, access]);
+  const completionRef = useRef(completeQuest);
+  useEffect(() => { completionRef.current = completeQuest; }, [completeQuest]);
   const handled = useRef(new Set<string>());
   useEffect(() => {
     if (Platform.OS !== 'android' || !response || access !== 'active' || !userId || isLoading) return;
     const { questId, ownerId, notificationId } = response.notification.request.content.data ?? {};
     const action = response.actionIdentifier;
     const handledResponses = handled.current;
-    const key = `${notificationId ?? response.notification.request.identifier}:${action}`;
+    const key = userId + ':' + `${notificationId ?? response.notification.request.identifier}:${action}`;
     if (handledResponses.has(key)) return;
     handledResponses.add(key);
     // Clear after work, so the hook does not cancel its own async handler.
@@ -28,7 +32,13 @@ export function QuestNotificationResponse() {
     }
     let current = true;
     let finished = false;
-    const open = () => router.push({ pathname: '/quests', params: { questId } });
+    let dispatched = false;
+    // Error alerts outlive response cleanup; admission still fences their buttons.
+    const open = () => {
+      if (admissionRef.current.userId === userId && admissionRef.current.access === 'active') {
+        router.push({ pathname: '/quests', params: { questId } });
+      }
+    };
     void (async () => {
       const { data: quest, error } = await supabase.from('quests')
         .select('id,status,requires_proof,prerequisite_quest_id').eq('id', questId).eq('owner_id', userId).maybeSingle();
@@ -47,14 +57,12 @@ export function QuestNotificationResponse() {
         if (prerequisiteError) throw prerequisiteError;
         if (prerequisite?.status !== 'completed') { await refresh(); if (current) open(); return; }
       }
-      const { error: completionError } = await supabase.rpc('complete_quest', {
-        quest_id_value: questId, proof_path_value: null, proof_mime_type_value: null,
-      });
+      dispatched = true;
+      const completion = await completionRef.current(questId);
       if (!current) return;
-      if (completionError) throw completionError;
+      if (!completion.success) throw new Error(completion.error || 'Quest completion failed');
       Alert.alert('Quest complete', 'Your progress has been saved.');
       await Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
-      await refresh();
     })().catch(() => {
       if (current) Alert.alert('Could not complete this action', 'Check your connection and open the quest to try again.', [
         { text: 'Dismiss', style: 'cancel' }, { text: 'Open', onPress: open },
@@ -65,7 +73,7 @@ export function QuestNotificationResponse() {
     return () => {
       current = false;
       // React effect replay or a session refresh must not lose an unfinished action.
-      if (!finished) handledResponses.delete(key);
+      if (!finished && !dispatched) handledResponses.delete(key);
     };
   }, [response, access, userId, isLoading, refresh]);
   return null;

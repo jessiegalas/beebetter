@@ -13,7 +13,7 @@ const dateLabel = (value: string) => new Date(value).toLocaleString(undefined, {
   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
 });
 const statusCopy = {
-  checking: 'Checking notification setup', ready: 'Push enabled on this device',
+  checking: 'Checking notification setup', ready: 'Push registered on this device',
   denied: 'Notifications are turned off', unavailable: 'Push reminders are available on Android',
   error: 'Push setup needs attention',
 };
@@ -47,7 +47,7 @@ export default function NotificationsScreen() {
     setRetrying(true);
     try {
       if (status === 'denied') { await Linking.openSettings(); return; }
-      if (await configureQuestNotifications()) await scheduleQuestNotifications(quests);
+      if (await configureQuestNotifications()) await scheduleQuestNotifications(quests, () => !!user, true, undefined, user.id);
     } catch { Alert.alert('Push setup unavailable', 'Check your connection and try again. If this continues, the app notification service may need configuration.'); }
     finally { setRetrying(false); }
   };

@@ -404,9 +404,19 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }
     const isCurrent = fence.capture(user.id);
 
-    const targetQuest = quests.find((q) => q.id === questId);
+    let targetQuest: Pick<Quest, 'status' | 'requires_proof'> | undefined = quests.find((q) => q.id === questId);
+    // A push can arrive before a newly assigned quest enters the cached list.
     if (!targetQuest) {
-      return { success: false, error: 'Quest not found.' };
+      try {
+        const { data, error } = await supabase.from('quests')
+          .select('status, requires_proof').eq('id', questId).eq('owner_id', user.id).maybeSingle();
+        if (!isCurrent()) return { success: false, error: 'Session ended.' };
+        if (error) return { success: false, error: 'Could not verify this quest. Try again.' };
+        if (!data) return { success: false, error: 'Quest not found.' };
+        targetQuest = data;
+      } catch {
+        return { success: false, error: isCurrent() ? 'Could not verify this quest. Try again.' : 'Session ended.' };
+      }
     }
 
     if (targetQuest.status === 'completed') {
@@ -466,23 +476,32 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     const isCurrent = fence.capture(user.id);
     let tokenSubscription: ReturnType<typeof Notifications.addPushTokenListener> | undefined;
     try {
-      tokenSubscription = Notifications.addPushTokenListener(() => {
-        void scheduleQuestNotifications(quests, () => isMounted && isCurrent(), true).catch(error => console.warn('Push token refresh failed:', error));
+      tokenSubscription = Notifications.addPushTokenListener(nativeToken => {
+        void scheduleQuestNotifications([], () => isMounted && isCurrent(), true, nativeToken, user.id).catch(() => console.warn('Push token refresh failed'));
       });
     } catch { /* Native push is unavailable in web/test environments. */ }
-    void configureQuestNotifications().then((configured) => {
-      if (isMounted && isCurrent() && configured) {
-        return scheduleQuestNotifications(quests, () => isMounted && isCurrent());
+    const register = async (requestPermission = false, force = false) => {
+      if (!isMounted || !isCurrent()) return;
+      if (await configureQuestNotifications(requestPermission)) {
+        await scheduleQuestNotifications([], () => isMounted && isCurrent(), force, undefined, user.id);
       }
-      return undefined;
-    }).catch(error => console.warn('Notification setup failed:', error));
+    };
+    void register(true).catch(() => console.warn('Notification setup failed'));
+    const resumeSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void register().catch(() => console.warn('Push registration resume failed'));
+    });
+    const registrationTimer = setInterval(() => {
+      if (AppState.currentState === 'active') void register(false, true).catch(() => console.warn('Push registration refresh failed'));
+    }, 60 * 60_000);
 
     return () => {
       isMounted = false;
+      clearInterval(registrationTimer);
+      resumeSubscription.remove();
       try { tokenSubscription?.remove(); }
       catch (error) { console.warn('Push listener cleanup failed:', error); }
     };
-  }, [user, quests, completeQuest, fence]);
+  }, [user, fence]);
 
   const deleteQuest = useCallback(async (questId: string): Promise<{ success: boolean; error?: string }> => {
     if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };

@@ -1,6 +1,6 @@
 # Location, time, and notifications
 
-Read for GPS/geofencing, scheduling, reminders/actions, native permissions, or account-switch cleanup. Paths are repository-relative. Current notification code includes pre-existing working-tree changes; source presence does not establish deployment.
+Read for GPS/geofencing, scheduling, reminders/actions, native permissions, or account-switch cleanup. Paths are repository-relative. Source presence does not establish deployment; record cloud and device verification separately.
 
 ## Location and scheduling
 
@@ -13,12 +13,13 @@ Read for GPS/geofencing, scheduling, reminders/actions, native permissions, or a
 
 ## Current notification contract
 
-`mobile/src/lib/quest-notifications.ts` now registers Android Expo push tokens via `register_quest_push_device` (028) and removes legacy quest schedules. It no longer schedules up to three quests at local 18:00. Preserve fresh session/generation checks and serialized registration/logout cleanup.
+`mobile/src/lib/quest-notifications.ts` now registers Android Expo push tokens via `register_quest_push_device` (028) and removes legacy quest schedules. It no longer schedules up to three quests at local 18:00. Registration runs at admitted launch/resume, hourly while active, and on supplied native-token changes; a cached token never substitutes for the server RPC. Preserve fresh session/generation checks and serialized registration/logout cleanup.
 
 The [notification function README](../../supabase/functions/quest-notifications/README.md) owns deployment, credentials, worker timing/retries/retention, rollback, and acceptance details. Current behavior includes:
 
+- Android data-only pushes are presented by the registered Expo background task on the quests channel, retaining native action buttons in foreground/background/terminated states. The task checks device/session, permission, category and expiry; raw data messages are suppressed. Updated client code is required before enabling delivery.
 - One cloud reminder at scheduled start and one an hour before deadline; absolute timestamps, no recurrence or blanket 18:00 alerts. Worker catch-up is limited to 15 minutes; unscheduled quests have no timed push.
-- Private devices/deliveries, authenticated owner registration, and service-only claims. Cron/function/EAS/FCM configuration is separate from adding source files. Delivery is best effort; ambiguous sends may duplicate notifications, but completion must remain idempotent.
+- Private devices/deliveries, authenticated owner registration, and service-only claims. Migration 029 adds claim identifiers, receipt scheduling, registration timestamps, and an optional service owner filter. The worker defaults off; test mode scopes sends and receipts to a validated UUID allowlist. Cron/function/EAS/FCM configuration is separate from adding source files. Delivery is best effort; ambiguous sends may duplicate notifications, but completion must remain idempotent.
 - Android geofence entry can produce one local notification for an active quest at the saved place, with a one-hour account/place cooldown. It checks current owned quests and active student/place state; offline entries are skipped and exits do not notify. Background location and notification permission are required.
 - Open routes to exact quest details for proof/prerequisite checks; Complete brings the app forward and submits an eligible quest without another confirmation. Fresh ownership/status/proof checks and `complete_quest` remain mandatory, even for old payloads. Other-account actions are ignored; signed-out users must sign in.
 - Logout attempts token revocation before Auth credentials are removed and clears local scheduled/delivered notifications. Offline revocation and in-flight sends remain limitations; verify account switching on hardware.

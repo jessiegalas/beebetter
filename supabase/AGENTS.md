@@ -28,8 +28,8 @@ There is no package manifest/npm test command here. From the root, only on an ex
 ./supabase/verify-local-supabase.ps1 -DatabaseUrl <local-db-url>
 ```
 
-The runner mutates the database and currently reads old flat SQL paths; zero applied migrations is not validation.
-Read [testing](../docs/agent/testing.md) for prerequisites/path mismatch and the removed account-access suite.
+The runner mutates the disposable database, applies numbered migrations once, fails on zero files, and executes notification authorization/concurrency assertions.
+Read [testing](../docs/agent/testing.md) for prerequisites and coverage limits and the removed account-access suite.
 
 ## Documentation Map
 

@@ -18,15 +18,16 @@ jobs:
           version: latest
       - name: Start disposable Supabase stack
         run: |
-          supabase init --force
-          supabase start
+          mkdir -p "$RUNNER_TEMP/beebetter-push-stack"
+          supabase init --workdir "$RUNNER_TEMP/beebetter-push-stack"
+          supabase start --workdir "$RUNNER_TEMP/beebetter-push-stack"
       - name: Apply ordered BeeBetter migrations
         shell: pwsh
         run: |
-          $line = supabase status -o env | Select-String '^DB_URL='
+          $line = supabase status --workdir "$env:RUNNER_TEMP/beebetter-push-stack" -o env | Select-String '^DB_URL='
           if (-not $line) { throw 'Local Supabase DB_URL was not reported.' }
           $url = ($line.Line -replace '^DB_URL=', '').Trim('"')
           ./supabase/verify-local-supabase.ps1 -DatabaseUrl $url
       - name: Stop disposable stack
         if: always()
-        run: supabase stop --no-backup
+        run: supabase stop --workdir "$RUNNER_TEMP/beebetter-push-stack" --no-backup

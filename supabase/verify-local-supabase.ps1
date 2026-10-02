@@ -11,9 +11,11 @@ if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
   throw 'psql is required. Install PostgreSQL client tools first.'
 }
 
-$files = Get-ChildItem -LiteralPath $PSScriptRoot -File -Filter '*.sql' |
+$migrationDirectory = Join-Path $PSScriptRoot 'migrations'
+$files = @(Get-ChildItem -LiteralPath $migrationDirectory -File -Filter '*.sql' |
   Where-Object { $_.Name -match '^\d{3}_.+\.sql$' } |
-  Sort-Object Name
+  Sort-Object Name)
+if ($files.Count -eq 0) { throw 'No numbered migrations found; refusing to report success.' }
 
 foreach ($file in $files) {
   Write-Host "Applying $($file.Name)"
@@ -21,4 +23,9 @@ foreach ($file in $files) {
   if ($LASTEXITCODE -ne 0) { throw "Migration failed: $($file.Name)" }
 }
 
-Write-Host "Verified $($files.Count) migrations against local Supabase PostgreSQL."
+Write-Host "Applied $($files.Count) migrations against local Supabase PostgreSQL."
+$assertions = Join-Path $PSScriptRoot 'tests/quest-notifications.sql'
+& psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -f $assertions
+if ($LASTEXITCODE -ne 0) { throw 'Quest notification database assertions failed.' }
+
+& (Join-Path $PSScriptRoot 'verify-notification-concurrency.ps1') -DatabaseUrl $DatabaseUrl
