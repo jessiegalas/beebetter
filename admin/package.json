@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test:report": "node scripts/test-osas-report.cjs",
+    "test:auth": "node scripts/test-admin-access.cjs",
+    "test:flows": "node scripts/test-admin-flows.cjs",
     "preview": "vite preview"
   },
   "dependencies": {

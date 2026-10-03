@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getDashboardAnalytics, getDashboardFilterOptions, logDashboardExport, type DashboardAnalytics, type DashboardFilterOption, type DashboardFilters, type OsasPermissions } from './osas-data';
 import { downloadOsasReportCsv } from './osas-report';
 
@@ -20,30 +20,51 @@ export function OsasDashboard({ permissions, onOpenSupport }: { permissions: Osa
   const [draft, setDraft] = useState<DashboardFilters>(initialFilters);
   const [filters, setFilters] = useState<DashboardFilters>(initialFilters);
   const [options, setOptions] = useState<DashboardFilterOption[]>([]);
-  const [data, setData] = useState<DashboardAnalytics | null>(null);
+  const [result, setResult] = useState<{ data: DashboardAnalytics; filters: DashboardFilters; reload: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [exportNotice, setExportNotice] = useState('');
   const [exporting, setExporting] = useState(false);
+  const exportBusy = useRef(false);
+  const reportGeneration = useRef(0);
+  const [optionsError, setOptionsError] = useState('');
+  const data = result?.filters === filters && result.reload === reload ? result.data : null;
+  const invalidDates = !draft.startDate || !draft.endDate || draft.startDate > draft.endDate;
   const values = (dimension: DashboardFilterOption['dimension']) => options.filter((option) => option.dimension === dimension).map((option) => option.value);
 
   useEffect(() => {
     if (!permissions.can_view_aggregates) return;
-    void getDashboardFilterOptions().then(setOptions).catch((reason: Error) => setError(reason.message));
-  }, [permissions.can_view_aggregates]);
+    let cancelled = false;
+    setOptionsError('');
+    void getDashboardFilterOptions().then(rows => { if (!cancelled) setOptions(rows); }).catch((reason: Error) => { if (!cancelled) setOptionsError(reason.message); });
+    return () => { cancelled = true; };
+  }, [permissions.can_view_aggregates, reload]);
   useEffect(() => {
+    reportGeneration.current++;
     if (!permissions.can_view_aggregates) return;
+    let cancelled = false;
     setLoading(true); setError('');
-    void getDashboardAnalytics(filters).then(setData).catch((reason: Error) => { setData(null); setError(reason.message); }).finally(() => setLoading(false));
+    void getDashboardAnalytics(filters)
+      .then(data => { if (!cancelled) setResult({ data, filters, reload }); })
+      .catch((reason: Error) => { if (!cancelled) { setResult(null); setError(reason.message); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; reportGeneration.current++; };
   }, [filters, permissions.can_view_aggregates, reload]);
 
   const exportCsv = async () => {
-    if (!data) return;
+    if (!data || !result || data.suppressed || loading || !permissions.can_view_aggregates || exportBusy.current) return;
+    exportBusy.current = true;
+    const generation = reportGeneration.current;
     setExporting(true); setExportNotice('');
-    try { await logDashboardExport(filters); downloadOsasReportCsv(data, filters); setExportNotice('CSV report downloaded and recorded in the report audit log.'); }
+    try {
+      await logDashboardExport(result.filters);
+      if (generation !== reportGeneration.current) return;
+      downloadOsasReportCsv(result.data, result.filters);
+      setExportNotice('CSV report downloaded and recorded in the report audit log.');
+    }
     catch (reason) { setExportNotice(reason instanceof Error ? reason.message : 'Report export failed.'); }
-    finally { setExporting(false); }
+    finally { exportBusy.current = false; setExporting(false); }
   };
 
   if (!permissions.can_view_aggregates) return <section className="panel dashboard-denied"><h2>OSAS reporting permission required</h2><p>This dashboard contains privacy-protected aggregate student information. A Super Admin must explicitly grant Aggregate reporting access.</p></section>;
@@ -57,12 +78,14 @@ export function OsasDashboard({ permissions, onOpenSupport }: { permissions: Osa
         <Filter label="CAMPUS" value={draft.campus} options={values('campus')} onChange={(campus) => setDraft({ ...draft, campus, course: null, yearLevel: null })} />
         <Filter label="PROGRAM" value={draft.course} options={values('course')} onChange={(course) => setDraft({ ...draft, campus: null, course, yearLevel: null })} />
         <Filter label="YEAR LEVEL" value={draft.yearLevel} options={values('year_level')} onChange={(yearLevel) => setDraft({ ...draft, campus: null, course: null, yearLevel })} />
-        <button className="primary-button" onClick={() => setFilters({ ...draft })} disabled={!draft.startDate || !draft.endDate}>Apply filters</button>
+        <button className="primary-button" onClick={() => { reportGeneration.current++; setExportNotice(''); setFilters({ ...draft }); }} disabled={invalidDates}>Apply filters</button>
       </div>
+      {draft.startDate > draft.endDate && <p className="form-error" role="alert">The start date must be on or before the end date.</p>}
+      {optionsError && <p className="form-error" role="alert">Filter choices could not load: {optionsError} <button className="secondary-button" onClick={() => setReload(value => value + 1)}>Retry</button></p>}
       <div className="report-actions"><button className="secondary-button" onClick={() => void exportCsv()} disabled={!data || data.suppressed || loading || exporting}>{exporting ? 'Recording export…' : 'Export displayed data as CSV'}</button>{exportNotice && <span role="status">{exportNotice}</span>}</div>
     </section>
     {loading && <section className="panel dashboard-state">Loading protected aggregate reports…</section>}
-    {error && <section className="panel dashboard-state error">Dashboard could not load: {error}. Verify migrations through 019 are applied in order.<br /><button className="secondary-button" onClick={() => setReload((value) => value + 1)}>Retry</button></section>}
+    {error && <section className="panel dashboard-state error" role="alert">Dashboard could not load: {error}<br /><button className="secondary-button" onClick={() => setReload((value) => value + 1)}>Retry</button></section>}
     {!loading && !error && data?.suppressed && <section className="panel dashboard-state"><h2>Report withheld for privacy</h2><p>The selected cohort or its complementary group is smaller than {data.minimum_cohort} students, so all results are withheld.</p></section>}
     {!loading && !error && data && !data.suppressed && <DashboardContent data={data} canManageSupport={permissions.can_manage_support_requests} onOpenSupport={onOpenSupport} />}
   </div>;
@@ -102,7 +125,7 @@ function ProtectedEmpty({ label }: { label: string }) { return <section classNam
 function BarChart({ rows, empty }: { rows: { label: string; value: number }[]; empty: string }) {
   const max = Math.max(...rows.map((row) => Number(row.value)), 1);
   if (!rows.length) return <div className="chart-empty">{empty}</div>;
-  return <div className="dashboard-bars" aria-label="Trend bar chart">{rows.map((row) => <div key={row.label}><span title={`${row.label}: ${row.value}`} style={{ height: `${Math.max(8, Number(row.value) / max * 100)}%` }} /><small>{row.label}</small></div>)}</div>;
+  return <><div className="dashboard-bars" role="list" aria-label="Trend bar chart">{rows.map((row) => <div key={row.label} role="listitem" aria-label={`${row.label}: ${row.value}`}><span aria-hidden="true" style={{ height: `${Math.max(8, Number(row.value) / max * 100)}%` }} /><small>{row.label}</small></div>)}</div><ChartDataTable columns={['Period', 'Completions']} rows={rows.map((row) => [row.label, row.value])} /></>;
 }
 function RankBars({ rows, empty }: { rows: { label: string; value: number; detail: string }[]; empty: string }) {
   const max = Math.max(...rows.map((row) => Number(row.value)), 1);
@@ -110,8 +133,11 @@ function RankBars({ rows, empty }: { rows: { label: string; value: number; detai
   return <div className="rank-bars">{rows.map((row) => <div key={row.label}><span><b>{row.label}</b><small>{row.detail}</small></span><i><em style={{ width: `${Number(row.value) / max * 100}%` }} /></i><strong>{row.value}</strong></div>)}</div>;
 }
 function ScoreChart<T extends { bucket_start: string }>({ rows, series }: { rows: T[]; series: [keyof T, string][] }) {
-  const colors = ['#e7b329', '#e56b5d', '#5fba75', '#6c9bea'];
+  const colors = ['var(--chart-honey)', 'var(--chart-coral)', 'var(--chart-green)', 'var(--honey-deep)'];
   const points = (key: keyof T) => rows.map((row, index) => `${rows.length === 1 ? 50 : index * 100 / (rows.length - 1)},${100 - (Number(row[key]) - 1) * 25}`).join(' ');
   if (!rows.length) return <div className="chart-empty">No trend cell reached five participating students.</div>;
-  return <div className="score-chart"><div className="score-legend">{series.map(([, label], index) => <span key={label}><i style={{ background: colors[index] }} />{label}</span>)}</div><svg viewBox="0 -5 100 110" preserveAspectRatio="none" role="img" aria-label="Average rating trends from one to five">{[0, 25, 50, 75, 100].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} />)}{series.map(([key], index) => <polyline key={String(key)} points={points(key)} style={{ stroke: colors[index] }} />)}</svg><div className="score-labels">{rows.map((row) => <small key={row.bucket_start}>{labelDate(row.bucket_start)}</small>)}</div></div>;
+  return <div className="score-chart"><div className="score-legend">{series.map(([, label], index) => <span key={label}><i style={{ background: colors[index] }} />{label}</span>)}</div><svg viewBox="0 -5 100 110" preserveAspectRatio="none" role="img" aria-label={`Average rating trends from one to five. Series: ${series.map(([, label]) => label).join(', ')}. Use the data table for values.`}>{[0, 25, 50, 75, 100].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} />)}{series.map(([key], index) => <polyline key={String(key)} points={points(key)} style={{ stroke: colors[index] }} />)}</svg><div className="score-labels">{rows.map((row) => <small key={row.bucket_start}>{labelDate(row.bucket_start)}</small>)}</div><ChartDataTable columns={['Period', ...series.map(([, label]) => label)]} rows={rows.map((row) => [labelDate(row.bucket_start), ...series.map(([key]) => row[key] == null ? 'Not available' : Number(row[key]).toFixed(1))])} /></div>;
+}
+function ChartDataTable({ columns, rows }: { columns: string[]; rows: (string | number)[][] }) {
+  return <details className="chart-data"><summary>View data table</summary><div className="chart-data-scroll"><table><thead><tr>{columns.map((column) => <th key={column} scope="col">{column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${String(row[0])}-${index}`}>{row.map((value, cell) => <td key={`${cell}-${String(value)}`}>{value}</td>)}</tr>)}</tbody></table></div></details>;
 }
