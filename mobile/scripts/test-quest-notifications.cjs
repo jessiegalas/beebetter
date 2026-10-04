@@ -139,29 +139,47 @@ async function geofenceScenario() {
 
 async function registrationScenario({ storedValue = null, permission = true, permissionStatus, platform = 'android', expoGo = false, tokenTimeout = false, rpcError = false, setupError = false } = {}) {
   let stored = storedValue;
-  const state = { owner: 'a', permission, permissionStatus, rpcError, stored: () => stored, rpc: [], tokens: [], permissionCalls: 0, presented: [] };
+  const nativeListeners = new Set(), appListeners = new Set(), timers = new Set();
+  const appState = { currentState: 'active', addEventListener: (_, fn) => {
+    appListeners.add(fn); return { remove() { appListeners.delete(fn); if (state.listenerCleanupError) throw Error('Native removal failed'); } };
+  } };
+  const state = { owner: 'a', permission, permissionStatus, rpcError, setupError, tokenTimeout, stored: () => stored,
+    rpc: [], tokens: [], permissionCalls: 0, presented: [], permissionReads: 0, canAskAgain: false,
+    nativeListeners, appListeners, timers,
+    moveApp(value) { appState.currentState = value; [...appListeners].forEach(fn => fn(value)); },
+    nativeToken(value) { [...nativeListeners].forEach(fn => fn(value)); },
+    tick() { [...timers].forEach(fn => fn()); },
+  };
   const mod = load('src/lib/quest-notifications.ts', {
     'expo-task-manager': { isTaskDefined: () => false, defineTask: (_, fn) => { state.task = fn; }, isTaskRegisteredAsync: async () => false },
     react: { useSyncExternalStore: (_, snapshot) => snapshot() },
-    'react-native': { Platform: { OS: platform } },
+    'react-native': { Platform: { OS: platform }, AppState: appState },
     'expo-constants': { executionEnvironment: expoGo ? 'storeClient' : 'standalone', expoConfig: { extra: { eas: { projectId: 'project' } } } },
     '@react-native-async-storage/async-storage': {
       getItem: async () => stored, setItem: async (_, value) => { stored = value; }, removeItem: async () => { stored = null; },
     },
     '@/supabase': { supabase: {
       auth: { getSession: async () => ({ data: { session: state.owner ? { user: { id: state.owner } } : null } }) },
-      rpc: (_, args) => ({ abortSignal: async () => { state.rpc.push(args); return { error: state.rpcError && args.enabled_value ? new Error('offline') : null }; } }),
+      rpc: (_, args) => ({ abortSignal: async () => { state.rpc.push(args); if (args.enabled_value && state.rpcWait) await state.rpcWait; return { error: state.rpcError && args.enabled_value ? new Error('offline') : null }; } }),
     } },
     'expo-notifications': {
+      addPushTokenListener(fn) {
+        if (state.listenerError) throw Error('Native listener failed');
+        nativeListeners.add(fn); return { remove() { nativeListeners.delete(fn); if (state.listenerCleanupError) throw Error('Native removal failed'); } };
+      },
       setNotificationHandler(value) { state.handler = value.handleNotification; }, setNotificationChannelAsync: async () => {},
       registerTaskAsync: async () => {}, scheduleNotificationAsync: async value => { state.presented.push(value); },
-      getPermissionsAsync: async () => { if (setupError) throw Error('Native setup failed'); return { granted: state.permission, status: state.permissionStatus ?? (state.permission ? 'granted' : 'denied'), canAskAgain: false }; },
-      requestPermissionsAsync: async () => { state.permissionCalls++; return { granted: state.permission }; },
+      getPermissionsAsync: async () => { state.permissionReads++; if (state.setupWait) await state.setupWait; if (state.setupError) throw Error('Native setup failed'); return { granted: state.permission, status: state.permissionStatus ?? (state.permission ? 'granted' : 'denied'), canAskAgain: state.canAskAgain }; },
+      requestPermissionsAsync: async () => { state.permissionCalls++; return { granted: state.permission, status: state.permissionStatus ?? (state.permission ? 'granted' : 'denied') };  },
       setNotificationCategoryAsync: async () => {}, AndroidImportance: { DEFAULT: 1 },
-      getExpoPushTokenAsync: async options => { state.tokens.push(options); if (tokenTimeout) await new Promise(() => {}); return { data: 'ExpoPushToken[new]' }; },
+      getExpoPushTokenAsync: async options => { state.tokens.push(options); if (state.tokenWait) await state.tokenWait; if (state.tokenTimeout) await new Promise(() => {}); return { data: 'ExpoPushToken[new]' }; },
       getAllScheduledNotificationsAsync: async () => [], cancelAllScheduledNotificationsAsync: async () => {}, dismissAllNotificationsAsync: async () => {},
     },
-  }, tokenTimeout ? { setTimeout: fn => setTimeout(fn, 1) } : {});
+  }, {
+    setInterval: fn => { timers.add(fn); return fn; }, clearInterval: fn => { timers.delete(fn); },
+    ...(tokenTimeout ? { setTimeout: fn => setTimeout(fn, 1) } : {}),
+    console: { ...console, warn() {} },
+  });
   return { mod, state };
 }
 
@@ -240,53 +258,100 @@ async function registrationScenario({ storedValue = null, permission = true, per
   push.state.owner = 'a'; await push.mod.cancelQuestNotifications(); await receive(payload);
   assert.equal(push.state.presented.length, 1);
   console.log('PASS Android task presents guarded action buttons and suppresses foreign/expired/denied/logged-out/replayed payloads');
-  const blocked = await registrationScenario({ permission: true, permissionStatus: 'denied' });
-  assert.equal(await blocked.mod.configureQuestNotifications(false), false);
-  assert.equal(blocked.mod.useQuestNotificationStatus(), 'denied');
-  const setup = await registrationScenario({ setupError: true });
-  await assert.rejects(setup.mod.configureQuestNotifications(), /Native setup failed/);
-  assert.equal(setup.mod.useQuestNotificationStatus(), 'error');
+  // Exercise the admitted lifetime instead of arranging configure/register phases.
   for (const storedValue of ['{broken', JSON.stringify({ token: 42 }), JSON.stringify(null)]) {
     const { mod, state } = await registrationScenario({ storedValue });
-    await mod.configureQuestNotifications(); await mod.scheduleQuestNotifications([], () => true, false, undefined, 'a');
-    assert.equal(state.tokens.length, 1); assert.equal(state.rpc[0].enabled_value, true); assert.equal(mod.useQuestNotificationStatus(), 'ready');
+    const stop = mod.startQuestNotificationLifetime('a', () => true); await flush();
+    assert.equal(state.tokens.length, 1); assert.equal(state.rpc[0].enabled_value, true); assert.equal(mod.useQuestNotificationStatus(), 'ready'); stop();
   }
   let registration = await registrationScenario({ storedValue: JSON.stringify({ token: 'ExpoPushToken[cached]', ownerId: 'a', registeredAt: Date.now() }) });
-  await registration.mod.configureQuestNotifications();
-  await registration.mod.scheduleQuestNotifications([], () => true, false, undefined, 'a');
-  await registration.mod.scheduleQuestNotifications([], () => true, false, undefined, 'a');
-  assert.equal(registration.state.tokens.length, 0); assert.equal(registration.state.rpc.length, 2);
-  registration.state.rpcError = true;
-  await assert.rejects(registration.mod.scheduleQuestNotifications([], () => true, false, undefined, 'a'));
-  assert.equal(registration.mod.useQuestNotificationStatus(), 'error');
-  registration.state.rpcError = false;
-  await registration.mod.scheduleQuestNotifications([], () => true, true, undefined, 'a');
-  assert.equal(registration.state.tokens.length, 1); assert.equal(registration.mod.useQuestNotificationStatus(), 'ready');
+  let { mod, state } = registration;
+  let stop = mod.startQuestNotificationLifetime('a', () => state.owner === 'a'); await flush();
+  assert.equal(state.tokens.length, 0); assert.equal(state.rpc.length, 1);
+  state.moveApp('active'); await flush();
+  assert.equal(state.tokens.length, 0); assert.equal(state.rpc.length, 2);
+  state.moveApp('background'); state.tick(); await flush(); assert.equal(state.rpc.length, 2);
+  state.moveApp('active'); await flush(); state.tick(); await flush();
+  assert.equal(state.tokens.length, 1); assert.equal(mod.useQuestNotificationStatus(), 'ready');
+  state.rpcError = true;
+  await assert.rejects(mod.retryQuestNotifications('a'), /offline/);
+  assert.equal(mod.useQuestNotificationStatus(), 'error');
+  state.rpcError = false;
+  const first = mod.retryQuestNotifications('a'), second = mod.retryQuestNotifications('a');
+  assert.equal(first, second); const beforeRetry = state.rpc.length; await Promise.all([first, second]);
+  assert.equal(state.rpc.length, beforeRetry + 1); assert.equal(mod.useQuestNotificationStatus(), 'ready');
   const nativeToken = { type: 'android', data: 'native-token' };
-  const first = registration.mod.scheduleQuestNotifications([], () => true, true, nativeToken, 'a');
-  const second = registration.mod.scheduleQuestNotifications([], () => true, true, nativeToken, 'a');
-  assert.equal(first, second); await Promise.all([first, second]);
-  assert.deepEqual(registration.state.tokens.at(-1).devicePushToken, nativeToken);
-  registration.state.owner = 'b';
-  const oldCalls = registration.state.rpc.length;
-  await registration.mod.scheduleQuestNotifications([], () => true, true, undefined, 'a');
-  assert.equal(registration.state.rpc.length, oldCalls);
-  registration.state.permission = false;
-  assert.equal(await registration.mod.configureQuestNotifications(false), false);
-  assert.equal(registration.mod.useQuestNotificationStatus(), 'denied');
-  registration.state.permission = true;
-  await registration.mod.configureQuestNotifications(false);
-  await registration.mod.scheduleQuestNotifications([], () => true, true, undefined, 'b');
-  assert.equal(registration.state.rpc.at(-1).owner_id_value, 'b');
-  registration = await registrationScenario({ tokenTimeout: true });
-  await registration.mod.configureQuestNotifications();
-  await assert.rejects(registration.mod.scheduleQuestNotifications([]), /timed out/);
-  assert.equal(registration.mod.useQuestNotificationStatus(), 'error');
+  const beforeToken = state.tokens.length;
+  state.nativeToken(nativeToken); state.nativeToken(nativeToken); await flush();
+  assert.equal(state.tokens.length, beforeToken + 1); assert.deepEqual(state.tokens.at(-1).devicePushToken, nativeToken);
+  const oldNativeCallback = [...state.nativeListeners][0], oldResume = [...state.appListeners][0];
+  state.owner = 'b'; const beforeSwitch = state.rpc.length;
+  oldNativeCallback(nativeToken); oldResume('active'); await mod.retryQuestNotifications('a'); await flush();
+  assert.equal(state.rpc.length, beforeSwitch);
+  const stopB = mod.startQuestNotificationLifetime('b', () => state.owner === 'b'); stop(); await flush();
+  assert.equal(state.rpc.at(-1).owner_id_value, 'b');
+  assert.equal(state.nativeListeners.size, 1); assert.equal(state.appListeners.size, 1); assert.equal(state.timers.size, 1);
+  const callsB = state.rpc.length;
+  oldNativeCallback(nativeToken); oldResume('active'); await mod.retryQuestNotifications('a'); await flush();
+  assert.equal(state.rpc.length, callsB);
+  stopB(); stopB(); state.tick(); state.moveApp('active'); state.nativeToken(nativeToken); await mod.retryQuestNotifications('b'); await flush();
+  assert.equal(state.rpc.length, callsB); assert.equal(state.nativeListeners.size, 0); assert.equal(state.appListeners.size, 0); assert.equal(state.timers.size, 0);
+  assert.notEqual(state.stored(), null); // Disposal does not revoke an admitted device.
+  console.log('PASS lifetime launch/resume/cache, active hourly refresh, explicit retry, token deduplication, account fencing and disposal');
+
+  registration = await registrationScenario({ permission: true, permissionStatus: 'denied', storedValue: JSON.stringify({ token: 'ExpoPushToken[cached]', ownerId: 'a', registeredAt: Date.now() }) });
+  ({ mod, state } = registration); state.canAskAgain = true;
+  stop = mod.startQuestNotificationLifetime('a', () => true); await flush();
+  assert.equal(mod.useQuestNotificationStatus(), 'denied'); assert.equal(state.permissionCalls, 1);
+  assert.equal(state.rpc.at(-1).enabled_value, false); assert.equal(state.stored(), null);
+  state.moveApp('active'); await flush(); assert.equal(state.permissionCalls, 1); // Resume must not prompt.
+  state.permissionStatus = 'granted'; state.moveApp('active'); await flush();
+  assert.equal(mod.useQuestNotificationStatus(), 'ready'); assert.equal(state.rpc.at(-1).enabled_value, true);
+  state.permission = false; state.canAskAgain = false; state.nativeToken(nativeToken); await flush();
+  assert.equal(mod.useQuestNotificationStatus(), 'denied'); assert.equal(state.rpc.at(-1).enabled_value, false); stop();
+  registration = await registrationScenario({ setupError: true }); ({ mod, state } = registration);
+  stop = mod.startQuestNotificationLifetime('a', () => true); await flush(); assert.equal(mod.useQuestNotificationStatus(), 'error');
+  state.setupError = false; await mod.retryQuestNotifications('a'); assert.equal(mod.useQuestNotificationStatus(), 'ready'); stop();
+  registration = await registrationScenario({ tokenTimeout: true }); ({ mod, state } = registration);
+  stop = mod.startQuestNotificationLifetime('a', () => true); await new Promise(resolve => setTimeout(resolve, 15)); await flush();
+  assert.equal(mod.useQuestNotificationStatus(), 'error');
+  state.tokenTimeout = false; await mod.retryQuestNotifications('a'); assert.equal(mod.useQuestNotificationStatus(), 'ready'); stop();
   for (const options of [{ platform: 'web' }, { platform: 'ios' }, { expoGo: true }]) {
     const { mod, state } = await registrationScenario(options);
-    assert.equal(await mod.configureQuestNotifications(), false); assert.equal(state.tokens.length, 0);
-    assert.equal(mod.useQuestNotificationStatus(), 'unavailable');
+    const stop = mod.startQuestNotificationLifetime('a', () => true); await mod.retryQuestNotifications('a');
+    assert.equal(state.tokens.length, 0); assert.equal(state.nativeListeners.size, 0); assert.equal(state.timers.size, 0);
+    assert.equal(mod.useQuestNotificationStatus(), 'unavailable'); stop();
   }
-  console.log('PASS corrupt storage, server re-registration, forced recovery, native-token deduplication, account fencing, permission changes, timeout and unsupported runtimes');
+  for (const failure of ['listenerError', 'listenerCleanupError']) {
+    const { mod, state } = await registrationScenario(); state[failure] = true;
+    const stop = mod.startQuestNotificationLifetime('a', () => true); await flush();
+    assert.equal(mod.useQuestNotificationStatus(), 'ready'); stop();
+    assert.equal(state.nativeListeners.size, 0); assert.equal(state.appListeners.size, 0); assert.equal(state.timers.size, 0);
+  }
+  console.log('PASS permission revocation/recovery without repeat prompts, setup/network retry, timeouts, unsupported runtimes and listener failures');
+
+  // Setup/token responses that arrive after logout cannot register or overwrite status.
+  for (const phase of ['setupWait', 'tokenWait']) {
+    const { mod, state } = await registrationScenario(); let release;
+    state[phase] = new Promise(resolve => { release = resolve; });
+    mod.startQuestNotificationLifetime('a', () => true); await flush();
+    const cleanup = mod.cancelQuestNotifications(); await flush(); release(); await cleanup; await flush();
+    assert.equal(state.rpc.length, 0); assert.equal(state.stored(), null); assert.equal(mod.useQuestNotificationStatus(), 'checking');
+    assert.equal(state.nativeListeners.size, 0); assert.equal(state.appListeners.size, 0); assert.equal(state.timers.size, 0);
+  }
+  registration = await registrationScenario(); ({ mod, state } = registration); let release;
+  state.rpcWait = new Promise(resolve => { release = resolve; });
+  mod.startQuestNotificationLifetime('a', () => true); await flush();
+  let settled = false; const logout = mod.cancelQuestNotifications().then(() => { settled = true; }); await flush();
+  assert.equal(settled, false); assert.equal(state.nativeListeners.size, 0);
+  release(); await logout; assert.deepEqual(state.rpc.map(call => call.enabled_value), [true, false]); assert.equal(state.stored(), null);
+  // A disposed launch cannot steal the registration promise from a replacement lifetime.
+  registration = await registrationScenario(); ({ mod, state } = registration);
+  let releaseOld; state.tokenWait = new Promise(resolve => { releaseOld = resolve; });
+  const oldStop = mod.startQuestNotificationLifetime('a', () => true); await flush(); oldStop();
+  state.tokenWait = null; const newStop = mod.startQuestNotificationLifetime('a', () => true);
+  releaseOld(); await flush(); assert.equal(state.rpc.filter(call => call.enabled_value).length, 1);
+  assert.equal(mod.useQuestNotificationStatus(), 'ready'); newStop();
+  console.log('PASS late setup/token suppression, awaited in-flight revocation and lifetime replacement');
 
 })().catch(error => { console.error(error); process.exitCode = 1; });

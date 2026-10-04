@@ -13,7 +13,7 @@ Read for GPS/geofencing, scheduling, reminders/actions, native permissions, or a
 
 ## Current notification contract
 
-`mobile/src/lib/quest-notifications.ts` now registers Android Expo push tokens via `register_quest_push_device` (028) and removes legacy quest schedules. It no longer schedules up to three quests at local 18:00. Registration runs at admitted launch/resume, hourly while active, and on supplied native-token changes; a cached token never substitutes for the server RPC. Preserve fresh session/generation checks and serialized registration/logout cleanup.
+`mobile/src/lib/quest-notifications.ts` now registers Android Expo push tokens via `register_quest_push_device` (028) and removes legacy quest schedules. It no longer schedules up to three quests at local 18:00. Registration runs at admitted launch/resume, hourly while active, and on supplied native-token changes; a cached token never substitutes for the server RPC. The provider starts an admitted-account lifetime through `startQuestNotificationLifetime` and awaits `cancelQuestNotifications` before Auth sign-out. The notification module owns permission/setup ordering, native-token and resume listeners, hourly refresh, and screen retry via `retryQuestNotifications`; disposal stops event sources and fences pending work without revoking the token. Preserve fresh session/generation checks and serialized registration/logout cleanup.
 
 The [notification function README](../../supabase/functions/quest-notifications/README.md) owns deployment, credentials, worker timing/retries/retention, rollback, and acceptance details. Current behavior includes:
 

@@ -141,12 +141,11 @@ function provider(initialUser = user('a'), initialState = {}) {
     storage: { from: () => ({ remove: async () => ok(null) }) },
   };
   const notifications = {
-    COMPLETE_QUEST_ACTION: 'complete', configureQuestNotifications: async () => {
-      if (state.notificationError) throw new Error('Native notifications unavailable');
-      return false;
+    startQuestNotificationLifetime: (ownerId, isCurrent) => {
+      state.notificationLifetimes ??= []; state.notificationLifetimes.push({ ownerId, isCurrent });
+      return () => { state.notificationStops = (state.notificationStops || 0) + 1; };
     },
-    scheduleQuestNotifications: async () => {},
-    cancelQuestNotifications: async () => { state.cancellations++; if (state.cancelError) throw new Error('Native cleanup failed'); },
+    cancelQuestNotifications: async () => { state.cancellations++; if (state.cancelWait) await state.cancelWait.promise; if (state.cancelError) throw new Error('Native cleanup failed'); },
   };
   const mod = load('src/context/user-data-context.tsx', {
     react: h.react,
@@ -154,7 +153,6 @@ function provider(initialUser = user('a'), initialState = {}) {
     '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation,
     'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallbacks.add(fn); return { remove() { appCallbacks.delete(fn); } }; } } },
     '@/supabase': { supabase, authRecoveryStorage: { get: async () => state.recoveryMarker, set: async () => { state.recoveryMarker = true; }, clear: async () => { state.recoveryMarker = false; } } }, '@/lib/account-access': access,
-    'expo-notifications': { addPushTokenListener: () => { if (state.listenerError) throw new Error('Native listener failure'); return { remove() { if (state.listenerCleanupError) throw new Error('Native listener removal failure'); } }; } },
     '@/lib/quest-notifications': notifications,
   }, { setInterval: (fn, delay) => { if (delay === 60_000) state.poll = fn; return 0; } });
   h.mount(() => mod.UserDataProvider({ children: null }));
@@ -275,9 +273,14 @@ test('logout with no session is safe and notification cleanup failure is indepen
   assert.equal(p.h.value.isSigningOut, false);
   p.close();
 });
-test('native notification initialization rejection is contained', async () => {
-  const p = provider(); p.state.notificationError = true; await flush();
-  assert.equal(p.h.value.access, 'active'); p.close();
+test('notification lifetime follows admission and stays stable during same-account refresh', async () => {
+  const p = provider(); await flush();
+  assert.equal(p.state.notificationLifetimes.length, 1);
+  const admitted = p.state.notificationLifetimes[0]; assert.equal(admitted.ownerId, 'a'); assert.equal(admitted.isCurrent(), true);
+  await p.h.value.refresh(); await flush(); assert.equal(p.state.notificationLifetimes.length, 1);
+  p.state.cancelWait = deferred(); const logout = p.h.value.signOut(); await flush();
+  assert.equal(admitted.isCurrent(), false); assert.equal(p.state.notificationStops, 1); assert.equal(p.state.signouts.length, 0);
+  p.state.cancelWait.resolve(); await logout; assert.equal(p.state.signouts.length, 1); p.close();
 });
 test('logout during student loading cannot resurrect the account', async () => {
   const wait = deferred(); const p = provider();
@@ -383,19 +386,18 @@ test('logout revokes a push registration already in flight', async () => {
       auth: { getSession: async () => ({ data: { session: { user: { id: 'a' } } } }) },
       rpc: (_, args) => ({ abortSignal: async () => { calls.push(args.enabled_value); if (args.enabled_value) await wait.promise; return { error: null }; } }),
     } },
-    'react-native': { Platform: { OS: 'android' } },
+    'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) } },
     'expo-notifications': {
-      setNotificationHandler() {}, setNotificationChannelAsync: async () => {}, registerTaskAsync: async () => {},
+      addPushTokenListener: () => ({ remove() {} }), setNotificationHandler() {}, setNotificationChannelAsync: async () => {}, registerTaskAsync: async () => {},
       getPermissionsAsync: async () => ({ granted: true }), setNotificationCategoryAsync: async () => {},
       AndroidImportance: { DEFAULT: 1 }, getExpoPushTokenAsync: async () => ({ data: 'ExpoPushToken[test]' }),
       getAllScheduledNotificationsAsync: async () => [], cancelAllScheduledNotificationsAsync: async () => {}, dismissAllNotificationsAsync: async () => {},
     },
-  });
-  await notifications.configureQuestNotifications();
-  const task = notifications.scheduleQuestNotifications([quest]);
+  }, { setInterval: () => 0 });
+  notifications.startQuestNotificationLifetime('a', () => true);
   await flush();
   const cleanup = notifications.cancelQuestNotifications();
-  wait.resolve(); await Promise.all([task, cleanup]);
+  wait.resolve(); await cleanup;
   assert.deepEqual(calls, [true, false]); assert.equal(stored, null);
 });
 
@@ -474,11 +476,9 @@ test('callbacks retained from an earlier login cannot mutate a new session', asy
   const result = await oldAdd({ title: 'Old callback', category: 'Habits', xp: 20 });
   assert.equal(result.success, false); assert.equal(p.state.queries.length, count); p.close();
 });
-for (const failure of ['listenerError', 'listenerCleanupError']) test(failure + ' cannot crash admission or logout', async () => {
-  const p = provider(); p.state[failure] = true; await flush();
-  assert.equal(p.h.value.access, 'active');
-  await p.h.value.signOut(); await flush();
-  assert.equal(p.h.value.access, 'signed_out'); p.close();
+for (const initialState of [{ recoveryMarker: true }, { missing: true, registrationState: 'onboarding_required' }, { status: 'Inactive' }, { studentError: true }]) test('unadmitted account never starts notification lifetime: ' + JSON.stringify(initialState), async () => {
+  const p = provider(user('a'), initialState); await flush();
+  assert.equal(p.state.notificationLifetimes?.length || 0, 0); p.close();
 });
 test('a delayed location read cannot leak old places after switching accounts', async () => {
   const h = hooks(); let currentUser = user('a'); const wait = deferred();

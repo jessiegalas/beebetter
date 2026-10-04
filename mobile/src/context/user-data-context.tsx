@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as Linking from 'expo-linking';
-import * as Notifications from 'expo-notifications';
 import type { CompletionRecord } from '@/lib/quest-priority';
 import { User } from '@supabase/supabase-js';
 import { supabase, authRecoveryStorage } from '@/supabase';
@@ -9,8 +8,7 @@ import { authFailure, parseAuthCallback, type AuthenticationResult, type AuthOpe
 import { passwordError } from '@/lib/student-validation';
 import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
 import {
-  configureQuestNotifications,
-  scheduleQuestNotifications,
+  startQuestNotificationLifetime,
   cancelQuestNotifications,
 } from '@/lib/quest-notifications';
 
@@ -720,39 +718,11 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     } finally { if (isCurrent()) completingQuests.current.delete(questId); }
   }, [user, quests, fetchUserData, isAdmittedSession, fence]);
 
+  const notificationOwnerId = user?.id;
   useEffect(() => {
-    if (!user) return;
-
-    let isMounted = true;
-    const isCurrent = fence.capture(user.id);
-    let tokenSubscription: ReturnType<typeof Notifications.addPushTokenListener> | undefined;
-    try {
-      tokenSubscription = Notifications.addPushTokenListener(nativeToken => {
-        void scheduleQuestNotifications([], () => isMounted && isCurrent(), true, nativeToken, user.id).catch(() => console.warn('Push token refresh failed'));
-      });
-    } catch { /* Native push is unavailable in web/test environments. */ }
-    const register = async (requestPermission = false, force = false) => {
-      if (!isMounted || !isCurrent()) return;
-      if (await configureQuestNotifications(requestPermission)) {
-        await scheduleQuestNotifications([], () => isMounted && isCurrent(), force, undefined, user.id);
-      }
-    };
-    void register(true).catch(() => console.warn('Notification setup failed'));
-    const resumeSubscription = AppState.addEventListener('change', state => {
-      if (state === 'active') void register().catch(() => console.warn('Push registration resume failed'));
-    });
-    const registrationTimer = setInterval(() => {
-      if (AppState.currentState === 'active') void register(false, true).catch(() => console.warn('Push registration refresh failed'));
-    }, 60 * 60_000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(registrationTimer);
-      resumeSubscription.remove();
-      try { tokenSubscription?.remove(); }
-      catch (error) { console.warn('Push listener cleanup failed:', error); }
-    };
-  }, [user, fence]);
+    if (!notificationOwnerId) return;
+    return startQuestNotificationLifetime(notificationOwnerId, fence.capture(notificationOwnerId));
+  }, [notificationOwnerId, fence]);
 
   const deleteQuest = useCallback(async (questId: string): Promise<{ success: boolean; error?: string }> => {
     if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };

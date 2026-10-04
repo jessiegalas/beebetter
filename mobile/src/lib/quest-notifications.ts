@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useSyncExternalStore } from 'react';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
@@ -27,6 +27,13 @@ let isConfigured = false;
 let generation = 0;
 let queue: Promise<void> = Promise.resolve();
 const registrations = new Map<string, Promise<void>>();
+type NotificationLifetime = {
+  ownerId: string;
+  isCurrent: () => boolean;
+  refresh: (requestPermission: boolean, force?: boolean, nativeToken?: Notifications.DevicePushToken) => Promise<void>;
+  stop: () => void;
+};
+let lifetime: NotificationLifetime | undefined;
 function hasPushPermission(permission: Notifications.NotificationPermissionsStatus) {
   // Android can retain the runtime grant while notifications are blocked in Settings.
   return permission.granted && permission.status !== 'denied';
@@ -65,7 +72,12 @@ if (Platform.OS === 'android' && !TaskManager.isTaskDefined(PUSH_TASK)) {
 export function questNeedsOpen(quest: Pick<Quest, 'requires_proof' | 'status' | 'prerequisite_quest_id'>) {
   return quest.requires_proof || quest.status !== 'active' || Boolean(quest.prerequisite_quest_id);
 }
-export async function configureQuestNotifications(requestPermission = true): Promise<boolean> {
+// Geofence presentation also needs channels/categories without starting push registration.
+export function configureQuestNotifications(requestPermission = true): Promise<boolean> {
+  return configureNotifications(requestPermission, () => true);
+}
+async function configureNotifications(requestPermission: boolean, isCurrent: () => boolean): Promise<boolean> {
+  if (!isCurrent()) return false;
   if (Platform.OS !== 'android' || Constants.executionEnvironment === 'storeClient') { setStatus('unavailable'); return false; }
   const version = generation;
   try {
@@ -73,25 +85,34 @@ export async function configureQuestNotifications(requestPermission = true): Pro
       name: 'Quest reminders', importance: Notifications.AndroidImportance.DEFAULT,
       vibrationPattern: [0, 200], lightColor: '#F6C445',
     });
+    if (!isCurrent() || version !== generation) return false;
     let permission = await Notifications.getPermissionsAsync();
+    if (!isCurrent() || version !== generation) return false;
     if (!hasPushPermission(permission) && permission.canAskAgain && requestPermission) permission = await Notifications.requestPermissionsAsync();
-    if (version !== generation) return false;
+    if (!isCurrent() || version !== generation) return false;
     if (!hasPushPermission(permission)) {
-      await cancelQuestNotifications().catch(() => {});
-      setStatus('denied'); return false;
+      const cleanup = clearQuestNotifications();
+      const cleanupVersion = generation;
+      await cleanup.catch(() => {});
+      if (isCurrent() && cleanupVersion === generation) setStatus('denied');
+      return false;
     }
-    if (version !== generation) return false;
+    if (!isCurrent() || version !== generation) return false;
     const open = { identifier: OPEN_QUEST_ACTION, buttonTitle: 'Open', options: { opensAppToForeground: true } };
     await Notifications.setNotificationCategoryAsync(QUEST_NOTIFICATION_CATEGORY, [
       { identifier: COMPLETE_QUEST_ACTION, buttonTitle: 'Complete', options: { opensAppToForeground: true } }, open,
     ]);
+    if (!isCurrent() || version !== generation) return false;
     await Notifications.setNotificationCategoryAsync(QUEST_OPEN_CATEGORY, [open]);
-    if (!await TaskManager.isTaskRegisteredAsync(PUSH_TASK)) await Notifications.registerTaskAsync(PUSH_TASK);
-    if (version !== generation) return false;
+    if (!isCurrent() || version !== generation) return false;
+    const taskRegistered = await TaskManager.isTaskRegisteredAsync(PUSH_TASK);
+    if (!isCurrent() || version !== generation) return false;
+    if (!taskRegistered) await Notifications.registerTaskAsync(PUSH_TASK);
+    if (!isCurrent() || version !== generation) return false;
     isConfigured = true;
     return true;
   } catch (error) {
-    if (version === generation) setStatus('error');
+    if (isCurrent() && version === generation) setStatus('error');
     throw error;
   }
 }
@@ -126,26 +147,32 @@ async function readDevice(): Promise<Device | null> {
   await AsyncStorage.removeItem(DEVICE_KEY);
   return null;
 }
+// The provider awaits this before removing Auth credentials. Stop event sources
+// immediately; queued cleanup revokes even a registration that completes late.
 export function cancelQuestNotifications(): Promise<void> {
+  lifetime?.stop();
+  return clearQuestNotifications();
+}
+function clearQuestNotifications(): Promise<void> {
   generation += 1;
   isConfigured = false;
+  const version = generation;
   queue = queue.catch(() => {}).then(async () => {
     if (Platform.OS !== 'android') return;
     await Notifications.cancelAllScheduledNotificationsAsync();
     await Notifications.dismissAllNotificationsAsync();
     const device = await readDevice();
     if (device) {
-      await registerDevice(device.token, device.ownerId, false).catch(error => { setStatus('error'); throw error; });
+      await registerDevice(device.token, device.ownerId, false).catch(error => { if (version === generation) setStatus('error'); throw error; });
       await AsyncStorage.removeItem(DEVICE_KEY);
     }
-    setStatus('checking');
+    if (version === generation) setStatus('checking');
   });
   return queue;
 }
-// Replace blanket 18:00 local schedules with cloud registration.
-export function scheduleQuestNotifications(_quests: Quest[], isSessionCurrent: () => boolean = () => true, force = false, devicePushToken?: Notifications.DevicePushToken, registrationOwnerId?: string): Promise<void> {
+function registerQuestPushDevice(registrationOwnerId: string, isSessionCurrent: () => boolean, force: boolean, devicePushToken?: Notifications.DevicePushToken): Promise<void> {
   const version = generation;
-  const registrationKey = (registrationOwnerId ?? 'unknown') + ':' + `${version}:${devicePushToken ? JSON.stringify(devicePushToken) : force ? 'fresh' : 'cached'}`;
+  const registrationKey = registrationOwnerId + ':' + `${version}:${devicePushToken ? JSON.stringify(devicePushToken) : force ? 'fresh' : 'cached'}`;
   const existing = registrations.get(registrationKey);
   if (existing) return existing;
   const task = queue.catch(() => {}).then(async () => {
@@ -154,8 +181,9 @@ export function scheduleQuestNotifications(_quests: Quest[], isSessionCurrent: (
     await Promise.all(scheduled.filter(item => item.identifier.startsWith('quest-')).map(item => Notifications.cancelScheduledNotificationAsync(item.identifier)));
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) throw sessionError;
-    if (!session || (registrationOwnerId && session.user.id !== registrationOwnerId) || !isSessionCurrent() || version !== generation) return;
+    if (!session || session.user.id !== registrationOwnerId || !isSessionCurrent() || version !== generation) return;
     const previous = await readDevice();
+    if (!isSessionCurrent() || version !== generation) return;
     setStatus('checking');
     const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
     if (!projectId) throw new Error('Push project is not configured');
@@ -179,4 +207,70 @@ export function scheduleQuestNotifications(_quests: Quest[], isSessionCurrent: (
   void task.finally(() => { if (registrations.get(registrationKey) === task) registrations.delete(registrationKey); }).catch(() => {});
   return task;
 }
-export function isQuestNotificationsConfigured() { return isConfigured; }
+/** Start only after verified student admission. Disposing stops events and fences
+ * pending work; token revocation remains the provider's awaited logout operation. */
+export function startQuestNotificationLifetime(ownerId: string, isSessionCurrent: () => boolean): () => void {
+  if (!isSessionCurrent()) return () => {};
+  lifetime?.stop();
+  let stopped = false;
+  let tokenSubscription: ReturnType<typeof Notifications.addPushTokenListener> | undefined;
+  let resumeSubscription: ReturnType<typeof AppState.addEventListener> | undefined;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const pending = new Map<string, Promise<void>>();
+  const current: NotificationLifetime = {
+    ownerId,
+    isCurrent: () => !stopped && lifetime === current && isSessionCurrent(),
+    refresh(requestPermission, force = false, nativeToken) {
+      if (!current.isCurrent()) return Promise.resolve();
+      const key = JSON.stringify([requestPermission, force, nativeToken]);
+      const existing = pending.get(key);
+      if (existing) return existing;
+      const task = (async () => {
+        if (await configureNotifications(requestPermission, current.isCurrent)) {
+          await registerQuestPushDevice(ownerId, current.isCurrent, force, nativeToken);
+        }
+      })();
+      pending.set(key, task);
+      void task.finally(() => { if (pending.get(key) === task) pending.delete(key); }).catch(() => {});
+      return task;
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+      // A failed native removal cannot prevent the other sources being removed.
+      for (const subscription of [resumeSubscription, tokenSubscription]) {
+        try { subscription?.remove(); }
+        catch { console.warn('Push listener cleanup failed'); }
+      }
+      if (lifetime === current) {
+        lifetime = undefined;
+        generation += 1;
+        isConfigured = false;
+      }
+    },
+  };
+  lifetime = current;
+  if (Platform.OS !== 'android' || Constants.executionEnvironment === 'storeClient') {
+    setStatus('unavailable');
+    return current.stop;
+  }
+  const refresh = (requestPermission = false, force = false, nativeToken?: Notifications.DevicePushToken) => {
+    void current.refresh(requestPermission, force, nativeToken).catch(() => {
+      if (current.isCurrent()) console.warn('Push registration failed');
+    });
+  };
+  try { tokenSubscription = Notifications.addPushTokenListener(nativeToken => refresh(false, true, nativeToken)); }
+  catch { /* Registration and resume retry remain usable without a native listener. */ }
+  try {
+    resumeSubscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+  } catch { /* Explicit retry remains usable if the native event source is unavailable. */ }
+  timer = setInterval(() => { if (AppState.currentState === 'active') refresh(false, true); }, 60 * 60_000);
+  refresh(true);
+  return current.stop;
+}
+
+/** Retry setup for the currently admitted owner; stale screen callbacks are inert. */
+export function retryQuestNotifications(ownerId: string): Promise<void> {
+  return lifetime?.ownerId === ownerId ? lifetime.refresh(true, true) : Promise.resolve();
+}

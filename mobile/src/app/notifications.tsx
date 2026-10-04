@@ -7,7 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
 import { useUserData, type Quest } from '@/hooks/use-user-data';
 import { useQuestPriority } from '@/context/quest-priority-context';
-import { configureQuestNotifications, questNeedsOpen, scheduleQuestNotifications, useQuestNotificationStatus } from '@/lib/quest-notifications';
+import { questNeedsOpen, retryQuestNotifications, useQuestNotificationStatus } from '@/lib/quest-notifications';
 
 const dateLabel = (value: string) => new Date(value).toLocaleString(undefined, {
   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -19,7 +19,7 @@ const statusCopy = {
 };
 
 export default function NotificationsScreen() {
-  const { user, quests, completionHistory, completeQuest, refresh, isLoading, isRefreshing, error } = useUserData();
+  const { user, completionHistory, completeQuest, refresh, isLoading, isRefreshing, error } = useUserData();
   const { ranked } = useQuestPriority();
   const status = useQuestNotificationStatus();
   const busy = useRef(false);
@@ -47,7 +47,7 @@ export default function NotificationsScreen() {
     setRetrying(true);
     try {
       if (status === 'denied') { await Linking.openSettings(); return; }
-      if (await configureQuestNotifications()) await scheduleQuestNotifications(quests, () => !!user, true, undefined, user.id);
+      await retryQuestNotifications(user.id);
     } catch { Alert.alert('Push setup unavailable', 'Check your connection and try again. If this continues, the app notification service may need configuration.'); }
     finally { setRetrying(false); }
   };
