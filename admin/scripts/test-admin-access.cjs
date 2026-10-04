@@ -3,6 +3,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const ts = require('typescript');
+const validationModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../../mobile/src/lib/student-validation.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: validationModule, exports: validationModule.exports });
 
 function hookHarness() {
   const slots = [];
@@ -100,7 +102,7 @@ function provider(initial = null) {
   const module = { exports: {} };
   vm.runInNewContext(code, {
     module, exports: module.exports,
-    require: name => name === 'react' ? h.react : name === './supabase' ? { supabase } : name === './osas-data' ? { getMyOsasPermissions: async () => { const active = state.roles[state.session?.user.id]?.is_active === true; return { can_view_aggregates: active, can_manage_support_requests: active, is_active: active }; } } : {},
+    require: name => name === '../../mobile/src/lib/student-validation' ? validationModule.exports : name === 'react' ? h.react : name === './supabase' ? { supabase } : name === './osas-data' ? { getMyOsasPermissions: async () => { const active = state.roles[state.session?.user.id]?.is_active === true; return { can_view_aggregates: active, can_manage_support_requests: active, is_active: active }; } } : {},
     window: { setInterval: fn => { handlers.interval.add(fn); return fn; }, clearInterval: fn => handlers.interval.delete(fn), addEventListener: (name, fn) => handlers[name]?.add(fn), removeEventListener: (name, fn) => handlers[name]?.delete(fn) },
     document: { visibilityState: 'visible', addEventListener: (name, fn) => handlers[name]?.add(fn), removeEventListener: (name, fn) => handlers[name]?.delete(fn) },
   });
@@ -178,7 +180,9 @@ async function main() {
 
   const signup = provider();
   await flush();
-  await signup.h.value.signUp('New Admin', 'new@example.test', 'password');
+  assert.equal((await signup.h.value.signUp('New Admin', 'new@example.test', 'short')).status, 'error');
+  assert.equal(signup.state.signUpOptions, null);
+  await signup.h.value.signUp('New Admin', 'new@example.test', 'a'.repeat(15));
   assert.equal(signup.state.signUpOptions.data.signup_intent, 'admin_access_request');
   signup.emit(user('signup'));
   await flush();

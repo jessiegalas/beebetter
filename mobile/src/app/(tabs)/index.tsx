@@ -41,14 +41,15 @@ export default function HomeScreen() {
               <ActivityIndicator color={COLORS.honeyDark} />
               <ThemedText style={styles.body}>Loading your overview...</ThemedText>
             </View>
-          ) : error ? (
-            <View style={styles.card} accessibilityLiveRegion="polite">
-              <ThemedText style={styles.sectionTitle}>Could not load your overview</ThemedText>
-              <ThemedText style={styles.body}>Please try again to see your latest progress.</ThemedText>
-              <OverviewAction label="Try again" onPress={() => void refresh()} />
-            </View>
           ) : (
             <>
+              {error && (
+                <View style={styles.card} accessibilityLiveRegion="polite">
+                  <ThemedText style={styles.sectionTitle}>Could not load your overview</ThemedText>
+                  <ThemedText style={styles.body}>Please try again to see your latest progress.</ThemedText>
+                  <OverviewAction label="Try again" onPress={() => void refresh()} />
+                </View>
+              )}
               <View style={[styles.card, styles.nextStepCard]}>
                 <View style={styles.sectionHeading}>
                   <ThemedText style={styles.sectionTitle}>Your Next Step</ThemedText>

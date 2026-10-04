@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { passwordError } from '../../mobile/src/lib/student-validation'
 import { supabase } from './supabase'
 import { getMyOsasPermissions, type OsasPermissions } from './osas-data'
 import type { AdminIdentity } from './admin-types'
@@ -173,6 +174,8 @@ export function useAdminAccess() {
   }, [])
 
   const signUp = useCallback(async (name: string, email: string, password: string): Promise<AuthActionResult> => {
+    const invalid = passwordError(password)
+    if (invalid) return { status: 'error', message: invalid }
     setOperationError('')
     try {
       const { data, error: authError } = await supabase.auth.signUp({

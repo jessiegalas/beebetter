@@ -25,7 +25,7 @@ export function emailError(value: string): string | undefined {
   if (value.trim().length > LIMITS.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return 'Enter a valid email address (up to 254 characters).';
 }
 export function passwordError(value: string): string | undefined {
-  if (value.length < 6) return 'Use at least 6 characters.';
+  if (Array.from(value).length < 15) return 'Use at least 15 characters.';
   const bytes = Array.from(value).reduce((sum, char) => { const code = char.codePointAt(0)!; return sum + (code <= 127 ? 1 : code <= 2047 ? 2 : code <= 65535 ? 3 : 4); }, 0);
   if (value.length > LIMITS.password || bytes > 72) return 'Password is too long. Use a shorter password (maximum 72 characters; fewer with special characters).';
 }
@@ -50,3 +50,5 @@ export function studentPayload(value: StudentFields, original?: StudentFields): 
   if (original) for (const key of Object.keys(normalized) as (keyof StudentFields)[]) if (value[key] === original[key]) normalized[key] = original[key];
   return normalized;
 }
+
+export type RegistrationEnrollmentOption = EnrollmentOption & { semester_id: string; academic_year: string; term: string };

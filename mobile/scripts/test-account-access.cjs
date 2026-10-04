@@ -69,12 +69,14 @@ function load(relative, mocks = {}, globals = {}) {
   vm.runInNewContext(code, {
     module, exports: module.exports,
     require: name => { if (name in mocks) return mocks[name]; throw new Error(`Unexpected import ${name} in ${relative}`); },
-    React: mocks.react, AbortController, console: silentConsole, setTimeout, clearTimeout,
+    React: mocks.react, URL, URLSearchParams, AbortController, console: silentConsole, setTimeout, clearTimeout,
     setInterval: () => 0, clearInterval() {}, ...globals,
   }, { filename: relative });
   return module.exports;
 }
 const access = load('src/lib/account-access.ts');
+const authFlow = load('src/lib/auth-flow.ts');
+const validation = load('src/lib/student-validation.ts');
 const pause = () => new Promise(resolve => setTimeout(resolve, 5));
 async function flush() { for (let i = 0; i < 4; i++) await pause(); }
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
@@ -82,19 +84,24 @@ const user = id => ({ id, email: `${id}@example.test`, user_metadata: {} });
 const quest = { id: 'q1', owner_id: 'a', title: 'Example', status: 'active', category: 'Habits', xp: 20 };
 const ok = data => ({ data, error: null });
 
-function provider(initialUser = user('a')) {
+function provider(initialUser = user('a'), initialState = {}) {
   const h = hooks();
   let authCallback;
   const appCallbacks = new Set();
-  const state = { session: initialUser ? { user: initialUser } : null, status: 'Active', queries: [], signouts: [], cancellations: 0, authCalls: 0, signupSession: false };
+  const state = { session: initialUser ? { user: initialUser } : null, status: 'Active', queries: [], signouts: [], cancellations: 0, authCalls: 0, signupSession: false, ...initialState };
   const emit = (next, event = next ? 'SIGNED_IN' : 'SIGNED_OUT') => {
     state.session = next ? { user: next } : null;
     authCallback(event, state.session);
   };
   const supabase = {
     auth: {
+      startAutoRefresh: () => { state.refreshStarts = (state.refreshStarts || 0) + 1; }, stopAutoRefresh: () => { state.refreshStops = (state.refreshStops || 0) + 1; },
+      resetPasswordForEmail: async (email, options) => { state.reset = { email, options }; return { error: null }; },
+      updateUser: async input => { state.updated = input; return { error: state.updateError || null }; },
+      exchangeCodeForSession: async code => { state.exchange = code; emit(user('a')); return { error: state.exchangeError || null }; },
+      setSession: async tokens => { state.tokens = tokens; emit(user('a')); return { error: null }; },
       getSession: async () => { if (state.sessionError) throw new Error('Storage unavailable'); return { data: { session: state.session }, error: null }; },
-      signInWithPassword: async () => { state.authCalls++; if (state.authError) return { error: new Error(state.authError) }; emit(user('a')); return { error: null }; },
+      signInWithPassword: async () => { state.authCalls++; if (state.loginWait) await state.loginWait.promise; if (state.authError) return { error: typeof state.authError === 'string' ? new Error(state.authError) : state.authError }; emit(user('a')); return { error: null }; },
       signUp: async () => { state.authCalls++; if (state.authError) return { data: { session: null }, error: new Error(state.authError) }; if (state.signupSession) emit(user('a')); return { data: { session: state.signupSession ? { user: user('a') } : null }, error: null }; },
       resend: async () => { state.resendCalls = (state.resendCalls || 0) + 1; return state.authError ? { error: new Error(state.authError) } : { error: null }; },
       onAuthStateChange: fn => { authCallback = fn; return { data: { subscription: { unsubscribe() {} } } }; },
@@ -110,7 +117,7 @@ function provider(initialUser = user('a')) {
     from(table) {
       let action = 'select', payload;
       const query = {};
-      for (const name of ['select', 'eq', 'neq', 'order']) query[name] = () => query;
+      for (const name of ['select', 'eq', 'neq', 'order', 'abortSignal']) query[name] = () => query;
       for (const name of ['update', 'insert', 'delete']) query[name] = data => { action = name; payload = data; return query; };
       const run = async () => {
         state.queries.push(`${table}:${action}`);
@@ -126,10 +133,11 @@ function provider(initialUser = user('a')) {
       query.then = (resolve, reject) => run().then(resolve, reject);
       return query;
     },
-    rpc: async name => {
+    rpc: (name, args) => { const task = (async () => {
+      state.rpcCalls ??= []; state.rpcCalls.push({ name, args });
       if (state.rpc) { const result = state.rpc(name); if (result !== undefined) return result; }
-      return ok(name === 'student_list_recommendation_candidates' ? [quest] : name === 'student_get_current_streak' ? 0 : []);
-    },
+      return ok(name === 'student_list_recommendation_candidates' ? [quest] : name === 'student_get_current_streak' ? 0 : name === 'student_get_registration_state' ? (state.registrationState || (state.missing ? 'unavailable' : 'active')) : []);
+    })(); task.abortSignal = () => task; return task; },
     storage: { from: () => ({ remove: async () => ok(null) }) },
   };
   const notifications = {
@@ -142,13 +150,15 @@ function provider(initialUser = user('a')) {
   };
   const mod = load('src/context/user-data-context.tsx', {
     react: h.react,
-    'react-native': { AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallbacks.add(fn); return { remove() { appCallbacks.delete(fn); } }; } } },
-    '@/supabase': { supabase }, '@/lib/account-access': access,
+    'expo-linking': { createURL: (path, options) => 'beebetter://' + path + (options.queryParams ? '?flow=recovery' : ''), getInitialURL: async () => state.initialUrl || null, addEventListener: (_, fn) => { state.link = fn; return { remove() {} }; } },
+    '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation,
+    'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallbacks.add(fn); return { remove() { appCallbacks.delete(fn); } }; } } },
+    '@/supabase': { supabase, authRecoveryStorage: { get: async () => state.recoveryMarker, set: async () => { state.recoveryMarker = true; }, clear: async () => { state.recoveryMarker = false; } } }, '@/lib/account-access': access,
     'expo-notifications': { addPushTokenListener: () => { if (state.listenerError) throw new Error('Native listener failure'); return { remove() { if (state.listenerCleanupError) throw new Error('Native listener removal failure'); } }; } },
     '@/lib/quest-notifications': notifications,
   }, { setInterval: (fn, delay) => { if (delay === 60_000) state.poll = fn; return 0; } });
   h.mount(() => mod.UserDataProvider({ children: null }));
-  return { h, state, emit, resume: () => [...appCallbacks].forEach(fn => fn('active')), close: () => h.unmount() };
+  return { h, state, emit, resume: () => [...appCallbacks].forEach(fn => fn('active')), background: () => [...appCallbacks].forEach(fn => fn('background')), close: () => h.unmount() };
 }
 
 const cases = [];
@@ -178,18 +188,18 @@ test('context owns login, signup, and confirmation resend operations', async () 
   const p = provider(null); await flush();
   p.state.status = 'Inactive';
   const denied = await p.h.value.signIn('a@example.test', 'password'); await flush();
-  assert.equal(denied.status, 'authenticated');
+  assert.equal(denied.status, 'session_created');
   assert.equal(p.h.value.access, 'blocked');
   p.state.status = 'Active';
   const admitted = await p.h.value.signIn('a@example.test', 'password'); await flush();
-  assert.equal(admitted.status, 'authenticated');
+  assert.equal(admitted.status, 'session_created');
   assert.equal(p.h.value.access, 'active');
   p.state.authError = 'Invalid login credentials';
   const failed = await p.h.value.signIn('a@example.test', 'wrong');
   assert.equal(failed.status, 'error');
   assert.equal(failed.message, 'Invalid login credentials');
   p.state.authError = null;
-  assert.equal((await p.h.value.signUp('a@example.test', 'password', { name: 'Student' }, 'beebetter://auth')).status, 'confirmation_required');
+  assert.equal((await p.h.value.signUp('a@example.test', 'a'.repeat(15), { name: 'Student' }, 'beebetter://auth')).status, 'confirmation_required');
   assert.equal((await p.h.value.resendConfirmation('a@example.test', 'beebetter://auth')).status, 'completed');
   assert.equal(p.state.resendCalls, 1);
   p.close();
@@ -247,14 +257,14 @@ for (const failure of ['signoutError', 'signoutThrows']) test(`${failure} is con
   assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'error');
   p.state[failure] = false; await p.h.value.signOut(); await flush();
   assert.equal(p.h.value.access, 'signed_out');
-  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'authenticated');
+  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'session_created');
   p.close();
 });
 test('successful logout clears access and allows a later login', async () => {
   const p = provider(); await flush();
   assert.equal((await p.h.value.signOut()).status, 'signed_out'); await flush();
   assert.equal(p.h.value.access, 'signed_out');
-  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'authenticated'); await flush();
+  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'session_created'); await flush();
   assert.equal(p.h.value.access, 'active');
   p.close();
 });
@@ -353,7 +363,7 @@ test('all private routes are excluded for every non-active access state', () => 
     if (element.type === 'Screen') return [element.props.name];
     return routes(element.props.children);
   }
-  for (currentAccess of ['checking', 'signed_out', 'blocked', 'verification_error']) assert.deepEqual(routes(layout.default()), ['auth']);
+  for (currentAccess of ['checking', 'signed_out', 'blocked', 'verification_error', 'onboarding_required', 'recovery_required']) assert.deepEqual(routes(layout.default()), ['auth']);
   currentAccess = 'active';
   const privateRoutes = routes(layout.default());
   assert(privateRoutes.includes('(tabs)')); assert(privateRoutes.includes('add-quest'));
@@ -522,6 +532,136 @@ for (const foreground of ['denied', 'granted']) test('foreground ' + foreground 
   assert.equal(starts, foreground === 'granted' ? 1 : 0);
   await h.value.stopTracking(); await flush();
   assert.equal(h.value.isTracking, false); assert.equal(removals, starts); h.unmount();
+});
+
+
+test('logout waits for a delayed login and removes its persisted SDK session', async () => {
+  const p = provider(null); await flush(); p.state.loginWait = deferred();
+  const login = p.h.value.signIn('a@example.test', 'legacy'); await pause();
+  const logout = p.h.value.signOut(); let settled = false; logout.then(() => { settled = true; });
+  await flush(); assert.equal(settled, false); assert.equal(p.h.value.user, null);
+  p.state.loginWait.resolve(); assert.equal((await login).code, 'operation_cancelled'); await logout; await flush();
+  assert.equal(p.state.session, null); assert.equal(p.h.value.access, 'signed_out'); p.close();
+});
+test('structured unconfirmed failures and returning-account resend remain available', async () => {
+  const p = provider(null); await flush(); p.state.authError = { code: 'email_not_confirmed', message: 'Localized text' };
+  const result = await p.h.value.signIn('returning@example.test', 'legacy');
+  assert.equal(result.code, 'email_not_confirmed'); p.state.authError = null;
+  assert.equal((await p.h.value.resendConfirmation('returning@example.test')).status, 'completed'); p.close();
+});
+test('cold-start recovery persists its restriction until password update succeeds', async () => {
+  const p = provider(user('a'), { initialUrl: 'beebetter://auth?code=recovery-code&flow=recovery' }); await flush();
+  assert.equal(p.state.exchange, 'recovery-code'); assert.equal(p.state.recoveryMarker, true);
+  assert.equal(p.h.value.access, 'recovery_required'); assert.equal(p.h.value.user, null);
+  assert(!p.state.queries.includes('profiles:select'));
+  p.state.updateError = { code: 'network_error', message: 'Offline' };
+  assert.equal((await p.h.value.updateRecoveryPassword('a'.repeat(15))).status, 'error');
+  assert.equal(p.state.recoveryMarker, true); p.state.updateError = null;
+  assert.equal((await p.h.value.updateRecoveryPassword('a'.repeat(15))).status, 'completed'); await flush();
+  assert.equal(p.state.recoveryMarker, false); assert.equal(p.h.value.access, 'active'); p.close();
+});
+test('restored recovery marker keeps an existing Student outside workspace', async () => {
+  const p = provider(user('a'), { recoveryMarker: true }); await flush();
+  assert.equal(p.h.value.access, 'recovery_required'); assert.equal(p.h.value.user, null); p.close();
+});
+test('implicit links remain supported and foreign URLs cannot exchange credentials', async () => {
+  const p = provider(null); await flush();
+  await p.h.value.handleAuthCallback('https://foreign.test/auth?code=unsafe'); assert.equal(p.state.exchange, undefined);
+  await p.h.value.handleAuthCallback('beebetter://auth#access_token=synthetic&refresh_token=synthetic&type=signup'); await flush();
+  assert.equal(p.state.tokens.access_token, 'synthetic'); assert.equal(p.h.value.access, 'active');
+  const expired = await p.h.value.handleAuthCallback('beebetter://auth?error_code=otp_expired'); assert.equal(expired.code, 'otp_expired'); p.close();
+});
+test('confirmed incomplete registrations restore onboarding and submit explicit identities', async () => {
+  const p = provider(); p.state.missing = true; p.state.registrationState = 'onboarding_required'; await flush();
+  assert.equal(p.h.value.access, 'onboarding_required'); assert.equal(p.h.value.user, null);
+  p.state.rpc = name => { if (name === 'student_complete_registration') { p.state.missing = false; p.state.registrationState = 'active'; return ok({ status: 'completed' }); } };
+  const result = await p.h.value.completeRegistration({ name: 'Student', studentNumber: '2026-12345', goal: 'Build habits', semesterId: 'semester', enrollmentOptionId: 'option' });
+  assert.equal(result.status, 'completed'); await flush(); assert.equal(p.h.value.access, 'active');
+  const call = p.state.rpcCalls.find(x => x.name === 'student_complete_registration');
+  assert.equal(call.args.semester_id_value, 'semester'); assert.equal(call.args.enrollment_option_id_value, 'option'); p.close();
+});
+test('workspace exceptions retain verified admission and retry recovers', async () => {
+  const p = provider(); p.state.rpc = name => { if (name === 'student_get_current_streak') throw new Error('Offline'); }; await flush();
+  assert.equal(p.h.value.access, 'active'); assert.equal(p.h.value.user.id, 'a'); assert(p.h.value.error);
+  p.state.rpc = null; await p.h.value.refresh(); assert.equal(p.h.value.error, null); p.close();
+});
+test('overlapping full refreshes coalesce after an admission-only read', async () => {
+  const p = provider(); await flush(); const wait = deferred(); const profiles = p.state.queries.filter(x => x === 'profiles:select').length;
+  p.state.query = table => table === 'students' ? wait.promise : undefined;
+  p.emit(user('a'), 'TOKEN_REFRESHED'); await flush();
+  const first = p.h.value.refresh(), second = p.h.value.refresh(); await flush();
+  p.state.query = null; wait.resolve(ok({ id: 'a', name: 'Student', status: 'Active' })); await Promise.all([first, second]); await flush();
+  assert.equal(p.state.queries.filter(x => x === 'profiles:select').length, profiles + 1); assert.equal(p.h.value.isRefreshing, false); p.close();
+});
+test('workspace slice errors preserve unrelated data and remain visible after token refresh', async () => {
+  const p = provider(); p.state.rpc = name => name === 'student_get_current_streak' ? { data: null, error: { code: 'network_error' } } : undefined; await flush();
+  assert.equal(p.h.value.access, 'active'); assert(p.h.value.workspaceErrors.streak); assert.equal(p.h.value.quests.length, 1);
+  p.emit(user('a'), 'TOKEN_REFRESHED'); await flush(); assert(p.h.value.error); assert(p.h.value.workspaceErrors.streak); p.close();
+});
+test('token refresh verifies admission without reloading workspace', async () => {
+  const p = provider(); await flush(); const profiles = p.state.queries.filter(x => x === 'profiles:select').length;
+  p.emit(user('a'), 'TOKEN_REFRESHED'); await flush();
+  assert.equal(p.state.queries.filter(x => x === 'profiles:select').length, profiles);
+  p.state.status = 'Inactive'; p.emit(user('a'), 'TOKEN_REFRESHED'); await flush(); assert.equal(p.h.value.access, 'blocked'); p.close();
+});
+test('native token refresh follows foreground and background transitions', async () => {
+  const p = provider(null); await flush(); assert.equal(p.state.refreshStarts, 1);
+  p.background(); assert.equal(p.state.refreshStops, 1); p.resume(); assert.equal(p.state.refreshStarts, 2); p.close(); assert.equal(p.state.refreshStops, 2);
+});
+test('web callbacks enforce the app origin and preserve recovery semantics', () => {
+  assert.equal(authFlow.parseAuthCallback('https://app.example.test/auth?code=synthetic&flow=recovery', 'https://app.example.test').recovery, true);
+  assert.equal(authFlow.parseAuthCallback('https://foreign.test/auth?code=synthetic', 'https://app.example.test'), null);
+  assert.equal(authFlow.parseAuthCallback('https://app.example.test/private?code=synthetic', 'https://app.example.test'), null);
+});
+test('new signup is gated by the additive contract and enforces new-password policy', async () => {
+  const p = provider(null); await flush(); assert.equal((await p.h.value.signUp('a@example.test', 'short')).code, 'weak_password');
+  p.state.rpc = name => name === 'registration_enrollment_options_v2' ? { data: null, error: { code: 'PGRST202' } } : undefined;
+  assert.equal((await p.h.value.signUp('a@example.test', 'a'.repeat(15))).code, 'registration_unavailable'); assert.equal(p.state.authCalls, 0); p.close();
+});
+
+
+function screen(relative, context, options = []) {
+  context = { isAuthBusy: false, isSigningOut: false, ...context };
+  const h = hooks(); const native = Object.fromEntries(['ActivityIndicator','KeyboardAvoidingView','TextInput','TouchableOpacity','View','ScrollView'].map(x => [x,x]));
+  native.Platform = { OS: 'web' }; native.StyleSheet = { create: x => x };
+  const enrollment = { options, loading: false, error: null, retry() {} };
+  const mod = load(relative, { react: h.react, 'react-native': native,
+    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, '@expo/vector-icons': { Ionicons: 'Icon' },
+    '@/hooks/use-user-data': { useUserData: () => context }, '@/components/themed-text': { ThemedText: 'Text' },
+    '@/components/student-onboarding': { StudentOnboarding: 'Onboarding' }, '@/components/student-information-fields': { StudentInformationFields: 'Fields' },
+    '@/hooks/use-enrollment-options': { useEnrollmentOptions: () => enrollment }, '@/lib/student-validation': validation,
+    '@/constants/theme': { BeeBetterColors: {}, Radii: {}, BeeBetterShadow: {} },
+  });
+  h.mount(() => relative.endsWith('auth.tsx') ? mod.default() : mod.StudentOnboarding());
+  const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)];
+  const text = node => !node ? '' : typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : text(node.props?.children);
+  return { h, enrollment, find: predicate => nodes(h.value).find(predicate), button: label => nodes(h.value).find(x => x.type === 'TouchableOpacity' && text(x) === label) };
+}
+test('Auth UI captures unconfirmed recipient even when email is edited', async () => {
+  let recipient; const context = { access: 'signed_out', signIn: async () => ({ status: 'error', code: 'email_not_confirmed', message: 'Confirm email' }), resendConfirmation: async email => { recipient = email; return { status: 'completed' }; } };
+  const s = screen('src/app/auth.tsx', context); const input = () => s.find(x => x.props?.accessibilityLabel === 'Email address, required');
+  input().props.onChangeText('first@example.test'); s.find(x => x.props?.accessibilityLabel === 'Password, required').props.onChangeText('old'); await flush();
+  await s.find(x => x.type === 'TouchableOpacity' && x.props.accessibilityState?.busy === false && x.props.onPress && !x.props.disabled).props.onPress(); await flush();
+  input().props.onChangeText('second@example.test'); await flush(); await s.button('Resend').props.onPress(); await flush(); assert.equal(recipient, 'first@example.test'); s.h.unmount();
+});
+test('pending Auth UI prevents duplicate requests and mode changes', async () => {
+  const wait = deferred(); let requests = 0; const s = screen('src/app/auth.tsx', { access: 'signed_out', signIn: () => { requests++; return wait.promise; } });
+  s.find(x => x.props?.accessibilityLabel === 'Email address, required').props.onChangeText('first@example.test');
+  s.find(x => x.props?.accessibilityLabel === 'Password, required').props.onChangeText('old'); await flush();
+  const submit = s.find(x => x.type === 'TouchableOpacity' && x.props.accessibilityState?.busy === false && !x.props.disabled);
+  submit.props.onPress(); submit.props.onPress(); await flush(); assert.equal(requests, 1); assert.equal(s.button('Create account').props.disabled, true);
+  wait.resolve({ status: 'error', code: 'network_error', message: 'Retry' }); await flush(); s.h.unmount();
+});
+test('onboarding preserves explicit semester identity and requires reselection after rollover', async () => {
+  let submitted; const option = { id: 'option-a', semester_id: 'semester-a', academic_year: '2026-2027', term: 'First', course: 'BSCS', year_level: '4th Year', campus: 'Bacoor', section: '1' };
+  const s = screen('src/components/student-onboarding.tsx', { registrationEmail: 'a@example.test', completeRegistration: async input => { submitted = input; return { status: 'error', code: 'network_error', message: 'Retry' }; } }, [option]);
+  const draft = { name: 'Maria Cruz', student_number: '202311197', goal: 'Build habits', course: 'BSCS', year_level: '4th Year', campus: 'Bacoor', section: '1' };
+  s.find(x => x.type === 'Fields').props.onChange(draft, 'section'); await flush();
+  assert.equal(s.button('Complete registration').props.disabled, false); await s.button('Complete registration').props.onPress(); await flush();
+  assert.equal(submitted.semesterId, 'semester-a'); assert.equal(s.find(x => x.type === 'Fields').props.value.name, 'Maria Cruz');
+  s.enrollment.options = [{ ...option, id: 'option-b', semester_id: 'semester-b' }]; s.h.render(); assert.equal(s.button('Complete registration').props.disabled, true);
+  s.find(x => x.type === 'Fields').props.onChange(draft, 'section'); await flush(); await s.button('Complete registration').props.onPress(); await flush();
+  assert.equal(submitted.semesterId, 'semester-b'); assert.equal(submitted.enrollmentOptionId, 'option-b'); s.h.unmount();
 });
 
 (async () => {

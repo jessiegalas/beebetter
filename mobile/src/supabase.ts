@@ -31,5 +31,13 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
     autoRefreshToken: !isServer,
     persistSession: !isServer,
     detectSessionInUrl: false,
+    flowType: 'pkce',
   },
 });
+// No credentials: this restriction survives restart until recovery/logout completes.
+const recoveryKey = `beebetter:recovery:${supabaseUrl}`;
+export const authRecoveryStorage = {
+  get: () => safeStorage.getItem(recoveryKey),
+  set: () => safeStorage.setItem(recoveryKey, 'required'),
+  clear: () => safeStorage.removeItem(recoveryKey),
+};

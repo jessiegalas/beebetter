@@ -1,276 +1,120 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, TextInput, TouchableOpacity, View, ScrollView } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useUserData } from '@/hooks/use-user-data';
-
 import { ThemedText } from '@/components/themed-text';
+import { StudentOnboarding } from '@/components/student-onboarding';
 import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
-import { StudentInformationFields } from '@/components/student-information-fields';
-import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
-import { validateStudent, studentPayload, emailError, passwordError, LIMITS, type StudentFields } from '@/lib/student-validation';
+import { emailError, passwordError, LIMITS } from '@/lib/student-validation';
 
 export default function AuthScreen() {
-  const { access, accessMessage, isSigningOut, isRefreshing, refresh, signIn, signUp, resendConfirmation, signOut } = useUserData();
-  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
-  const [student, setStudent] = useState<StudentFields>({ name: '', student_number: '', course: '', year_level: '', section: '', campus: '', goal: '' });
-  const enrollment = useEnrollmentOptions(mode);
-  const studentErrors = validateStudent(student, enrollment.options);
+  const { access, accessMessage, isSigningOut, isRefreshing, isAuthBusy, refresh, signIn, signUp,
+    resendConfirmation, requestPasswordReset, updateRecoveryPassword, signOut } = useUserData();
+  const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'forgot'>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [feedbackTone, setFeedbackTone] = useState<'error' | 'success'>('error');
+  const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isResending, setIsResending] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const [confirmationPending, setConfirmationPending] = useState(false);
+  const submitting = useRef(false);
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
+  const [resendUntil, setResendUntil] = useState(0);
+  const [remaining, setRemaining] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
-  const [passwordTouched, setPasswordTouched] = useState(false);
+  const recovery = access === 'recovery_required';
+  const busy = isSubmitting || isAuthBusy || isSigningOut;
   const emailValidation = emailError(email);
-  const passwordValidation = mode === 'sign-up' ? passwordError(password) : !password ? 'Enter your password.' : undefined;
-  const invalid = !!emailValidation || !!passwordValidation || (mode === 'sign-up' && (enrollment.loading || !!enrollment.error || Object.keys(studentErrors).length > 0));
+  const passwordValidation = recovery || mode === 'sign-up' ? passwordError(password) : !password ? 'Enter your password.' : undefined;
+  const invalid = recovery ? !!passwordValidation : !!emailValidation || (mode !== 'forgot' && !!passwordValidation);
 
   useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const timer = setInterval(() => setResendCooldown((value) => Math.max(0, value - 1)), 1000);
+    if (!resendUntil) return;
+    const tick = () => setRemaining(Math.max(0, Math.ceil((resendUntil - Date.now()) / 1000)));
+    tick(); const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [resendCooldown]);
-
-  const setMessage = (message: string, tone: 'error' | 'success' = 'error') => {
-    setFeedback(message);
-    setFeedbackTone(tone);
-  };
-
-  const getAuthErrorMessage = (error: unknown) => {
-    const message = error instanceof Error ? error.message : '';
-    const normalized = message.toLowerCase();
-
-    if (normalized.includes('rate limit') || normalized.includes('too many')) {
-      return 'Too many email attempts. Wait a few minutes before trying again, then use Resend confirmation instead of creating another account.';
-    }
-    if (normalized.includes('already registered') || normalized.includes('already been registered')) {
-      return 'That email already has an account. Switch to Sign in or use the confirmation email again.';
-    }
-    if (normalized.includes('database error saving new user')) return 'Could not save your student information. Check your student number and school selections; if they are correct, contact your administrator.';
-    if (normalized.includes('email not confirmed')) {
-      return 'Your email is not confirmed yet. Check your inbox or resend the confirmation email below.';
-    }
-    if (normalized.includes('invalid login credentials')) {
-      return 'Email or password is incorrect. Check your details and try again.';
-    }
-    return message || 'Something went wrong. Please try again.';
-  };
+  }, [resendUntil]);
 
   const submit = async () => {
-    if (isSubmitting || isSigningOut || access === 'checking') return;
-    const normalizedEmail = email.trim().toLowerCase();
-    if (invalid) { setMessage('Check the highlighted fields before continuing.'); return; }
-    const normalizedStudent = studentPayload(student);
-
-    setIsSubmitting(true);
-    setFeedback(null);
-
+    if (submitting.current || busy || invalid) return;
+    submitting.current = true; setIsSubmitting(true); setFeedback(null); setSuccess(false);
+    const attemptedEmail = email.trim().toLowerCase();
     try {
-      if (mode === 'sign-up') {
-        const result = await signUp(normalizedEmail, password, {
-          ...normalizedStudent,
-          display_name: normalizedStudent.name,
-        }, 'beebetter://auth');
-        if (result.status === 'error') throw new Error(result.message);
-        if (result.status === 'confirmation_required') {
-          setMessage('Account created. Check your email to confirm it, then sign in.', 'success');
-          setConfirmationPending(true);
-          setMode('sign-in');
-        }
-      } else {
-        const result = await signIn(normalizedEmail, password);
-        if (result.status === 'error') throw new Error(result.message);
+      const result = recovery ? await updateRecoveryPassword(password)
+        : mode === 'forgot' ? await requestPasswordReset(attemptedEmail)
+        : mode === 'sign-up' ? await signUp(attemptedEmail, password)
+        : await signIn(attemptedEmail, password);
+      if (result.status === 'error') {
+        setFeedback(result.message);
+        if (result.code === 'email_not_confirmed') setConfirmationEmail(attemptedEmail);
+      } else if (result.status === 'confirmation_required') {
+        setConfirmationEmail(attemptedEmail); setMode('sign-in'); setPassword(''); setSuccess(true);
+        setFeedback('If registration can proceed, check your email to confirm it, then sign in.');
+      } else if (mode === 'forgot' && !recovery) {
+        setSuccess(true); setFeedback('If an account matches this email, you will receive password reset instructions.');
+      } else if (recovery) {
+        setPassword(''); setSuccess(true); setFeedback('Password updated. Checking your student account...');
       }
-    } catch (error) {
-      setMessage(getAuthErrorMessage(error));
-    } finally {
-      setIsSubmitting(false);
-    }
+    } finally { submitting.current = false; setIsSubmitting(false); }
   };
 
-  const handleResendConfirmation = async () => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || resendCooldown > 0 || isResending) return;
-
-    setIsResending(true);
-    setFeedback(null);
+  const resend = async () => {
+    if (!confirmationEmail || submitting.current || busy || Date.now() < resendUntil) return;
+    submitting.current = true; setIsSubmitting(true); setFeedback(null); setSuccess(false);
     try {
-      const result = await resendConfirmation(normalizedEmail, 'beebetter://auth');
-      if (result.status === 'error') throw new Error(result.message);
-      setMessage('Confirmation email sent. Check your inbox and spam folder.', 'success');
-      setResendCooldown(60);
-    } catch (error) {
-      setMessage(getAuthErrorMessage(error));
-    } finally {
-      setIsResending(false);
-    }
+      const result = await resendConfirmation(confirmationEmail);
+      if (result.status === 'error') setFeedback(result.message);
+      else { setSuccess(true); setFeedback('If confirmation is pending, check your inbox and spam folder for next steps.'); setResendUntil(Date.now() + 60_000); }
+    } finally { submitting.current = false; setIsSubmitting(false); }
   };
 
-  if (access === 'checking' || access === 'verification_error') {
-    return (
-      <SafeAreaView style={[styles.container, { justifyContent: 'center', padding: 24 }]}>
-        {access === 'checking' ? <ActivityIndicator color={COLORS.honeyDark} /> : <>
-          <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>
-          <TouchableOpacity disabled={isRefreshing || isSigningOut} onPress={() => void refresh()} style={styles.modeButton}>
-            <ThemedText>{isRefreshing ? 'Checking account...' : 'Retry'}</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity disabled={isSigningOut} onPress={() => void signOut()} style={styles.modeButton}>
-            <ThemedText>{isSigningOut ? 'Signing out...' : 'Sign out'}</ThemedText>
-          </TouchableOpacity>
-        </>}
-      </SafeAreaView>
-    );
-  }
+  if (access === 'onboarding_required') return <StudentOnboarding />;
+  if (access === 'checking' || access === 'verification_error') return <SafeAreaView style={[styles.container, { justifyContent: 'center', padding: 24 }]}>
+    {access === 'checking' ? <ActivityIndicator color={COLORS.honeyDark} accessibilityLabel="Checking account" /> : <>
+      <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>
+      <TouchableOpacity accessibilityRole="button" disabled={isRefreshing || busy} onPress={() => void refresh()} style={styles.modeButton}><ThemedText style={styles.modeText}>{isRefreshing ? 'Checking account...' : 'Retry'}</ThemedText></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void signOut()} style={styles.modeButton}><ThemedText style={styles.modeText}>Sign out</ThemedText></TouchableOpacity>
+    </>}
+  </SafeAreaView>;
 
-  return (
-    <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
-          {/* Logo Mark */}
-          <View style={styles.mark}>
-            <Ionicons name="sparkles" size={28} color={COLORS.ink} />
-          </View>
-
-          <ThemedText style={styles.title}>
-            {mode === 'sign-in' ? 'Welcome to BeeBetter' : 'Start your journey'}
-          </ThemedText>
-          <ThemedText style={styles.subtitle}>
-            {mode === 'sign-in'
-              ? 'Sign in to access your quests, streak, and skill tree.'
-              : 'Create an account to level up your habits and daily goals.'}
-          </ThemedText>
-
-          {/* Mode Switcher */}
-          <View style={styles.modeRow}>
-            <TouchableOpacity
-              style={[styles.modeButton, mode === 'sign-in' && styles.modeButtonActive]}
-              onPress={() => {
-                setMode('sign-in');
-                setFeedback(null);
-                setConfirmationPending(false);
-              }}>
-              <ThemedText style={[styles.modeText, mode === 'sign-in' && styles.modeTextActive]}>
-                Sign in
-              </ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modeButton, mode === 'sign-up' && styles.modeButtonActive]}
-              onPress={() => {
-                setMode('sign-up');
-                setFeedback(null);
-                setConfirmationPending(false);
-              }}>
-              <ThemedText style={[styles.modeText, mode === 'sign-up' && styles.modeTextActive]}>
-                Create account
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-
-          {mode === 'sign-up' && <StudentInformationFields value={student} onChange={setStudent} options={enrollment.options} errors={studentErrors} loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} />}
-
-          {/* Email Field */}
+  return <SafeAreaView style={styles.container}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={styles.mark}><Ionicons name="sparkles" size={28} color={COLORS.ink} accessible={false} /></View>
+        <ThemedText style={styles.title}>{recovery ? 'Choose a new password' : mode === 'forgot' ? 'Reset your password' : mode === 'sign-up' ? 'Create your account' : 'Welcome to BeeBetter'}</ThemedText>
+        <ThemedText style={styles.subtitle}>{recovery ? 'Update your password before continuing to your student account.' : mode === 'sign-up' ? 'Confirm your email first. You will enter your student information afterward.' : mode === 'forgot' ? 'Enter your account email to receive a reset link.' : 'Sign in to access your quests, streak, and skill tree.'}</ThemedText>
+        {!recovery && <View style={styles.modeRow}>{(['sign-in', 'sign-up'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value, disabled: busy }} disabled={busy} style={[styles.modeButton, mode === value && styles.modeButtonActive]} onPress={() => { if (submitting.current || busy) return; setMode(value); setFeedback(null); setPassword(''); }}><ThemedText style={styles.modeText}>{value === 'sign-in' ? 'Sign in' : 'Create account'}</ThemedText></TouchableOpacity>)}</View>}
+        {!recovery && <>
           <ThemedText style={styles.label}>Email address *</ThemedText>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={value => setEmail(value.replace(/\s/g, ''))}
-            onBlur={() => setEmailTouched(true)}
-            maxLength={LIMITS.email}
-            accessibilityLabel="Email address, required"
-            autoComplete="email"
-            placeholder="you@example.com"
-            placeholderTextColor={COLORS.muted}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
-          {(emailTouched || !!email) && emailValidation && <ThemedText style={styles.feedback}>{emailValidation}</ThemedText>}
-
-          {/* Password Field */}
-          <ThemedText style={styles.label}>Password *</ThemedText>
+          <TextInput style={styles.input} editable={!busy} value={email} onChangeText={value => setEmail(value.replace(/\s/g, ''))} onBlur={() => setEmailTouched(true)} maxLength={LIMITS.email} accessibilityLabel="Email address, required" autoComplete="email" placeholder="you@example.com" placeholderTextColor={COLORS.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+          {emailTouched && emailValidation && <ThemedText accessibilityRole="alert" style={styles.feedback}>{emailValidation}</ThemedText>}
+        </>}
+        {(recovery || mode !== 'forgot') && <>
+          <ThemedText style={styles.label}>{recovery ? 'New password *' : 'Password *'}</ThemedText>
           <View style={styles.passwordRow}>
-            <TextInput
-              style={styles.passwordInput}
-              value={password}
-              onChangeText={setPassword}
-              onBlur={() => setPasswordTouched(true)}
-              maxLength={mode === 'sign-up' ? LIMITS.password : undefined}
-              autoCorrect={false}
-              accessibilityLabel="Password, required"
-              placeholder="At least 6 characters"
-              placeholderTextColor={COLORS.muted}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity
-              style={styles.passwordToggle}
-              onPress={() => setShowPassword((value) => !value)}
-              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
-              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={19} color={COLORS.muted} />
-            </TouchableOpacity>
+            <TextInput style={styles.passwordInput} editable={!busy} value={password} onChangeText={setPassword} maxLength={recovery || mode === 'sign-up' ? LIMITS.password : undefined} autoComplete={recovery || mode === 'sign-up' ? 'new-password' : 'current-password'} textContentType={recovery || mode === 'sign-up' ? 'newPassword' : 'password'} autoCorrect={false} accessibilityLabel={recovery ? 'New password, required' : 'Password, required'} placeholder={recovery || mode === 'sign-up' ? 'At least 15 characters' : 'Your password'} placeholderTextColor={COLORS.muted} secureTextEntry={!showPassword} autoCapitalize="none" />
+            <TouchableOpacity disabled={busy} style={[styles.passwordToggle, { minWidth: 48, minHeight: 48, justifyContent: 'center' }]} onPress={() => setShowPassword(value => !value)} accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={19} color={COLORS.muted} /></TouchableOpacity>
           </View>
-
-          {(passwordTouched || !!password) && passwordValidation && <ThemedText style={styles.feedback}>{passwordValidation}</ThemedText>}
-          {accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>}
-          {access === 'blocked' && !isSigningOut && (
-            <TouchableOpacity onPress={() => void signOut()} style={styles.modeButton}>
-              <ThemedText>Retry sign-out</ThemedText>
-            </TouchableOpacity>
-          )}
-          {isSigningOut && <ThemedText>Signing out...</ThemedText>}
-          {feedback && <ThemedText style={[styles.feedback, feedbackTone === 'success' && styles.successFeedback]}>{feedback}</ThemedText>}
-
-          {confirmationPending && mode === 'sign-in' && (
-            <View style={styles.confirmationCard}>
-              <Ionicons name="mail-open-outline" size={20} color={COLORS.honeyDark} />
-              <View style={styles.confirmationCopy}>
-                <ThemedText style={styles.confirmationTitle}>Still waiting for the email?</ThemedText>
-                <ThemedText style={styles.confirmationText}>Check spam, or request one more confirmation email.</ThemedText>
-              </View>
-              <TouchableOpacity onPress={handleResendConfirmation} disabled={isResending || resendCooldown > 0}>
-                <ThemedText style={styles.resendText}>
-                  {isResending ? 'Sending...' : resendCooldown > 0 ? `${resendCooldown}s` : 'Resend'}
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Submit Button */}
-          <TouchableOpacity
-            style={[styles.submitButton, (isSubmitting || isSigningOut || invalid) && styles.submitButtonDisabled]}
-            onPress={submit}
-            disabled={isSubmitting || isSigningOut || invalid}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: isSubmitting || isSigningOut || invalid, busy: isSubmitting }}
-            activeOpacity={0.8}>
-            {isSubmitting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <ThemedText style={styles.submitText}>
-                {mode === 'sign-in' ? 'Sign in' : 'Create account'}
-              </ThemedText>
-            )}
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
-  );
+          {!!password && passwordValidation && <ThemedText accessibilityRole="alert" style={styles.feedback}>{passwordValidation}</ThemedText>}
+        </>}
+        {accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>}
+        {feedback && <ThemedText accessibilityLiveRegion="polite" style={[styles.feedback, success && styles.successFeedback]}>{feedback}</ThemedText>}
+        {!recovery && mode === 'sign-in' && confirmationEmail && <View style={styles.confirmationCard}><View style={styles.confirmationCopy}><ThemedText style={styles.confirmationTitle}>Confirm {confirmationEmail}</ThemedText><ThemedText style={styles.confirmationText}>Check spam or request another email.</ThemedText></View><TouchableOpacity style={styles.modeButton} accessibilityRole="button" disabled={busy || remaining > 0} onPress={() => void resend()}><ThemedText style={styles.resendText}>{remaining > 0 ? remaining + 's' : 'Resend'}</ThemedText></TouchableOpacity></View>}
+        <TouchableOpacity style={[styles.submitButton, (busy || invalid) && styles.submitButtonDisabled]} onPress={() => void submit()} disabled={busy || invalid} accessibilityRole="button" accessibilityState={{ disabled: busy || invalid, busy }}>
+          {busy ? <ActivityIndicator color={COLORS.card} /> : <ThemedText style={styles.submitText}>{recovery ? 'Update password' : mode === 'forgot' ? 'Send reset instructions' : mode === 'sign-up' ? 'Create account' : 'Sign in'}</ThemedText>}
+        </TouchableOpacity>
+        {!recovery && <TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.modeButton} onPress={() => { if (submitting.current || busy) return; setMode(mode === 'forgot' ? 'sign-in' : 'forgot'); setFeedback(null); setPassword(''); }}><ThemedText style={styles.modeText}>{mode === 'forgot' ? 'Back to sign in' : 'Forgot your password?'}</ThemedText></TouchableOpacity>}
+        {(recovery || access === 'blocked') && <TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.modeButton} onPress={() => void signOut()}><ThemedText style={styles.modeText}>{isSigningOut ? 'Signing out...' : 'Sign out'}</ThemedText></TouchableOpacity>}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
-  content: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 40 },
+  content: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 24, paddingTop: 30, paddingBottom: 40 },
   mark: {
     width: 60,
     height: 60,
@@ -284,7 +128,7 @@ const styles = StyleSheet.create({
   title: { color: COLORS.ink, fontSize: 26, fontWeight: '800' },
   subtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 19, marginTop: 8, marginBottom: 24 },
   modeRow: { flexDirection: 'row', backgroundColor: COLORS.surfaceMuted, borderRadius: Radii.md, padding: 4, marginBottom: 20 },
-  modeButton: { flex: 1, alignItems: 'center', borderRadius: Radii.sm, paddingVertical: 11 },
+  modeButton: { flex: 1, alignItems: 'center', borderRadius: Radii.sm, minHeight: 48, paddingVertical: 11 },
   modeButtonActive: { backgroundColor: COLORS.card, ...BeeBetterShadow },
   modeText: { color: COLORS.muted, fontSize: 12, fontWeight: '800' },
   modeTextActive: { color: COLORS.ink },

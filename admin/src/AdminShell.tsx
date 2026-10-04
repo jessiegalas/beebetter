@@ -94,7 +94,7 @@ export function AuthScreen({ onSignIn, onSignUp, dark, onToggleTheme }: {
       <form onSubmit={submit}>
         {mode === 'signup' && <label>Full name<input name="name" required autoComplete="name" placeholder="Admin name" /></label>}
         <label>Email address<input name="email" required type="email" autoComplete="email" placeholder="admin@beebetter.app" /></label>
-        <label>Password<input name="password" required type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="••••••••" /></label>
+        <label>Password<input name="password" required type="password" minLength={mode === 'signup' ? 15 : undefined} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={mode === 'signup' ? 'At least 15 characters' : 'Your password'} /></label>
         {error && <p className="form-error" role="alert">{error}</p>}
         {success && <p className="form-success" role="status">{success}</p>}
         <button className="auth-submit" type="submit" disabled={loading}>{loading ? 'Connecting...' : mode === 'login' ? 'Sign in' : 'Create account'}</button>

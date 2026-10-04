@@ -1,4 +1,4 @@
-export type AccountAccess = 'checking' | 'active' | 'signed_out' | 'blocked' | 'verification_error';
+export type AccountAccess = 'checking' | 'active' | 'signed_out' | 'blocked' | 'verification_error' | 'onboarding_required' | 'recovery_required';
 
 export const SUSPENDED_MESSAGE = 'Your account is suspended. Contact your administrator.';
 export const VERIFICATION_MESSAGE = 'Could not verify your account. Check your connection and retry, or sign out.';

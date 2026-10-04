@@ -19,9 +19,9 @@ test('student number accepts exactly nine digits and strips invalid input', () =
   for (const student_number of ['12345678', '1234567890', '2023-1197', 'abcdefghi']) assert(validateStudent({ ...valid, student_number }, options).student_number);
   assert.equal(cleanStudentNumber('2023-11197abc88'), '202311197'); assert.deepEqual(validateStudent(valid, options), {});
 });
-test('email and password boundaries retain six-character minimum', () => {
+test('email and password boundaries retain 15-character minimum', () => {
   assert.equal(emailError('user+tag@example.edu'), undefined); assert(emailError('a@b')); assert(emailError('a b@c.edu')); assert(emailError('a'.repeat(250) + '@b.edu'));
-  assert(passwordError('12345')); assert.equal(passwordError('123456'), undefined); assert.equal(passwordError('a'.repeat(72)), undefined); assert(passwordError('a'.repeat(73))); assert(passwordError('é'.repeat(37)));
+  assert(passwordError('a'.repeat(14))); assert.equal(passwordError('a'.repeat(15)), undefined); assert.equal(passwordError('a'.repeat(72)), undefined); assert(passwordError('a'.repeat(73))); assert(passwordError('é'.repeat(37)));
 });
 test('dropdown combinations and custom programs are validated', () => {
   assert(validateStudent({ ...valid, section: 'B' }, options).section);
