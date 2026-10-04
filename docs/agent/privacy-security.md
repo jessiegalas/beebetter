@@ -17,7 +17,7 @@ These records are voluntary self-reports, not clinical diagnoses or verified imp
 
 ## Reporting and support access
 
-- Active admin status alone grants neither OSAS capability. Aggregate reporting and identifiable support permissions are separate, including for super-admins.
+- Every active admin, including super-admins, receives aggregate reporting and identifiable support-case access. Inactive admins, students, pending applicants, and anonymous callers receive no OSAS staff access. Student-owned support access remains separate. See [glossary](../../GLOSSARY.md) and migration 033 rollout in [admin and OSAS](admin-osas.md).
 - Aggregate reports must not expose raw wellness text, precise location, identifiable case details, or support messages/notes. Use server-computed analytics and audited exports; details in [admin and OSAS](admin-osas.md).
 - Preserve one demographic dimension, five-student minimum cohorts, complementary suppression, contributor/trend checks, and null/withheld semantics. Legacy summary RPCs are distinct from the audited dashboard.
 - Optional motivation and support-status breakdowns lack independent five-contributor checks for every subgroup. Preserve this concern and review privacy before extending disclosure.

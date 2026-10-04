@@ -7,6 +7,8 @@ Read [root rules](../AGENTS.md) first. Navigation uses local section state; path
 
 ## Strict Guardrails
 
+- `/admin` is exclusively OSAS. All active ordinary and super-admin accounts receive reporting and support access; inactive admins are denied. Admin-account management remains super-admin-only. See [glossary](../GLOSSARY.md).
+
 - ALWAYS require an active role from `admin_get_my_role`; session presence is insufficient.
 - Keep privileged management in guarded RPCs; super-admin grants target existing Auth users.
 - ALWAYS preserve server pagination/search/filtering and stale-request guards; assignment search is separate from the displayed page.

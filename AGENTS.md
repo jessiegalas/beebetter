@@ -1,8 +1,29 @@
 # BeeBetter repository guidance
 
+## Task Execution & Autonomy
+- For implementation or fix requests, carry the authorized work through implementation and relevant verification. Do not stop at a proposed plan when you can proceed.
+- Make reasonable assumptions for routine, reversible decisions. Ask a focused question when missing information materially affects correctness, scope, or authorization.
+- Continue with authorized read-only actions, local worktrees, branch edits, and appropriate tests without repeatedly asking.
+- Before requesting approval, finish the preparation that is already authorized and present a concrete, reviewable result.
+- Respect required approval gates. Ask before destructive, irreversible, or otherwise unauthorized actions.
+- Avoid boilerplate warnings about hypothetical risks. Explain concrete blockers or material risks when relevant.
+
+### Instruction Conflicts
+- Explicit user instructions take precedence over conflicting skill guidelines, subject to higher-priority instructions and actual permission boundaries.
+- If a skill causes a pause or deviation, identify the file and relevant rule, and explain whether it is an explicit requirement or your interpretation. Continue any unaffected authorized work.
+
+### Style & Output
+- Lead with the result. Use plain language, active voice, and concise paragraphs. Include technical details that help assess the work.
+- Use lists when they improve readability; avoid repetitive transitions and stock phrases such as "it's worth noting", "delve", "leverage", and "Bottom line".
+- Report what changed, what was verified, and any remaining uncertainty.
+
+### Verification
+- Match verification to the scope and impact of the change. Complete required checks; expand testing when a concrete unresolved concern justifies it.
+
 ## Identity & Stack
 
 BeeBetter provides student quests/XP, contextual recommendations, voluntary wellness/reflections, and OSAS support/reporting.
+Terminology is authoritative in [GLOSSARY.md](GLOSSARY.md): `/admin` is exclusively OSAS, and every active admin receives reporting and support access.
 This is the repository root; the surrounding THESIS directory is not. Mobile: Expo/React Native; admin: React/Vite; backend: Supabase PostgreSQL/Auth/Storage.
 Each app owns its package/lockfile; there is no root npm workspace.
 
@@ -13,7 +34,7 @@ Each app owns its package/lockfile; there is no root npm workspace.
 - NEVER bypass server completion/progression or substitute weaker direct writes for missing RPCs.
 - NEVER commit credentials, environment files, or backups; keep privileged keys/passwords out of clients and logs.
 - ALWAYS preserve enrollment periods/labels, quest completion/lifecycle snapshots, support events, and report audits.
-- ALWAYS keep OSAS aggregate/support permissions separate from admin access; preserve suppression and audited exports.
+- ALWAYS derive OSAS reporting/support access from active admin status in the database; preserve suppression and audited exports.
 - NEVER expose raw wellness text, precise locations, or identifiable case details through aggregate reports.
 - ALWAYS check both clients when changing RPC signatures/results, statuses, category labels, shared validation, or nullable legacy contracts.
 - NEVER rewrite applied migrations. Do not execute migrations (including local runners), deploy, reset databases, or merge without explicit authorization.
@@ -33,8 +54,7 @@ Efficiency rules:
 Run from this repository root:
 
 ```powershell
-git diff --check
-```
+git diff --check```
 
 Use affected scoped commands; check both apps for shared contracts. Report actual results and skipped checks.
 For documentation-only work, inspect the diff and links; do not run broad application suites or migrations.

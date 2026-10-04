@@ -92,7 +92,9 @@ interface UserDataContextType {
   access: AccountAccess;
   accessMessage: string | null;
   isSigningOut: boolean;
-  beginAuthentication: () => boolean;
+  signIn: (email: string, password: string) => Promise<AuthenticationResult>;
+  signUp: (email: string, password: string, metadata: Record<string, string>, emailRedirectTo: string) => Promise<AuthenticationResult>;
+  resendConfirmation: (email: string, emailRedirectTo: string) => Promise<AuthOperationResult>;
   profile: UserProfile | null;
   quests: Quest[];
   questsHasMore: boolean;
@@ -110,8 +112,18 @@ interface UserDataContextType {
   deleteQuest: (questId: string) => Promise<{ success: boolean; error?: string }>;
   addQuest: (quest: QuestDraft) => Promise<{ success: boolean; error?: string }>;
   updateQuest: (id: string, quest: QuestDraft) => Promise<{ success: boolean; error?: string }>;
-  signOut: () => Promise<void>;
+  signOut: () => Promise<SignOutResult>;
 }
+
+export type AuthenticationResult =
+  | { status: 'authenticated' }
+  | { status: 'confirmation_required' }
+  | { status: 'error'; message: string };
+export type AuthOperationResult = { status: 'completed' } | { status: 'error'; message: string };
+
+export type SignOutResult =
+  | { status: 'signed_out' }
+  | { status: 'retry_required'; message: string };
 
 export type StudentProfileUpdates = Pick<
   UserProfile,
@@ -125,7 +137,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const [fence] = useState(() => new SessionFence());
   const sessionUser = useRef<User | null>(null);
   const cleanupFailed = useRef(false);
-  const logoutTask = useRef<Promise<void> | null>(null);
+  const logoutTask = useRef<Promise<SignOutResult> | null>(null);
   const [access, setAccess] = useState<AccountAccess>('checking');
   const [accessMessage, setAccessMessage] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -156,7 +168,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     completingQuests.current.clear();
   }, []);
 
-  const endSession = useCallback((reason?: string): Promise<void> => {
+  const endSession = useCallback((reason?: string): Promise<SignOutResult> => {
     if (logoutTask.current) return logoutTask.current;
     fence.close();
     requestVersion.current += 1;
@@ -175,14 +187,19 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       const authFailure = results[0].status === 'rejected';
       cleanupFailed.current = authFailure;
       if (authFailure) {
-        setAccessMessage([reason, 'Sign-out could not finish. Your app access is locked. Retry sign-out before signing in again.'].filter(Boolean).join(' '));
+        const message = [reason, 'Sign-out could not finish. Your app access is locked. Retry sign-out before signing in again.'].filter(Boolean).join(' ');
+        setAccessMessage(message);
         setAccess('blocked');
+        return { status: 'retry_required', message } as const;
       }
       results.forEach(result => { if (result.status === 'rejected') console.warn('Session cleanup failed:', result.reason); });
+      return { status: 'signed_out' } as const;
     }).catch(() => {
       cleanupFailed.current = true;
       setAccess('blocked');
-      setAccessMessage('Sign-out could not finish. Retry sign-out before signing in again.');
+      const message = 'Sign-out could not finish. Retry sign-out before signing in again.';
+      setAccessMessage(message);
+      return { status: 'retry_required', message } as const;
     }).finally(() => { logoutTask.current = null; setIsSigningOut(false); });
     logoutTask.current = task;
     return task;
@@ -198,6 +215,42 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     setAccessMessage(null);
     return true;
   }, [clearUserData, fence]);
+
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthenticationResult> => {
+    if (!beginAuthentication()) return { status: 'error', message: 'Please retry sign-out before signing in again.' };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { status: 'error', message: error.message };
+      return { status: 'authenticated' };
+    } catch (error) {
+      return { status: 'error', message: error instanceof Error ? error.message : 'Could not sign in.' };
+    }
+  }, [beginAuthentication]);
+
+  const signUp = useCallback(async (
+    email: string,
+    password: string,
+    metadata: Record<string, string>,
+    emailRedirectTo: string,
+  ): Promise<AuthenticationResult> => {
+    if (!beginAuthentication()) return { status: 'error', message: 'Please retry sign-out before signing up again.' };
+    try {
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: metadata, emailRedirectTo } });
+      if (error) return { status: 'error', message: error.message };
+      return data.session ? { status: 'authenticated' } : { status: 'confirmation_required' };
+    } catch (error) {
+      return { status: 'error', message: error instanceof Error ? error.message : 'Could not create the account.' };
+    }
+  }, [beginAuthentication]);
+
+  const resendConfirmation = useCallback(async (email: string, emailRedirectTo: string): Promise<AuthOperationResult> => {
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo } });
+      return error ? { status: 'error', message: error.message } : { status: 'completed' };
+    } catch (error) {
+      return { status: 'error', message: error instanceof Error ? error.message : 'Could not resend confirmation.' };
+    }
+  }, []);
 
   const fetchUserData = useCallback(async (currentUser: User | null, showLoading = false) => {
     if (!fence.accept(currentUser?.id ?? null)) return;
@@ -608,7 +661,9 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       access,
       accessMessage,
       isSigningOut,
-      beginAuthentication,
+      signIn,
+      signUp,
+      resendConfirmation,
       profile,
       quests,
       questsHasMore,
@@ -633,7 +688,9 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       access,
       accessMessage,
       isSigningOut,
-      beginAuthentication,
+      signIn,
+      signUp,
+      resendConfirmation,
       profile,
       quests,
       questsHasMore,

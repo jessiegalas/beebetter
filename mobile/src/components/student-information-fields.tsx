@@ -37,7 +37,8 @@ export function StudentInformationFields({ value, onChange, options, errors, loa
     {!!loadError && <View><ThemedText style={s.error}>{loadError}</ThemedText><TouchableOpacity style={s.button} accessibilityRole="button" onPress={onRetry}><ThemedText>Try again</ThemedText></TouchableOpacity></View>}
     {!loading && !loadError && !options.length && <ThemedText style={s.hint}>Campus and section options are not available yet. Please contact your school administrator.</ThemedText>}
     <StudentSelect label="Campus" value={value.campus} options={campuses} onChange={text => update('campus', text)} />{message('campus')}
-    <StudentSelect label="Section" value={value.section} options={sections} onChange={text => update('section', text)} emptyText={value.course && value.year_level && value.campus ? 'No sections available for this combination. Contact your school administrator.' : 'Choose your program, year and campus first.'} />{message('section')}
+    <StudentSelect label="Section" value={value.section} options={sections} onChange={text => update('section', text)} emptyText={value.course && value.year_level && value.campus ? 'No active section matches this program, year and campus.' : 'Choose your program, year and campus first.'} />{message('section')}
+    {!loading && !loadError && !!value.course && !!value.year_level && !!value.campus && sections.length === 0 && <View style={s.optionNotice}><ThemedText style={s.hint}>No active section matches these selections. Refresh the active-semester options or contact your school administrator.</ThemedText><TouchableOpacity style={s.refreshOptions} accessibilityRole="button" onPress={onRetry}><ThemedText style={s.refreshOptionsText}>Refresh section options</ThemedText></TouchableOpacity></View>}
     {textField('goal', 'Your goal', 'What would you like to improve?')}
   </View>;
 }
@@ -63,6 +64,7 @@ const s = StyleSheet.create({
   input: { minHeight: 48, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.card, borderWidth: 1, borderColor: C.surfaceMuted, color: C.ink, fontSize: 14 }, invalid: { borderColor: C.danger },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 }, copy: { flex: 1, color: C.ink, fontSize: 14 },
   button: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
+  optionNotice: { gap: 4, paddingHorizontal: 2 }, refreshOptions: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }, refreshOptionsText: { color: C.honeyDeep, fontSize: 13, fontWeight: '700' },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(45,36,29,0.35)' },
   sheet: { maxHeight: '85%', padding: 20, backgroundColor: C.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },
   list: { gap: 8, paddingVertical: 12 }, option: { minHeight: 48, padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.card }, selected: { backgroundColor: C.honeySoft },

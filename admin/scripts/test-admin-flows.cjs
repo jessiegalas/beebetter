@@ -139,23 +139,21 @@ async function studentSave() {
 }
 
 async function capabilities() {
-  const h = hookHarness(), writes = []; let refreshed = 0;
-  const pending = deferred(); let rows = [];
-  const mod = load('admin/src/OsasPermissions.tsx', h, {
-    './osas-data': {
-      listOsasPermissionRows: async () => rows,
-      setOsasPermissions: async (...args) => { writes.push(args); await pending.promise; rows = [{ user_id: 'self', can_view_aggregates: args[1], can_manage_support_requests: args[2], is_active: true }]; },
-    },
-  });
-  h.mount(() => mod.exports.OsasPermissions({ admins: [{ id: 'self', displayName: 'Admin', email: 'admin@example.test', isActive: true }], onChanged: async () => { refreshed++; } }));
-  await flush();
-  const toggles = nodes(h.value).filter(node => node.type === 'input');
-  toggles[0].props.onChange({ target: { checked: true } });
-  toggles[1].props.onChange({ target: { checked: true } });
-  await flush(); assert.equal(writes.length, 1, 'Capability changes must serialize whole-row writes');
-  pending.resolve(); await flush();
-  assert.equal(refreshed, 1, 'Successful capability changes must refresh current effective access');
-  assert.equal(nodes(h.value).filter(node => node.type === 'input')[0].props.checked, true);
+  const h = hookHarness();
+  const mod = load('admin/src/OsasPermissions.tsx', h, {});
+  const admins = [
+    { id: 'ordinary', displayName: 'Ordinary', email: 'ordinary@example.test', role: 'admin', isActive: true },
+    { id: 'super', displayName: 'Super', email: 'super@example.test', role: 'super_admin', isActive: true },
+    { id: 'inactive', displayName: 'Inactive', email: 'inactive@example.test', role: 'admin', isActive: false },
+  ];
+  h.mount(() => mod.exports.OsasPermissions({ admins }));
+  assert.equal(nodes(h.value).filter(node => node.type === 'input' || node.type === 'button').length, 0);
+  const rows = nodes(h.value).filter(node => node.props?.className === 'permission-row');
+  assert.equal(rows.length, 3);
+  assert(text(rows[0]).includes('Included'));
+  assert(text(rows[1]).includes('Included'));
+  assert(text(rows[2]).includes('Unavailable'));
+  assert(!text(rows[2]).includes('Included'));
   h.unmount();
 }
 
@@ -237,7 +235,7 @@ async function main() {
   await test('student search, filters and pagination preserve query and retry behavior', tables);
   await test('self role, status and removal controls are locked while other roles are editable', roleControls);
   await test('student drafts survive failed saves and duplicate submissions are blocked', studentSave);
-  await test('capability changes serialize writes and refresh effective access', capabilities);
+  await test('OSAS access is included for active admins without capability controls', capabilities);
   await test('semester switch resets section edits and activation uses explicit sections', semesters);
   await test('registration reloads on form entry, retry and foreground with cancellation', enrollment);
   console.log(count + ' admin/enrollment flow regressions passed.');

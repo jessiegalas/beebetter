@@ -6,7 +6,7 @@ Read for routing, account/session lifecycle, provider state, or native configura
 
 - `package.json` uses `expo-router/entry`. `src/app/_layout.tsx` nests UserData, Location, and QuestPriority providers around a persistently mounted router stack.
 - `Stack.Protected` admits verified active students. The UserData provider owns admission, invalidation, and logout; database active-account checks remain authoritative.
-- `src/context/user-data-context.tsx` owns session/profile/quest state, RPC reads, mutations, proofs, notification responses, refreshes, and sign-out. `src/hooks/use-user-data.ts` is a compatibility re-export, not another state implementation.
+- `src/context/user-data-context.tsx` owns session/profile/quest state, student sign-in/sign-up/confirmation resend/sign-out, active-student admission, RPC reads, mutations, proofs, notification responses, and refreshes. Auth screens call its operations and render their explicit outcomes; they do not coordinate Supabase Auth separately. `src/hooks/use-user-data.ts` is a compatibility re-export, not another state implementation.
 - `src/app/(tabs)/_layout.tsx` delegates to `src/components/app-tabs.tsx` (native) or `src/components/app-tabs.web.tsx` (Expo Router UI). Tabs: Home (`index`), Quests, Skill Tree, Profile.
 - Other stack routes: auth, notifications, add-quest, manage-locations, wellness-check-in, self-management-reflection, wellness-history, support-requests.
 - `src/supabase.ts` owns the client, AsyncStorage session persistence, and web-rendering guards. Preserve account-switch, request-generation, and unmount guards.

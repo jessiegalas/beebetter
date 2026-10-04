@@ -37,7 +37,7 @@ export function AdminInfoPanel({ identity, role, permissions, onClose, onSignOut
   }, [onClose])
 
   const capability = (label: string, granted: boolean) => <div className="admin-info-capability" key={label}>
-    <span>{label}</span><b className={granted ? 'capability-granted' : 'capability-denied'}>{granted ? 'Granted' : 'Not granted'}</b>
+    <span>{label}</span><b className={granted ? 'capability-granted' : 'capability-denied'}>{granted ? 'Included' : 'Not verified'}</b>
   </div>
 
   return <div className="admin-info-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
@@ -45,7 +45,7 @@ export function AdminInfoPanel({ identity, role, permissions, onClose, onSignOut
       <div className="admin-info-heading"><div><span className="eyebrow">ADMIN CONSOLE</span><h2 id="admin-info-title">Admin information</h2></div><button ref={closeButton} className="admin-info-close" aria-label="Close admin information" onClick={onClose}>×</button></div>
       <div className="admin-info-identity"><span className="drawer-avatar">{initials(identity.name)}</span><div><b>{identity.name}</b><small>{identity.email || 'Signed-in account'}</small></div></div>
       <section className="admin-info-section" aria-labelledby="admin-session-title"><h3 id="admin-session-title">Current session</h3><div className="admin-info-value"><span>Account status</span><b className="capability-granted">Active</b></div><div className="admin-info-value"><span>Admin role</span><b>{role === 'super_admin' ? 'Super Admin' : 'Admin'}</b></div></section>
-      <section className="admin-info-section" aria-labelledby="admin-permissions-title"><h3 id="admin-permissions-title">Assigned capabilities</h3>{capability('Admin console access', true)}{capability('OSAS aggregate reports', permissions.can_view_aggregates)}{capability('OSAS support case management', permissions.can_manage_support_requests)}</section>
+      <section className="admin-info-section" aria-labelledby="admin-permissions-title"><h3 id="admin-permissions-title">OSAS access</h3><p>Reporting and support access are included for all active admins.</p>{capability('Admin console access', true)}{capability('OSAS aggregate reports', permissions.can_view_aggregates)}{capability('OSAS support case management', permissions.can_manage_support_requests)}</section>
       <button className="admin-info-signout" onClick={onSignOut}>Sign out</button>
     </aside>
   </div>
@@ -82,7 +82,26 @@ export function AuthScreen({ onSignIn, onSignUp, dark, onToggleTheme }: {
       setLoading(false)
     }
   }
-  return <div className={dark ? 'auth-shell dark' : 'auth-shell'}><button className="auth-theme" onClick={onToggleTheme}>{dark ? '☀ Light mode' : '☾ Dark mode'}</button><div className="auth-art"><Brand /><div className="orb orb-one" /><div className="orb orb-two" /><div className="art-copy"><span className="eyebrow">THE BETTER WAY TO GROW</span><h1>Make every day<br /><em>a little better.</em></h1><p>One mindful action at a time, powered by a community that cares.</p><div className="mini-stat"><b>✦ Student data</b><span>securely managed through Supabase</span></div></div></div><div className="auth-card"><div className="auth-heading"><span className="eyebrow">ADMIN ACCESS</span><h2>{mode === 'login' ? 'Sign in to BeeBetter' : 'Create an admin account'}</h2><p>{mode === 'login' ? 'Use an approved Supabase admin account.' : 'Confirm your account, then request admin access for super-admin review.'}</p></div><form onSubmit={submit}>{mode === 'signup' && <label>Full name<input name="name" required placeholder="Admin name" /></label>}<label>Email address<input name="email" required type="email" placeholder="admin@beebetter.app" /></label><label>Password<input name="password" required type="password" placeholder="••••••••" /></label>{error && <p className="form-error" role="alert">{error}</p>}{success && <p className="form-success" role="status">{success}</p>}<button className="auth-submit" type="submit" disabled={loading}>{loading ? 'Connecting...' : mode === 'login' ? 'Sign in →' : 'Create account →'}</button></form><p className="switch-auth">{mode === 'login' ? 'Need an admin account?' : 'Already have an account?'} <button onClick={() => { setError(''); setSuccess(''); setMode(mode === 'login' ? 'signup' : 'login') }}>{mode === 'login' ? 'Create one' : 'Sign in'}</button></p></div></div>
+  return <div className={dark ? 'auth-shell dark' : 'auth-shell'}>
+    <button className="auth-theme" onClick={onToggleTheme}>{dark ? '☀ Light mode' : '☾ Dark mode'}</button>
+    <div className="auth-art">
+      <Brand />
+      <div className="art-copy"><h1>A little better.<br /><em>Every day.</em></h1><p>Support student growth, one mindful action at a time.</p></div>
+      <p className="auth-art-footer">BeeBetter Admin Console</p>
+    </div>
+    <div className="auth-form-area"><div className="auth-card">
+      <div className="auth-heading"><span className="eyebrow">Admin access</span><h2>{mode === 'login' ? 'Sign in to BeeBetter' : 'Create an admin account'}</h2><p>{mode === 'login' ? 'Use your approved admin account to continue.' : 'Confirm your account, then request admin access for super-admin review.'}</p></div>
+      <form onSubmit={submit}>
+        {mode === 'signup' && <label>Full name<input name="name" required autoComplete="name" placeholder="Admin name" /></label>}
+        <label>Email address<input name="email" required type="email" autoComplete="email" placeholder="admin@beebetter.app" /></label>
+        <label>Password<input name="password" required type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="••••••••" /></label>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        {success && <p className="form-success" role="status">{success}</p>}
+        <button className="auth-submit" type="submit" disabled={loading}>{loading ? 'Connecting...' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
+      </form>
+      <p className="switch-auth">{mode === 'login' ? 'Need an admin account?' : 'Already have an account?'} <button onClick={() => { setError(''); setSuccess(''); setMode(mode === 'login' ? 'signup' : 'login') }}>{mode === 'login' ? 'Create one' : 'Sign in'}</button></p>
+    </div></div>
+  </div>
 }
 
 export function AccessScreen({ identity, request, requestLoading, operationError, accessError, adminManaged, onRequest, onRefresh, onSignOut, dark }: {
@@ -99,5 +118,5 @@ export function AccessScreen({ identity, request, requestLoading, operationError
 }) {
   const pending = request?.status === 'pending'
   const declined = request?.status === 'declined'
-  return <div className={dark ? 'auth-shell dark' : 'auth-shell'}><div className="auth-card"><span className="eyebrow">ADMIN ACCESS</span><h2>{accessError ? 'Could not verify access' : 'Admin access unavailable'}</h2><p>{accessError || (adminManaged ? 'Admin access for this account is inactive. Contact a super-admin to restore access.' : pending ? 'Your admin access request is waiting for super-admin review.' : declined ? 'Your previous request was declined. You may submit a new request.' : 'Signed in as ' + (identity.email || identity.name) + '. Request ordinary admin access for review.')}</p>{operationError && <p className="form-error" role="alert">{operationError}</p>}{accessError || adminManaged ? <button className="secondary-button" onClick={onRefresh}>{accessError ? 'Retry access check' : 'Check access status'}</button> : pending ? <button className="secondary-button" onClick={onRefresh}>Check access status</button> : <button className="auth-submit" onClick={onRequest} disabled={requestLoading}>{requestLoading ? 'Submitting...' : declined ? 'Request again' : 'Request admin access'}</button>}<button className="mode-button" onClick={onSignOut}>Sign out</button></div></div>
+  return <div className={dark ? 'auth-shell access-shell dark' : 'auth-shell access-shell'}><div className="auth-card"><Brand /><span className="eyebrow">Admin access</span><h2>{accessError ? 'Could not verify access' : 'Admin access unavailable'}</h2><p>{accessError || (adminManaged ? 'Admin access for this account is inactive. Contact a super-admin to restore access.' : pending ? 'Your admin access request is waiting for super-admin review.' : declined ? 'Your previous request was declined. You may submit a new request.' : 'Signed in as ' + (identity.email || identity.name) + '. Request ordinary admin access for review.')}</p>{operationError && <p className="form-error" role="alert">{operationError}</p>}{accessError || adminManaged ? <button className="secondary-button" onClick={onRefresh}>{accessError ? 'Retry access check' : 'Check access status'}</button> : pending ? <button className="secondary-button" onClick={onRefresh}>Check access status</button> : <button className="auth-submit" onClick={onRequest} disabled={requestLoading}>{requestLoading ? 'Submitting...' : declined ? 'Request again' : 'Request admin access'}</button>}<button className="mode-button" onClick={onSignOut}>Sign out</button></div></div>
 }

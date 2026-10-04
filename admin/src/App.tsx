@@ -54,7 +54,7 @@ function App() {
   }
   if (access.phase === 'signed_out') return <AuthScreen onSignIn={access.signIn} onSignUp={access.signUp} dark={dark} onToggleTheme={toggleTheme} />
   if (access.phase === 'error' || access.phase === 'denied') return <AccessScreen identity={access.identity} request={access.accessRequest} adminManaged={access.adminManaged} requestLoading={access.requestLoading} operationError={access.operationError} accessError={access.phase === 'error' ? access.error : undefined} onRequest={() => { void access.requestAccess() }} onRefresh={() => { void access.refresh() }} onSignOut={() => { void access.signOut() }} dark={dark} />
-  if (access.phase !== 'active' || !access.role) return <div className="auth-shell"><div className="auth-card"><p>Checking admin access...</p></div></div>
+  if (access.phase !== 'active' || !access.role) return <div className={dark ? 'auth-shell access-shell dark' : 'auth-shell access-shell'}><div className="auth-card"><Brand /><p role="status">Checking admin access...</p></div></div>
   return <AdminWorkspace key={access.identity.id} access={access} adminRole={access.role} dark={dark} toggleTheme={toggleTheme} />
 }
 
@@ -64,7 +64,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
   const questRequest = useRef(0)
   const adminRequest = useRef(0)
   const accessListRequest = useRef(0)
-  const { identity: adminIdentity, osasPermissions, operationError, signOut, refresh: refreshAccess } = access
+  const { identity: adminIdentity, osasPermissions, operationError, signOut } = access
   const [section, setSection] = useState<Section>('Overview')
   const [users, setUsers] = useState<User[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
@@ -310,29 +310,29 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
       <aside className="sidebar">
         <Brand />
         <span className="admin-label">ADMIN CONSOLE</span>
-        <nav aria-label="Admin navigation">{sections.map((item) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item} aria-current={section === item ? 'page' : undefined}><SectionIcon section={item} />{item}</button>)}</nav>
-        <div className="sidebar-tools"><button onClick={toggleTheme}><AppIcon name={dark ? 'sun' : 'moon'} /><span>{dark ? 'Light mode' : 'Dark mode'}</span></button><button onClick={() => void signOut()}><AppIcon name="signOut" /><span>Sign out</span></button></div>
+        <nav aria-label="Admin navigation">{sections.map((item) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item} aria-label={item} title={item} aria-current={section === item ? 'page' : undefined}><SectionIcon section={item} /><span className="nav-label">{item}</span></button>)}</nav>
+        <div className="sidebar-tools"><button onClick={toggleTheme} aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'} title={dark ? 'Light mode' : 'Dark mode'}><AppIcon name={dark ? 'sun' : 'moon'} /><span>{dark ? 'Light mode' : 'Dark mode'}</span></button><button onClick={() => void signOut()} aria-label="Sign out" title="Sign out"><AppIcon name="signOut" /><span>Sign out</span></button></div>
         <ProfileBadge identity={adminIdentity} onClick={() => setProfileOpen((value) => !value)} />
       </aside>
       <main className="main">
         <header className="topbar">
-          <div className="header-greeting"><div className="mobile-brand"><Brand /></div><strong>Welcome, {adminIdentity.name}</strong><small>OSAS Admin Console</small></div>
+          <div className="header-greeting"><div className="mobile-brand"><Brand /></div><strong>{section}</strong></div>
           <div className="top-actions">
             <button className="icon-button" aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'} onClick={toggleTheme}><AppIcon name={dark ? 'sun' : 'moon'} /></button>
             <button className="avatar-button" aria-label={`Open admin information for ${adminIdentity.name}`} onClick={() => setProfileOpen((value) => !value)}><span className="avatar">{initials(adminIdentity.name)}</span></button>
           </div>
         </header>
-        <nav className="mobile-nav">{sections.map((item) => <button className={section === item ? 'mobile-nav-item active' : 'mobile-nav-item'} onClick={() => navigate(item)} key={item}>{item}</button>)}</nav>
         <div className="content">
           {operationError && <p className="form-error" role="alert">{operationError}</p>}
-          <div className="heading-row"><div><span className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()}</span><h1>{section === 'Overview' ? 'Student Development Programs & Services' : section}</h1><p>{section === 'Overview' ? 'OSAS insights into student participation, well-being, self-management, and support services.' : `Manage and monitor ${section.toLowerCase()} in the admin console.`}</p></div>{section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}</div>
+          <div className="section-context"><span>Admin Console</span><span aria-hidden="true">/</span><span>{section}</span></div>
+          <div className="heading-row"><div><h1>{section === 'Overview' ? 'Student development overview' : section}</h1><p>{section === 'Overview' ? 'OSAS insights into student participation, well-being, self-management, and support services.' : `Manage and monitor ${section.toLowerCase()} in the admin console.`}</p></div>{section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}</div>
           <Suspense fallback={<section className="panel dashboard-state">Loading section...</section>}>
           {section === 'Overview' && <OsasDashboard permissions={osasPermissions} onOpenSupport={() => navigate('Support Requests')} />}
           {section === 'Students' && <DataTable kind="users" users={users} total={userTotal} query={userQuery} loading={usersLoading} error={usersError} onRefresh={loadUsers} onQueryChange={setUserQuery} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
           {section === 'Quests' && <DataTable kind="quests" quests={quests} total={questTotal} query={questQuery} loading={questsLoading} error={questsError} onRefresh={loadQuests} onQueryChange={setQuestQuery} onQuestClick={setSelectedQuest} />}
           {section === 'Semesters & Sections' && <SemesterManagement />}
           {section === 'Support Requests' && osasPermissions.can_manage_support_requests && <SupportRequests />}
-          {section === 'Admins' && adminRole === 'super_admin' && <><AdminAccessRequests requests={adminAccessRequests} loading={accessRequestsLoading} error={accessRequestsError} onRefresh={loadAccessRequests} onReview={(request, approve) => { void decideAccessRequest(request, approve) }} /><AdminTable admins={admins} currentAdminId={adminIdentity.id} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} /><OsasPermissions admins={admins} onChanged={refreshAccess} /></>}
+          {section === 'Admins' && adminRole === 'super_admin' && <><AdminAccessRequests requests={adminAccessRequests} loading={accessRequestsLoading} error={accessRequestsError} onRefresh={loadAccessRequests} onReview={(request, approve) => { void decideAccessRequest(request, approve) }} /><AdminTable admins={admins} currentAdminId={adminIdentity.id} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} /><OsasPermissions admins={admins} /></>}
           </Suspense>
         </div>
       </main>

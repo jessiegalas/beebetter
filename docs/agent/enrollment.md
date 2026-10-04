@@ -4,7 +4,7 @@ Read for signup/profile validation, admin student edits, semesters/sections, or 
 
 ## Identity and shared validation
 
-- Auth owns credentials, login identity, and email. `handle_new_user` creates profile/student rows from normalized signup metadata; validation still applies to signup.
+- Auth owns credentials, login identity, and email. Student `handle_new_user` signup creates profile/student rows from the submitted enrollment metadata; student validation still applies. Admin signup uses the explicit `signup_intent=admin_access_request` marker to create a profile without a student row, then must submit a separately authenticated access-request RPC. That client-supplied marker never grants admin access; guarded database RPCs own request decisions and role grants.
 - `profiles` is the progression/display projection; `students` is current identity/enrollment; history stores event-time facts. Overlapping fields do not justify merging them.
 - `mobile/src/app/auth.tsx` sends metadata. `mobile/src/components/student-information-fields.tsx`, `mobile/src/hooks/use-enrollment-options.ts`, and `mobile/src/lib/student-validation.ts` own choices/validation. Profile edits use the provider's student update and display-name update.
 - `admin/src/AdminModals.tsx` imports the same pure validation with source-relative `../../mobile/src/lib/student-validation`. Keep both clients compatible; do not add React Native or environment-dependent imports.
@@ -17,8 +17,11 @@ Read for signup/profile validation, admin student edits, semesters/sections, or 
 `admin/src/SemesterManagement.tsx` and `admin/src/semester-data.ts` own the management UI/RPC mapping. Migrations 025-026 own semester-scoped options and enrollment consistency.
 
 - Only one semester is active. Activate a draft after explicitly adding sections; activation archives the previous active semester without copying sections or automatically moving students.
+- Selecting a semester in the admin panel only selects its management view. Section drafts reset on selection; activation is disabled until its active sections have loaded. Saves are serialized before calling the RPC, and semester selection is disabled while a save is pending. Refresh reloads both the semester list and its sections.
 - Archived semesters are read-only. Associated sections cannot be renamed. Removal archives used sections and deletes only unused sections.
+- New admin section forms fix campus to `Cavite State University Bacoor City Campus`; there is no campus selector. Academic years are generated choices, and new section labels use a positive whole-number input. Existing campus/year/section labels remain unchanged; associated or nonnumeric legacy section labels are read-only. Pending migration 032 enforces consecutive `YYYY-YYYY` years and Bacoor/numeric labels on creation or changed labels, while allowing unchanged legacy status edits. It does not rewrite stored enrollment or registration contracts.
 - Migration 025 seeds `Legacy / Current`, not an invented academic year. Registration exposes only active sections of the active semester, including to anon through `registration_enrollment_options`.
+- Mobile enrollment choices reload when the auth form switches mode, when the app returns to the foreground, and on explicit retry. Pending requests are aborted when replaced or unmounted; validation uses the refreshed active-semester catalogue without rewriting legacy enrollment values.
 - Enrollment changes close the current validity period and append another. Preserve past labels, associations, and validity periods; they are historical facts, not redundant mutable profile data.
 - Migration 026 enforces paired option/semester values and exact option-to-semester composite FKs on current and historical rows. Course/year/campus/section text preserves legacy spelling and event-time labels.
 - Check existing-data backfill anomalies and constraint failures before changing these relationships. Former `DATABASE_NORMALIZATION_AUDIT.md` contained 026 preflight queries but is absent; inspect migration 026 and historical Git content before using those queries.

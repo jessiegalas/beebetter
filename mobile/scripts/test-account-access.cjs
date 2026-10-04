@@ -86,7 +86,7 @@ function provider(initialUser = user('a')) {
   const h = hooks();
   let authCallback;
   const appCallbacks = new Set();
-  const state = { session: initialUser ? { user: initialUser } : null, status: 'Active', queries: [], signouts: [], cancellations: 0 };
+  const state = { session: initialUser ? { user: initialUser } : null, status: 'Active', queries: [], signouts: [], cancellations: 0, authCalls: 0, signupSession: false };
   const emit = (next, event = next ? 'SIGNED_IN' : 'SIGNED_OUT') => {
     state.session = next ? { user: next } : null;
     authCallback(event, state.session);
@@ -94,6 +94,9 @@ function provider(initialUser = user('a')) {
   const supabase = {
     auth: {
       getSession: async () => { if (state.sessionError) throw new Error('Storage unavailable'); return { data: { session: state.session }, error: null }; },
+      signInWithPassword: async () => { state.authCalls++; if (state.authError) return { error: new Error(state.authError) }; emit(user('a')); return { error: null }; },
+      signUp: async () => { state.authCalls++; if (state.authError) return { data: { session: null }, error: new Error(state.authError) }; if (state.signupSession) emit(user('a')); return { data: { session: state.signupSession ? { user: user('a') } : null }, error: null }; },
+      resend: async () => { state.resendCalls = (state.resendCalls || 0) + 1; return state.authError ? { error: new Error(state.authError) } : { error: null }; },
       onAuthStateChange: fn => { authCallback = fn; return { data: { subscription: { unsubscribe() {} } } }; },
       signOut: async options => {
         state.signouts.push(options.scope);
@@ -171,14 +174,24 @@ for (const mode of ['Inactive', 'missing', 'unknown']) test(`${mode} restored ac
   if (mode === 'Inactive') assert.equal(p.h.value.accessMessage, access.SUSPENDED_MESSAGE);
   p.close();
 });
-test('new inactive login is rejected, then reactivation allows a fresh login', async () => {
+test('context owns login, signup, and confirmation resend operations', async () => {
   const p = provider(null); await flush();
   p.state.status = 'Inactive';
-  assert(p.h.value.beginAuthentication()); p.emit(user('a')); await flush();
+  const denied = await p.h.value.signIn('a@example.test', 'password'); await flush();
+  assert.equal(denied.status, 'authenticated');
   assert.equal(p.h.value.access, 'blocked');
   p.state.status = 'Active';
-  assert(p.h.value.beginAuthentication()); p.emit(user('a')); await flush();
+  const admitted = await p.h.value.signIn('a@example.test', 'password'); await flush();
+  assert.equal(admitted.status, 'authenticated');
   assert.equal(p.h.value.access, 'active');
+  p.state.authError = 'Invalid login credentials';
+  const failed = await p.h.value.signIn('a@example.test', 'wrong');
+  assert.equal(failed.status, 'error');
+  assert.equal(failed.message, 'Invalid login credentials');
+  p.state.authError = null;
+  assert.equal((await p.h.value.signUp('a@example.test', 'password', { name: 'Student' }, 'beebetter://auth')).status, 'confirmation_required');
+  assert.equal((await p.h.value.resendConfirmation('a@example.test', 'beebetter://auth')).status, 'completed');
+  assert.equal(p.state.resendCalls, 1);
   p.close();
 });
 test('verification failure closes access and retry recovers', async () => {
@@ -218,22 +231,31 @@ test('duplicate logout shares cleanup and blocks late refresh events', async () 
   assert.equal(p.h.value.user, null);
   p.emit(user('a'), 'TOKEN_REFRESHED'); await flush();
   assert.equal(p.h.value.access, 'signed_out');
-  assert.equal(p.h.value.beginAuthentication(), false);
-  p.state.signoutWait.resolve(); await first; await flush();
+  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'error');
+  p.state.signoutWait.resolve(); assert.equal((await first).status, 'signed_out'); await flush();
   assert.deepEqual(p.state.signouts, ['global']);
   assert.equal(p.h.value.isSigningOut, false);
   p.close();
 });
 for (const failure of ['signoutError', 'signoutThrows']) test(`${failure} is contained and sign-out can be retried`, async () => {
   const p = provider(); await flush(); p.state[failure] = true;
-  await p.h.value.signOut(); await flush();
+  const result = await p.h.value.signOut(); await flush();
+  assert.equal(result.status, 'retry_required');
   assert.equal(p.h.value.access, 'blocked');
   assert.equal(p.h.value.user, null);
   assert.equal(p.h.value.isSigningOut, false);
-  assert.equal(p.h.value.beginAuthentication(), false);
+  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'error');
   p.state[failure] = false; await p.h.value.signOut(); await flush();
   assert.equal(p.h.value.access, 'signed_out');
-  assert.equal(p.h.value.beginAuthentication(), true);
+  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'authenticated');
+  p.close();
+});
+test('successful logout clears access and allows a later login', async () => {
+  const p = provider(); await flush();
+  assert.equal((await p.h.value.signOut()).status, 'signed_out'); await flush();
+  assert.equal(p.h.value.access, 'signed_out');
+  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'authenticated'); await flush();
+  assert.equal(p.h.value.access, 'active');
   p.close();
 });
 test('logout with no session is safe and notification cleanup failure is independent', async () => {
@@ -437,7 +459,7 @@ test('foreground polling detects suspension without an Auth event', async () => 
 test('callbacks retained from an earlier login cannot mutate a new session', async () => {
   const p = provider(); await flush(); const oldAdd = p.h.value.addQuest;
   await p.h.value.signOut(); await flush();
-  p.h.value.beginAuthentication(); p.emit(user('a')); await flush();
+  await p.h.value.signIn('a@example.test', 'password'); await flush();
   const count = p.state.queries.length;
   const result = await oldAdd({ title: 'Old callback', category: 'Habits', xp: 20 });
   assert.equal(result.success, false); assert.equal(p.state.queries.length, count); p.close();

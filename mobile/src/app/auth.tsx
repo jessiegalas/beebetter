@@ -9,13 +9,12 @@ import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/t
 import { StudentInformationFields } from '@/components/student-information-fields';
 import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 import { validateStudent, studentPayload, emailError, passwordError, LIMITS, type StudentFields } from '@/lib/student-validation';
-import { supabase } from '@/supabase';
 
 export default function AuthScreen() {
-  const { access, accessMessage, isSigningOut, isRefreshing, refresh, signOut, beginAuthentication } = useUserData();
+  const { access, accessMessage, isSigningOut, isRefreshing, refresh, signIn, signUp, resendConfirmation, signOut } = useUserData();
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [student, setStudent] = useState<StudentFields>({ name: '', student_number: '', course: '', year_level: '', section: '', campus: '', goal: '' });
-  const enrollment = useEnrollmentOptions();
+  const enrollment = useEnrollmentOptions(mode);
   const studentErrors = validateStudent(student, enrollment.options);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -67,7 +66,6 @@ export default function AuthScreen() {
     if (isSubmitting || isSigningOut || access === 'checking') return;
     const normalizedEmail = email.trim().toLowerCase();
     if (invalid) { setMessage('Check the highlighted fields before continuing.'); return; }
-    if (!beginAuthentication()) { setMessage('Please retry sign-out before signing in again.'); return; }
     const normalizedStudent = studentPayload(student);
 
     setIsSubmitting(true);
@@ -75,31 +73,19 @@ export default function AuthScreen() {
 
     try {
       if (mode === 'sign-up') {
-        const { data, error } = await supabase.auth.signUp({
-          email: normalizedEmail,
-          password,
-          options: {
-            data: {
-              ...normalizedStudent,
-              display_name: normalizedStudent.name,
-            },
-            emailRedirectTo: 'beebetter://auth',
-          },
-        });
-        if (error) throw error;
-
-        if (data.session) return;
-
-        setMessage('Account created. Check your email to confirm it, then sign in.', 'success');
-        setConfirmationPending(true);
-        setMode('sign-in');
+        const result = await signUp(normalizedEmail, password, {
+          ...normalizedStudent,
+          display_name: normalizedStudent.name,
+        }, 'beebetter://auth');
+        if (result.status === 'error') throw new Error(result.message);
+        if (result.status === 'confirmation_required') {
+          setMessage('Account created. Check your email to confirm it, then sign in.', 'success');
+          setConfirmationPending(true);
+          setMode('sign-in');
+        }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: normalizedEmail,
-          password,
-        });
-        if (error) throw error;
-
+        const result = await signIn(normalizedEmail, password);
+        if (result.status === 'error') throw new Error(result.message);
       }
     } catch (error) {
       setMessage(getAuthErrorMessage(error));
@@ -108,19 +94,15 @@ export default function AuthScreen() {
     }
   };
 
-  const resendConfirmation = async () => {
+  const handleResendConfirmation = async () => {
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail || resendCooldown > 0 || isResending) return;
 
     setIsResending(true);
     setFeedback(null);
     try {
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: normalizedEmail,
-        options: { emailRedirectTo: 'beebetter://auth' },
-      });
-      if (error) throw error;
+      const result = await resendConfirmation(normalizedEmail, 'beebetter://auth');
+      if (result.status === 'error') throw new Error(result.message);
       setMessage('Confirmation email sent. Check your inbox and spam folder.', 'success');
       setResendCooldown(60);
     } catch (error) {
@@ -255,7 +237,7 @@ export default function AuthScreen() {
                 <ThemedText style={styles.confirmationTitle}>Still waiting for the email?</ThemedText>
                 <ThemedText style={styles.confirmationText}>Check spam, or request one more confirmation email.</ThemedText>
               </View>
-              <TouchableOpacity onPress={resendConfirmation} disabled={isResending || resendCooldown > 0}>
+              <TouchableOpacity onPress={handleResendConfirmation} disabled={isResending || resendCooldown > 0}>
                 <ThemedText style={styles.resendText}>
                   {isResending ? 'Sending...' : resendCooldown > 0 ? `${resendCooldown}s` : 'Resend'}
                 </ThemedText>

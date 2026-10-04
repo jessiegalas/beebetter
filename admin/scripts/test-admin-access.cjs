@@ -100,7 +100,7 @@ function provider(initial = null) {
   const module = { exports: {} };
   vm.runInNewContext(code, {
     module, exports: module.exports,
-    require: name => name === 'react' ? h.react : name === './supabase' ? { supabase } : name === './osas-data' ? { getMyOsasPermissions: async () => ({ can_view_aggregates: false, can_manage_support_requests: false, is_active: false }) } : {},
+    require: name => name === 'react' ? h.react : name === './supabase' ? { supabase } : name === './osas-data' ? { getMyOsasPermissions: async () => { const active = state.roles[state.session?.user.id]?.is_active === true; return { can_view_aggregates: active, can_manage_support_requests: active, is_active: active }; } } : {},
     window: { setInterval: fn => { handlers.interval.add(fn); return fn; }, clearInterval: fn => handlers.interval.delete(fn), addEventListener: (name, fn) => handlers[name]?.add(fn), removeEventListener: (name, fn) => handlers[name]?.delete(fn) },
     document: { visibilityState: 'visible', addEventListener: (name, fn) => handlers[name]?.add(fn), removeEventListener: (name, fn) => handlers[name]?.delete(fn) },
   });
@@ -161,6 +161,7 @@ async function main() {
   switching.emit(user('new'));
   await flush();
   assert.equal(switching.h.value.phase, 'active');
+  assert.deepEqual(JSON.parse(JSON.stringify(switching.h.value.osasPermissions)), { can_view_aggregates: true, can_manage_support_requests: true, is_active: true });
   assert.equal(switching.h.value.identity.email, 'new@example.test');
   assert.equal(switching.h.value.identity.id, 'new');
   oldRole.resolve(ok([]));
@@ -188,6 +189,8 @@ async function main() {
   refreshing.state.roles.verified = { role: 'super_admin', is_active: true };
   refreshing.state.profiles.verified = { display_name: 'Verified Admin' };
   await flush();
+  assert.equal(refreshing.h.value.osasPermissions.can_view_aggregates, true);
+  assert.equal(refreshing.h.value.osasPermissions.can_manage_support_requests, true);
   const delayedRefresh = deferred();
   refreshing.state.roles.verified = { wait: delayedRefresh };
   const refresh = refreshing.h.value.refresh();
@@ -204,6 +207,8 @@ async function main() {
   await refreshing.h.value.refresh();
   await flush();
   assert.equal(refreshing.h.value.phase, 'denied', 'Revocation must remove active access');
+  assert.equal(refreshing.h.value.osasPermissions.can_view_aggregates, false);
+  assert.equal(refreshing.h.value.osasPermissions.can_manage_support_requests, false);
   assert.equal(refreshing.h.value.role, null);
 
   profileName.state.roles['profile-name'] = { error: new Error('Revalidation failed') };
