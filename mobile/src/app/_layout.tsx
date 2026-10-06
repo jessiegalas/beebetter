@@ -7,6 +7,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { UserDataProvider, useUserData } from '@/context/user-data-context';
 import { QuestPriorityProvider } from '@/context/quest-priority-context';
 import { LocationProvider } from '@/context/location-context';
+import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -23,10 +24,12 @@ function AppNavigator() {
         <Stack.Screen name="notifications" options={{ presentation: 'modal' }} />
         <Stack.Screen name="add-quest" options={{ presentation: 'modal' }} />
         <Stack.Screen name="manage-locations" />
-        <Stack.Screen name="wellness-check-in" />
-        <Stack.Screen name="self-management-reflection" />
-        <Stack.Screen name="wellness-history" />
-        <Stack.Screen name="support-requests" />
+        <Stack.Protected guard={MOBILE_WELLNESS_AND_SUPPORT_ENABLED}>
+          <Stack.Screen name="wellness-check-in" />
+          <Stack.Screen name="self-management-reflection" />
+          <Stack.Screen name="wellness-history" />
+          <Stack.Screen name="support-requests" />
+        </Stack.Protected>
       </Stack.Protected>
     </Stack>
   );

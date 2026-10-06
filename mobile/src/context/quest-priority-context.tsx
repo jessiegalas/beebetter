@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
+import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
 import { useUserData } from './user-data-context';
 import { useLocationContext } from './location-context';
 import { hasFreshPosition, prioritizeQuests, type RankedQuest } from '@/lib/quest-priority';
@@ -16,6 +17,7 @@ export function QuestPriorityProvider({ children }: { children: ReactNode }) {
   const geofenceEvents = useMemo(() => geofenceSnapshot?.user === user ? geofenceSnapshot?.events ?? {} : {}, [geofenceSnapshot, user]);
   const [wellness, setWellness] = useState<RecommendationWellnessContext | null>(null);
   useEffect(() => {
+    if (!MOBILE_WELLNESS_AND_SUPPORT_ENABLED) return;
     let alive = true;
     const load = () => {
       if (!user) { setWellness(null); return; }

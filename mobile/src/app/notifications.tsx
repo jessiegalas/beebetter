@@ -3,23 +3,25 @@ import { ActivityIndicator, Alert, Linking, Platform, RefreshControl, ScrollView
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { Button } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
+import { useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
 import { useUserData, type Quest } from '@/hooks/use-user-data';
 import { useQuestPriority } from '@/context/quest-priority-context';
 import { questNeedsOpen, retryQuestNotifications, useQuestNotificationStatus } from '@/lib/quest-notifications';
 
 const dateLabel = (value: string) => new Date(value).toLocaleString(undefined, {
-  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-});
+  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const statusCopy = {
   checking: 'Checking notification setup', ready: 'Push registered on this device',
   denied: 'Notifications are turned off', unavailable: 'Push reminders are available on Android',
-  error: 'Push setup needs attention',
-};
+  error: 'Push setup needs attention' };
 
 export default function NotificationsScreen() {
-  const { user, completionHistory, completeQuest, refresh, isLoading, isRefreshing, error } = useUserData();
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
+  const { user, completionHistory, completeQuest, refresh, isLoading, isRefreshing, workspaceErrors, retryWorkspace } = useUserData();
+  const error = workspaceErrors.quests;
   const { ranked } = useQuestPriority();
   const status = useQuestNotificationStatus();
   const busy = useRef(false);
@@ -78,7 +80,7 @@ export default function NotificationsScreen() {
           <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle}>Your quests</ThemedText><ThemedText style={styles.count}>{active.length} active</ThemedText></View>
           <ThemedText style={styles.hint}>Complete a simple quest here. Open quests that need proof or a prerequisite check.</ThemedText>
           {isLoading && <ActivityIndicator color={COLORS.honeyDark} accessibilityLabel="Loading quests" />}
-          {error && <ThemedText style={styles.error}>{error}</ThemedText>}
+          {error && <View><ThemedText style={styles.error}>{error}</ThemedText><Button intent="quiet" label="Retry quests" onPress={() => void retryWorkspace('quests')} /></View>}
           {!isLoading && !error && active.length === 0 && (
             <View style={styles.empty}><Ionicons name="checkmark-done-outline" size={32} color={COLORS.success} /><ThemedText style={styles.cardTitle}>All clear for now</ThemedText><ThemedText style={styles.detail}>Your active quests will appear here.</ThemedText></View>
           )}
@@ -94,7 +96,7 @@ export default function NotificationsScreen() {
                     <ThemedText style={styles.detail}>{quest.category} · +{quest.xp} XP</ThemedText>
                   </TouchableOpacity>
                   <TouchableOpacity accessibilityRole="button" accessibilityLabel={(needsOpen ? 'Open ' : 'Complete ') + quest.title} accessibilityState={{ disabled: !!completingId, busy: working }} disabled={!!completingId} onPress={() => void act(quest)} style={[styles.action, needsOpen && styles.openAction, !!completingId && styles.disabled]}>
-                    {working ? <ActivityIndicator color={COLORS.honeyDeep} /> : <ThemedText style={styles.buttonText}>{needsOpen ? 'Open' : 'Complete'}</ThemedText>}
+                    {working ? <ActivityIndicator color={COLORS.honeyDeep} /> : <ThemedText style={[styles.buttonText, !needsOpen && { color: '#2D241D' }]}>{needsOpen ? 'Open' : 'Complete'}</ThemedText>}
                   </TouchableOpacity>
                 </View>
                 <View style={styles.meta}>
@@ -108,6 +110,7 @@ export default function NotificationsScreen() {
               </View>
             );
           })}
+          {workspaceErrors.progress && <View><ThemedText style={styles.error}>{workspaceErrors.progress}</ThemedText><Button intent="quiet" label="Retry activity history" onPress={() => void retryWorkspace('progress')} /></View>}
           {completionHistory.length > 0 && <>
             <ThemedText style={styles.sectionTitle}>Recent activity</ThemedText>
             {completionHistory.slice(0, 5).map(item => <View key={item.id} style={styles.activity}>
@@ -120,22 +123,21 @@ export default function NotificationsScreen() {
     </View>
   );
 }
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background }, safeArea: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20, paddingVertical: 16 },
-  title: { fontSize: 24, fontWeight: '800', color: COLORS.ink }, subtitle: { fontSize: 12, color: COLORS.muted, marginTop: 4 },
-  close: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.md, backgroundColor: COLORS.card },
-  content: { paddingHorizontal: 20, paddingBottom: 40, gap: 12, width: '100%', maxWidth: 800, alignSelf: 'center' },
-  statusCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.honeySoft, borderRadius: Radii.md, padding: 14 },
-  copy: { flex: 1, minWidth: 100 }, cardTitle: { color: COLORS.ink, fontSize: 14, fontWeight: '700' }, detail: { color: COLORS.muted, fontSize: 12, lineHeight: 18, marginTop: 3 },
+  title: { fontSize: 28, fontWeight: '700', color: COLORS.ink , lineHeight: 34}, subtitle: { fontSize: 14, color: COLORS.muted, marginTop: 4 , lineHeight: 20},
+  close: { minWidth: 44, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.md, backgroundColor: COLORS.card },
+  content: { paddingHorizontal: 20, paddingBottom: 40, gap: 32, width: '100%', maxWidth: 720, alignSelf: 'center' },
+  statusCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.honeySoft, borderRadius: 24, padding: 20 },
+  copy: { flex: 1, minWidth: 100 }, cardTitle: { color: COLORS.ink, fontSize: 17, fontWeight: '700' , lineHeight: 24}, detail: { color: COLORS.muted, fontSize: 14, lineHeight: 20, marginTop: 3 },
   sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
-  sectionTitle: { fontSize: 17, fontWeight: '800', color: COLORS.ink, marginTop: 8 }, count: { color: COLORS.muted, fontSize: 12 }, hint: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
-  questCard: { backgroundColor: COLORS.card, borderRadius: Radii.lg, padding: 16, ...BeeBetterShadow }, row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: COLORS.ink, marginTop: 8 , lineHeight: 28}, count: { color: COLORS.muted, fontSize: 14 , lineHeight: 20}, hint: { color: COLORS.muted, fontSize: 14, lineHeight: 20 },
+  questCard: { backgroundColor: COLORS.card, borderRadius: 24, padding: 20 }, row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
   icon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honeySoft }, nearbyIcon: { backgroundColor: COLORS.mint },
-  action: { backgroundColor: COLORS.honey, minHeight: 44, minWidth: 80, paddingHorizontal: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  openAction: { backgroundColor: COLORS.surfaceWarm }, secondaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }, buttonText: { color: COLORS.honeyDeep, fontSize: 12, fontWeight: '800' }, disabled: { opacity: 0.5 },
-  meta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }, tag: { color: COLORS.honeyDeep, backgroundColor: COLORS.surfaceWarm, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, fontSize: 11 },
+  action: { backgroundColor: COLORS.honey, minHeight: 48, minWidth: 80, paddingHorizontal: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  openAction: { backgroundColor: COLORS.surfaceWarm }, secondaryButton: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 8 }, buttonText: { color: COLORS.honeyDeep, fontSize: 14, fontWeight: '700' , lineHeight: 20}, disabled: { opacity: 0.5 },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }, tag: { color: COLORS.honeyDeep, backgroundColor: COLORS.surfaceWarm, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, fontSize: 14 , lineHeight: 20},
   activity: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: COLORS.card, borderRadius: Radii.md },
   empty: { padding: 28, gap: 8, alignItems: 'center', backgroundColor: COLORS.card, borderRadius: Radii.lg },
-  success: { padding: 14, flexDirection: 'row', gap: 8, backgroundColor: COLORS.mint, borderRadius: Radii.md }, feedback: { flex: 1, fontSize: 13, color: COLORS.ink }, error: { color: COLORS.danger, fontSize: 13 },
-});
+  success: { padding: 14, flexDirection: 'row', gap: 8, backgroundColor: COLORS.mint, borderRadius: Radii.md }, feedback: { flex: 1, fontSize: 14, color: COLORS.ink , lineHeight: 20}, error: { color: COLORS.danger, fontSize: 14 , lineHeight: 20} });

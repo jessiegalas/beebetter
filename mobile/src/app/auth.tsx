@@ -3,12 +3,16 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TextInpu
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useUserData } from '@/hooks/use-user-data';
+import { Button, Field } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
+import { BeeMark } from '@/components/bee-visuals';
 import { StudentOnboarding } from '@/components/student-onboarding';
-import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
+import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
 import { emailError, passwordError, LIMITS } from '@/lib/student-validation';
 
 export default function AuthScreen() {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   const { access, accessMessage, isSigningOut, isRefreshing, isAuthBusy, refresh, signIn, signUp,
     resendConfirmation, requestPasswordReset, updateRecoveryPassword, signOut } = useUserData();
   const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'forgot'>('sign-in');
@@ -81,13 +85,12 @@ export default function AuthScreen() {
   return <SafeAreaView style={styles.container}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.mark}><Ionicons name="sparkles" size={28} color={COLORS.ink} accessible={false} /></View>
+        <View style={{ marginBottom: 24 }}><BeeMark size={48} /></View>
         <ThemedText style={styles.title}>{recovery ? 'Choose a new password' : mode === 'forgot' ? 'Reset your password' : mode === 'sign-up' ? 'Create your account' : 'Welcome to BeeBetter'}</ThemedText>
         <ThemedText style={styles.subtitle}>{recovery ? 'Update your password before continuing to your student account.' : mode === 'sign-up' ? 'Confirm your email first. You will enter your student information afterward.' : mode === 'forgot' ? 'Enter your account email to receive a reset link.' : 'Sign in to access your quests, streak, and skill tree.'}</ThemedText>
         {!recovery && <View style={styles.modeRow}>{(['sign-in', 'sign-up'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value, disabled: busy }} disabled={busy} style={[styles.modeButton, mode === value && styles.modeButtonActive]} onPress={() => { if (submitting.current || busy) return; setMode(value); setFeedback(null); setPassword(''); }}><ThemedText style={styles.modeText}>{value === 'sign-in' ? 'Sign in' : 'Create account'}</ThemedText></TouchableOpacity>)}</View>}
         {!recovery && <>
-          <ThemedText style={styles.label}>Email address *</ThemedText>
-          <TextInput style={styles.input} editable={!busy} value={email} onChangeText={value => setEmail(value.replace(/\s/g, ''))} onBlur={() => setEmailTouched(true)} maxLength={LIMITS.email} accessibilityLabel="Email address, required" autoComplete="email" placeholder="you@example.com" placeholderTextColor={COLORS.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+          <Field label="Email address *" style={styles.input} editable={!busy} value={email} onChangeText={value => setEmail(value.replace(/\s/g, ''))} onBlur={() => setEmailTouched(true)} maxLength={LIMITS.email} accessibilityLabel="Email address, required" autoComplete="email" placeholder="you@example.com" placeholderTextColor={COLORS.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
           {emailTouched && emailValidation && <ThemedText accessibilityRole="alert" style={styles.feedback}>{emailValidation}</ThemedText>}
         </>}
         {(recovery || mode !== 'forgot') && <>
@@ -101,9 +104,7 @@ export default function AuthScreen() {
         {accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>}
         {feedback && <ThemedText accessibilityLiveRegion="polite" style={[styles.feedback, success && styles.successFeedback]}>{feedback}</ThemedText>}
         {!recovery && mode === 'sign-in' && confirmationEmail && <View style={styles.confirmationCard}><View style={styles.confirmationCopy}><ThemedText style={styles.confirmationTitle}>Confirm {confirmationEmail}</ThemedText><ThemedText style={styles.confirmationText}>Check spam or request another email.</ThemedText></View><TouchableOpacity style={styles.modeButton} accessibilityRole="button" disabled={busy || remaining > 0} onPress={() => void resend()}><ThemedText style={styles.resendText}>{remaining > 0 ? remaining + 's' : 'Resend'}</ThemedText></TouchableOpacity></View>}
-        <TouchableOpacity style={[styles.submitButton, (busy || invalid) && styles.submitButtonDisabled]} onPress={() => void submit()} disabled={busy || invalid} accessibilityRole="button" accessibilityState={{ disabled: busy || invalid, busy }}>
-          {busy ? <ActivityIndicator color={COLORS.card} /> : <ThemedText style={styles.submitText}>{recovery ? 'Update password' : mode === 'forgot' ? 'Send reset instructions' : mode === 'sign-up' ? 'Create account' : 'Sign in'}</ThemedText>}
-        </TouchableOpacity>
+        <Button label={recovery ? 'Update password' : mode === 'forgot' ? 'Send reset instructions' : mode === 'sign-up' ? 'Create account' : 'Sign in'} loading={busy} disabled={invalid} onPress={() => void submit()} />
         {!recovery && <TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.modeButton} onPress={() => { if (submitting.current || busy) return; setMode(mode === 'forgot' ? 'sign-in' : 'forgot'); setFeedback(null); setPassword(''); }}><ThemedText style={styles.modeText}>{mode === 'forgot' ? 'Back to sign in' : 'Forgot your password?'}</ThemedText></TouchableOpacity>}
         {(recovery || access === 'blocked') && <TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.modeButton} onPress={() => void signOut()}><ThemedText style={styles.modeText}>{isSigningOut ? 'Signing out...' : 'Sign out'}</ThemedText></TouchableOpacity>}
       </ScrollView>
@@ -111,64 +112,31 @@ export default function AuthScreen() {
   </SafeAreaView>;
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  safeArea: { flex: 1 },
-  content: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 24, paddingTop: 30, paddingBottom: 40 },
-  mark: {
-    width: 60,
-    height: 60,
-    borderRadius: Radii.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.honey,
-    marginBottom: 24,
-    ...BeeBetterShadow,
-  },
-  title: { color: COLORS.ink, fontSize: 26, fontWeight: '800' },
-  subtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 19, marginTop: 8, marginBottom: 24 },
+  content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 30, paddingBottom: 40 },
+  title: { color: COLORS.ink, fontSize: 28, fontWeight: '700' , lineHeight: 34},
+  subtitle: { color: COLORS.muted, fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 24 },
   modeRow: { flexDirection: 'row', backgroundColor: COLORS.surfaceMuted, borderRadius: Radii.md, padding: 4, marginBottom: 20 },
   modeButton: { flex: 1, alignItems: 'center', borderRadius: Radii.sm, minHeight: 48, paddingVertical: 11 },
-  modeButtonActive: { backgroundColor: COLORS.card, ...BeeBetterShadow },
-  modeText: { color: COLORS.muted, fontSize: 12, fontWeight: '800' },
-  modeTextActive: { color: COLORS.ink },
-  label: { color: COLORS.ink, fontSize: 12, fontWeight: '800', marginBottom: 7 },
-  input: {
+  modeButtonActive: { backgroundColor: COLORS.card },
+  modeText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  label: { color: COLORS.ink, fontSize: 14, fontWeight: '700', marginBottom: 7 , lineHeight: 20},
+  input: { fontFamily: Fonts.sans,
     backgroundColor: COLORS.card,
     borderRadius: Radii.md,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    fontSize: 14,
+    fontSize: 16,
     color: COLORS.ink,
-    marginBottom: 16,
-    ...BeeBetterShadow,
-  },
-  inlineFields: { flexDirection: 'row', gap: 10 },
-  inlineField: { flex: 1 },
-  goalOptions: { gap: 8, marginBottom: 16 },
-  goalOption: { backgroundColor: COLORS.card, borderRadius: Radii.md, paddingHorizontal: 14, paddingVertical: 13, borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
-  goalOptionActive: { backgroundColor: COLORS.honey },
-  goalOptionText: { color: COLORS.muted, fontSize: 13 },
-  goalOptionTextActive: { color: COLORS.ink, fontWeight: '800' },
-  feedback: { color: COLORS.danger, fontSize: 12, lineHeight: 17, marginBottom: 14 },
+    marginBottom: 16, lineHeight: 24},
+  feedback: { color: COLORS.danger, fontSize: 14, lineHeight: 20, marginBottom: 14 },
   successFeedback: { color: COLORS.success },
-  passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: Radii.md, marginBottom: 16, borderWidth: 1, borderColor: '#F1E4CF', ...BeeBetterShadow },
-  passwordInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: COLORS.ink },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: Radii.md, marginBottom: 16, borderWidth: 1, borderColor: COLORS.surfaceMuted },
+  passwordInput: { fontFamily: Fonts.sans, flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 16, color: COLORS.ink , lineHeight: 24},
   passwordToggle: { paddingHorizontal: 14, paddingVertical: 12 },
-  confirmationCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.honeySoft, borderRadius: 14, padding: 12, marginBottom: 14 },
+  confirmationCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.honeySoft, borderRadius: 24, padding: 20, marginBottom: 14 },
   confirmationCopy: { flex: 1 },
-  confirmationTitle: { color: COLORS.ink, fontSize: 12, fontWeight: '800' },
-  confirmationText: { color: COLORS.muted, fontSize: 11, lineHeight: 15, marginTop: 2 },
-  resendText: { color: COLORS.honeyDark, fontSize: 11, fontWeight: '800' },
-  submitButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 48,
-    backgroundColor: COLORS.ink,
-    borderRadius: Radii.md,
-    marginTop: 8,
-    ...BeeBetterShadow,
-  },
-  submitButtonDisabled: { opacity: 0.65 },
-  submitText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-});
+  confirmationTitle: { color: COLORS.ink, fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  confirmationText: { color: COLORS.muted, fontSize: 14, lineHeight: 20, marginTop: 2 },
+  resendText: { color: COLORS.honeyDark, fontSize: 14, fontWeight: '700' , lineHeight: 20} });

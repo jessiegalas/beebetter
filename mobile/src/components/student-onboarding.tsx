@@ -1,14 +1,16 @@
 import { useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { StudentInformationFields } from '@/components/student-information-fields';
 import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 import { useUserData } from '@/hooks/use-user-data';
 import { studentPayload, validateStudent, type StudentFields, type RegistrationEnrollmentOption } from '@/lib/student-validation';
-import { BeeBetterColors as COLORS, Radii } from '@/constants/theme';
+import { useBeeStyles, type BeePalette } from '@/constants/theme';
 
 export function StudentOnboarding() {
+  const styles = useBeeStyles(makeStyles);
   const { registrationEmail, isAuthBusy, isSigningOut, completeRegistration, signOut } = useUserData();
   const enrollment = useEnrollmentOptions<RegistrationEnrollmentOption>('registration', true);
   const [student, setStudent] = useState<StudentFields>({ name: '', student_number: '', course: '', year_level: '', section: '', campus: '', goal: '' });
@@ -49,22 +51,17 @@ export function StudentOnboarding() {
         <StudentInformationFields value={student} onChange={change} options={enrollment.options} errors={errors} loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} catalogueOnly disabled={busy || enrollment.loading} />
         {selection && !selected && !enrollment.loading && <ThemedText accessibilityRole="alert" style={styles.error}>The enrollment choices changed. Select your section again to confirm the displayed period.</ThemedText>}
         {feedback && <ThemedText accessibilityRole="alert" style={styles.error}>{feedback}</ThemedText>}
-        <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: busy || invalid, busy }} disabled={busy || invalid} onPress={() => void submit()} style={[styles.primary, (busy || invalid) && { opacity: 0.6 }]}>
-          {isAuthBusy ? <ActivityIndicator color={COLORS.card} /> : <ThemedText style={styles.primaryText}>Complete registration</ThemedText>}
-        </TouchableOpacity>
+        <Button label="Complete registration" loading={busy} disabled={invalid} onPress={() => void submit()} />
         <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void signOut()} style={styles.secondary}><ThemedText style={styles.copy}>{isSigningOut ? 'Signing out...' : 'Sign out'}</ThemedText></TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { width: '100%', maxWidth: 640, alignSelf: 'center', padding: 24, gap: 16 },
-  title: { color: COLORS.ink, fontSize: 26, fontWeight: '800' },
-  copy: { color: COLORS.muted, fontSize: 14, lineHeight: 21 },
-  semester: { color: COLORS.ink, fontSize: 14, fontWeight: '700' },
-  error: { color: COLORS.danger, fontSize: 14, lineHeight: 21 },
-  primary: { minHeight: 48, backgroundColor: COLORS.ink, borderRadius: Radii.md, padding: 14, alignItems: 'center', justifyContent: 'center' },
-  primaryText: { color: COLORS.card, fontWeight: '800' },
-  secondary: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },
-});
+  content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 24, gap: 32 },
+  title: { color: COLORS.ink, fontSize: 28, fontWeight: '700' , lineHeight: 34},
+  copy: { color: COLORS.muted, fontSize: 14, lineHeight: 20 },
+  semester: { color: COLORS.ink, fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  error: { color: COLORS.danger, fontSize: 14, lineHeight: 20 },
+  secondary: { minHeight: 48, alignItems: 'center', justifyContent: 'center' } });

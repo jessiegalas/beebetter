@@ -30,6 +30,10 @@ npm run test:auth
 node scripts/test-quest-notifications.cjs
 ```
 
+## System note: provisional features
+
+Wellness/check-ins, reflections/history and student OSAS support are temporarily disabled in the mobile frontend because their inclusion in the final product is undecided. Keep `MOBILE_WELLNESS_AND_SUPPORT_ENABLED` false during unrelated work; retain implementations and records for possible future use. See [mobile UI system note](../docs/agent/mobile-ui.md#system-note-provisional-features-disabled) for scope and re-enablement requirements.
+
 ## Documentation Map
 
 Read only for the task; deeper paths are repository-relative via `../docs/agent/`.

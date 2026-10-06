@@ -1,18 +1,20 @@
-﻿import { Tabs, TabList, TabSlot, TabTrigger, TabTriggerSlotProps } from 'expo-router/ui';
+import { Tabs, TabList, TabSlot, TabTrigger, TabTriggerSlotProps } from 'expo-router/ui';
 import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { BeeBetterColors, BeeBetterShadow, Radii } from '@/constants/theme';
+import { useBeePalette, BeeBetterShadow, Radii } from '@/constants/theme';
 
 type TabButtonProps = TabTriggerSlotProps & {
   icon: keyof typeof Ionicons.glyphMap;
 };
 
 export default function AppTabs() {
+  const c = useBeePalette();
   return (
     <Tabs>
       <TabSlot style={styles.slot} />
-      <TabList style={styles.tabList}>
+      <TabList style={[styles.tabList, { backgroundColor: c.card }]}>
         <TabTrigger name="index" href="/" asChild>
           <TabButton icon="home-outline">Home</TabButton>
         </TabTrigger>
@@ -31,14 +33,18 @@ export default function AppTabs() {
 }
 
 function TabButton({ children, icon, isFocused, ...props }: TabButtonProps) {
-  const color = isFocused ? BeeBetterColors.ink : BeeBetterColors.muted;
+  const c = useBeePalette();
+  const [focused, setFocused] = useState(false);
+  const color = isFocused ? c.ink : c.muted;
 
   return (
     <Pressable
       {...props}
-      style={({ pressed }) => [styles.tabButton, pressed && styles.tabButtonPressed]}>
-      <View style={[styles.tabIcon, isFocused && styles.tabIconFocused]}>
-        <Ionicons name={icon} size={18} color={color} />
+      accessibilityRole="tab" accessibilityState={{ selected: isFocused }}
+      onFocus={event => { setFocused(true); props.onFocus?.(event); }} onBlur={event => { setFocused(false); props.onBlur?.(event); }}
+      style={({ pressed }) => [styles.tabButton, { borderWidth: 2, borderColor: focused ? c.honeyDark : 'transparent' }, pressed && styles.tabButtonPressed]}>
+      <View style={[styles.tabIcon, isFocused && { backgroundColor: c.honeySoft }]}>
+        <Ionicons name={icon} size={20} color={color} />
       </View>
       <Text style={[styles.tabLabel, { color }]}>{children}</Text>
     </Pressable>
@@ -52,18 +58,16 @@ const styles = StyleSheet.create({
     bottom: 16,
     alignSelf: 'center',
     flexDirection: 'row',
-    gap: 6,
+    gap: 4,
+    width: '92%', maxWidth: 520,
     padding: 8,
-    backgroundColor: BeeBetterColors.card,
     borderRadius: Radii.xl,
-    borderWidth: 1,
-    borderColor: '#F1E4CF',
     ...BeeBetterShadow,
   },
   tabButton: {
     alignItems: 'center',
     gap: 3,
-    minWidth: 58,
+    flex: 1, minHeight: 64, minWidth: 0,
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: Radii.lg,
@@ -76,6 +80,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: Radii.md,
   },
-  tabIconFocused: { backgroundColor: BeeBetterColors.honeySoft },
-  tabLabel: { fontSize: 10, fontWeight: '800' },
+  tabLabel: { fontSize: 14, lineHeight: 20, fontWeight: '600', textAlign: 'center' },
 });

@@ -6,13 +6,15 @@ import { useFocusEffect } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { InlineMessage, PrivacyNote, WellnessHeader } from '@/components/wellness-ui';
-import { BeeBetterColors as COLORS, BeeBetterShadow, MaxContentWidth, Radii } from '@/constants/theme';
+import { useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
 import { listMyCheckIns, listMyReflections, type SelfManagementReflection, type WellbeingCheckIn } from '@/lib/wellbeing-data';
 
 type ViewMode = 'check-ins' | 'reflections';
 
 export default function WellnessHistoryScreen() {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   const { user, quests } = useUserData();
   const [mode, setMode] = useState<ViewMode>('check-ins');
   const [checkIns, setCheckIns] = useState<WellbeingCheckIn[]>([]);
@@ -69,49 +71,57 @@ export default function WellnessHistoryScreen() {
 }
 
 function AverageStat({ label, value, tone }: { label: string; value: number; tone: string }) {
+  const styles = useBeeStyles(makeStyles);
   return <View style={styles.averageStat}><View style={[styles.averageDot, { backgroundColor: tone }]} /><ThemedText style={styles.averageValue}>{value.toFixed(1)}</ThemedText><ThemedText style={styles.averageLabel}>{label}</ThemedText></View>;
 }
 
 function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
+  const styles = useBeeStyles(makeStyles);
   return <View style={styles.scoreLine}><ThemedText style={styles.scoreLabel}>{label}</ThemedText><View style={styles.scoreTrack}><View style={[styles.scoreFill, { width: `${value * 20}%`, backgroundColor: color }]} /></View><ThemedText style={styles.scoreValue}>{value}/5</ThemedText></View>;
 }
 
 function CheckInCard({ record }: { record: WellbeingCheckIn }) {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   return <View style={styles.entryCard}><View style={styles.entryHeader}><View><ThemedText style={styles.entryTitle}>{formatDate(record.check_in_date)}</ThemedText><ThemedText style={styles.entryMeta}>Daily check-in</ThemedText></View><View style={styles.wellbeingBadge}><ThemedText style={styles.wellbeingBadgeText}>{record.overall_wellbeing}/5</ThemedText></View></View><ScoreBar label="Well-being" value={record.overall_wellbeing} color={COLORS.honey} /><ScoreBar label="Stress" value={record.stress_level} color={COLORS.lavender} /><ScoreBar label="Energy" value={record.energy_level} color={COLORS.mint} />{record.note && <View style={styles.note}><Ionicons name="lock-closed-outline" size={14} color={COLORS.muted} /><ThemedText style={styles.noteText}>{record.note}</ThemedText></View>}</View>;
 }
 
 function ReflectionCard({ reflection, questTitle }: { reflection: SelfManagementReflection; questTitle?: string }) {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   return <View style={styles.entryCard}><View style={styles.entryHeader}><View style={styles.flex}><ThemedText style={styles.entryTitle}>{formatPeriod(reflection.period_start, reflection.period_end)}</ThemedText><ThemedText style={styles.entryMeta}>{questTitle ? `Related to: ${questTitle}` : 'General reflection'}</ThemedText></View><Ionicons name="compass-outline" size={21} color={COLORS.honeyDeep} /></View><ScoreBar label="Planning" value={reflection.planning_score} color={COLORS.honey} /><ScoreBar label="Follow-through" value={reflection.follow_through_score} color={COLORS.lavender} /><ScoreBar label="Confidence" value={reflection.confidence_score} color={COLORS.mint} />{reflection.accomplishment && <ReflectionText label="Accomplishment" value={reflection.accomplishment} />}{reflection.challenge && <ReflectionText label="Challenge" value={reflection.challenge} />}{reflection.next_step && <ReflectionText label="Next step" value={reflection.next_step} />}</View>;
 }
 
 function ReflectionText({ label, value }: { label: string; value: string }) {
+  const styles = useBeeStyles(makeStyles);
   return <View style={styles.reflectionText}><ThemedText style={styles.reflectionLabel}>{label}</ThemedText><ThemedText style={styles.noteText}>{value}</ThemedText></View>;
 }
 
 function EmptyState({ icon, title, body }: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }) {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   return <View style={styles.empty}><View style={styles.emptyIcon}><Ionicons name={icon} size={28} color={COLORS.honeyDeep} /></View><ThemedText style={styles.sectionTitle}>{title}</ThemedText><ThemedText style={styles.emptyBody}>{body}</ThemedText></View>;
 }
 
 function formatDate(value: string) { return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }); }
 function formatPeriod(start: string, end: string) { return start === end ? formatDate(end) : `${formatDate(start)} – ${formatDate(end)}`; }
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background }, safeArea: { flex: 1 },
-  content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 12 },
+  content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 32 },
   tabs: { flexDirection: 'row', gap: 8, padding: 4, borderRadius: Radii.md, backgroundColor: COLORS.surfaceMuted },
-  tab: { flex: 1, minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12 }, tabSelected: { backgroundColor: COLORS.card },
-  tabText: { color: COLORS.muted, fontSize: 12, fontWeight: '800' }, tabTextSelected: { color: COLORS.ink },
-  loading: { minHeight: 240, alignItems: 'center', justifyContent: 'center', gap: 10 }, body: { color: COLORS.muted, fontSize: 11, lineHeight: 17 },
-  retryButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honey, borderRadius: Radii.md }, retryText: { color: COLORS.ink, fontSize: 12, fontWeight: '900' },
-  trendCard: { padding: 18, borderRadius: Radii.lg, backgroundColor: COLORS.surfaceWarm, gap: 15, ...BeeBetterShadow },
-  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sectionTitle: { color: COLORS.ink, fontSize: 17, lineHeight: 23, fontWeight: '900' }, count: { color: COLORS.muted, fontSize: 11, fontWeight: '700' },
+  tab: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12 }, tabSelected: { backgroundColor: COLORS.card },
+  tabText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20}, tabTextSelected: { color: COLORS.ink },
+  loading: { minHeight: 240, alignItems: 'center', justifyContent: 'center', gap: 10 }, body: { color: COLORS.muted, fontSize: 16, lineHeight: 24 },
+  retryButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honey, borderRadius: Radii.md }, retryText: { color: COLORS.ink, fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  trendCard: { padding: 20, borderRadius: 24, backgroundColor: COLORS.surfaceWarm, gap: 15 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sectionTitle: { color: COLORS.ink, fontSize: 20, lineHeight: 28, fontWeight: '700' }, count: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20},
   averageRow: { flexDirection: 'row', gap: 8 }, averageStat: { flex: 1, alignItems: 'center', padding: 11, borderRadius: Radii.md, backgroundColor: COLORS.card },
-  averageDot: { width: 7, height: 7, borderRadius: 4, marginBottom: 5 }, averageValue: { color: COLORS.ink, fontSize: 21, fontWeight: '900' }, averageLabel: { color: COLORS.muted, fontSize: 9, marginTop: 2 },
-  disclaimer: { color: COLORS.muted, fontSize: 10, lineHeight: 15 }, entryCard: { padding: 17, borderRadius: Radii.lg, backgroundColor: COLORS.card, gap: 11, borderWidth: 1, borderColor: COLORS.surfaceMuted },
-  entryHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }, flex: { flex: 1 }, entryTitle: { color: COLORS.ink, fontSize: 14, lineHeight: 20, fontWeight: '900' }, entryMeta: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: 1 },
-  wellbeingBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radii.pill, backgroundColor: COLORS.honeySoft }, wellbeingBadgeText: { color: COLORS.honeyDeep, fontSize: 11, fontWeight: '900' },
-  scoreLine: { flexDirection: 'row', alignItems: 'center', gap: 8 }, scoreLabel: { width: 85, color: COLORS.muted, fontSize: 10, fontWeight: '700' }, scoreTrack: { flex: 1, height: 7, borderRadius: Radii.pill, backgroundColor: COLORS.surfaceMuted, overflow: 'hidden' }, scoreFill: { height: '100%', borderRadius: Radii.pill }, scoreValue: { width: 25, color: COLORS.ink, fontSize: 10, fontWeight: '800', textAlign: 'right' },
-  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.surfaceMuted }, noteText: { flex: 1, color: COLORS.ink, fontSize: 11, lineHeight: 17 },
-  reflectionText: { paddingTop: 9, borderTopWidth: 1, borderTopColor: COLORS.surfaceMuted }, reflectionLabel: { color: COLORS.muted, fontSize: 9, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 3 },
-  empty: { minHeight: 260, alignItems: 'center', justifyContent: 'center', padding: 28 }, emptyIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honeySoft, marginBottom: 12 }, emptyBody: { color: COLORS.muted, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 5, maxWidth: 300 },
-});
+  averageDot: { width: 7, height: 7, borderRadius: 4, marginBottom: 5 }, averageValue: { color: COLORS.ink, fontSize: 21, fontWeight: '700' , lineHeight: 34}, averageLabel: { color: COLORS.muted, fontSize: 14, marginTop: 2 , lineHeight: 20},
+  disclaimer: { color: COLORS.muted, fontSize: 14, lineHeight: 20 }, entryCard: { padding: 20, borderRadius: 24, backgroundColor: COLORS.card, gap: 11, borderWidth: 0, borderColor: COLORS.surfaceMuted },
+  entryHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }, flex: { flex: 1 }, entryTitle: { color: COLORS.ink, fontSize: 17, lineHeight: 24, fontWeight: '700' }, entryMeta: { color: COLORS.muted, fontSize: 14, lineHeight: 20, marginTop: 1 },
+  wellbeingBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radii.pill, backgroundColor: COLORS.honeySoft }, wellbeingBadgeText: { color: COLORS.honeyDeep, fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  scoreLine: { flexDirection: 'row', alignItems: 'center', gap: 8 }, scoreLabel: { width: 85, color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20}, scoreTrack: { flex: 1, height: 7, borderRadius: Radii.pill, backgroundColor: COLORS.surfaceMuted, overflow: 'hidden' }, scoreFill: { height: '100%', borderRadius: Radii.pill }, scoreValue: { width: 25, color: COLORS.ink, fontSize: 14, fontWeight: '700', textAlign: 'right' , lineHeight: 20},
+  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.surfaceMuted }, noteText: { flex: 1, color: COLORS.ink, fontSize: 16, lineHeight: 24 },
+  reflectionText: { paddingTop: 9, borderTopWidth: 1, borderTopColor: COLORS.surfaceMuted }, reflectionLabel: { color: COLORS.muted, fontSize: 14, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 3 , lineHeight: 20},
+  empty: { minHeight: 260, alignItems: 'center', justifyContent: 'center', padding: 28 }, emptyIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honeySoft, marginBottom: 12 }, emptyBody: { color: COLORS.muted, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 5, maxWidth: 300 } });

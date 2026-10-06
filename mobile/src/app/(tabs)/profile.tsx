@@ -1,577 +1,195 @@
-import {
-  Alert,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Alert, RefreshControl, StyleSheet, View } from 'react-native';
 import { useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-
 import { XpProgress } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
-import { BeeMark } from '@/components/bee-visuals';
-import { BeeBetterColors as COLORS, BeeBetterShadow, Radii } from '@/constants/theme';
+import { Button, Disclosure, ScreenFrame, Surface } from '@/components/mobile-ui';
+import { useBeePalette } from '@/constants/theme';
 import { StudentInformationFields } from '@/components/student-information-fields';
 import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 import { validateStudent, studentPayload } from '@/lib/student-validation';
 import { useUserData, StudentProfileUpdates } from '@/hooks/use-user-data';
-
 export default function ProfileScreen() {
-  const {
-    user,
-    profile,
-    completionHistory,
-    progressSummary,
-    levelProgress,
-    isRefreshing,
-    refresh,
-    updateProfile,
-    signOut,
-    isSigningOut,
-  } = useUserData();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<StudentProfileUpdates | null>(null);
-  const [saving, setSaving] = useState(false);
-  const enrollment = useEnrollmentOptions();
-  const fieldErrors = draft ? validateStudent(draft, enrollment.options, profile ?? undefined) : {};
-
-  const displayName =
-    profile?.display_name ||
-    user?.email?.split('@')[0] ||
-    (user ? 'Bee Explorer' : 'Guest Explorer');
-  const initials = displayName
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('');
-
-  const streakDays = profile?.current_streak ?? 0;
-  const totalXp = profile?.total_xp ?? 0;
-  const questsDone = progressSummary.totalCompleted;
-
-  const startEditing = () => {
-    if (!profile) return;
-    setDraft({
-      student_number: profile.student_number,
-      name: profile.name,
-      course: profile.course,
-      year_level: profile.year_level,
-      section: profile.section,
-      campus: profile.campus,
-      goal: profile.goal,
-    });
-    setEditing(true);
-  };
-
-  const saveProfile = async () => {
-    if (!draft) return;
-    if (Object.keys(fieldErrors).length > 0) {
-      Alert.alert('Complete your profile', Object.values(fieldErrors)[0] || 'Check your student information.');
-      return;
-    }
-    setSaving(true);
-    const result = await updateProfile(studentPayload(draft, profile ?? undefined));
-    setSaving(false);
-    if (!result.success) {
-      Alert.alert('Could not save profile', result.error || 'Please try again.');
-      return;
-    }
-    setEditing(false);
-    setDraft(null);
-  };
-
-  const badges = [
-    { id: 'first_quest', title: 'First Flight', desc: 'Complete 1 quest', unlocked: questsDone >= 1, icon: 'sparkles' as const },
-    { id: 'five_quests', title: 'Busy Worker', desc: 'Complete 5 quests', unlocked: questsDone >= 5, icon: 'trophy' as const },
-    { id: 'level_2', title: 'Hive Rising', desc: 'Reach Level 2', unlocked: levelProgress.level >= 2, icon: 'star' as const },
-    { id: 'streak_3', title: 'On A Roll', desc: 'Reach a 3-day streak', unlocked: streakDays >= 3, icon: 'flame' as const },
-    { id: 'level_5', title: 'Master Pollinator', desc: 'Reach Level 5', unlocked: levelProgress.level >= 5, icon: 'ribbon' as const },
-  ];
-
-  const unlockedBadgesCount = badges.filter((b) => b.unlocked).length;
-
-  const stats = [
-    { id: 1, label: 'Quests Done', value: String(questsDone), icon: 'checkmark-circle-outline' as const },
-    { id: 2, label: 'Current Streak', value: `${streakDays} days`, icon: 'flame-outline' as const },
-    { id: 3, label: 'Badges Earned', value: `${unlockedBadgesCount} / ${badges.length}`, icon: 'ribbon-outline' as const },
-    { id: 4, label: 'Total XP', value: String(totalXp), icon: 'sparkles-outline' as const },
-  ];
-
-  const handleSignOut = () => {
-    if (isSigningOut) return;
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of BeeBetter?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: () => { void signOut(); },
-      },
-    ]);
-  };
-
-  return (
-    <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={refresh}
-              colors={[COLORS.honeyDark]}
-              tintColor={COLORS.honeyDark}
-            />
-          }>
-          <View style={styles.profileHero}>
-            <View style={styles.profileHeroTop}>
-              <BeeMark size={64} />
-              <TouchableOpacity style={styles.headerButton} onPress={handleSignOut} disabled={isSigningOut} accessibilityLabel="Sign Out">
-                <Ionicons name="log-out-outline" size={19} color={COLORS.danger} />
-              </TouchableOpacity>
-            </View>
-            <ThemedText style={styles.profileHeroEyebrow}>YOUR BEEBETTER JOURNEY</ThemedText>
-            <ThemedText style={styles.profileHeroTitle}>{displayName}</ThemedText>
-            <ThemedText style={styles.profileHeroSubtitle}>{profile?.goal || 'Make today a little brighter.'}</ThemedText>
-            <View style={styles.heroStatRow}>
-              <HeroStat value={String(questsDone)} label="quests" />
-              <HeroStat value={`${streakDays}`} label="day streak" />
-              <HeroStat value={String(totalXp)} label="total XP" />
-            </View>
-          </View>
-
-          <View style={styles.profileCard}>
-            <View style={styles.identityRow}>
-              <View style={styles.largeAvatar}><ThemedText style={styles.avatarText}>{initials || 'B'}</ThemedText></View>
-              <View style={styles.identityCopy}>
-                <ThemedText style={styles.profileName}>{displayName}</ThemedText>
-                <ThemedText style={styles.profileEmail} numberOfLines={1}>{profile?.email || user?.email}</ThemedText>
-                <View style={styles.levelPill}><Ionicons name="sparkles" size={12} color={COLORS.honeyDark} /><ThemedText style={styles.levelPillText}>Level {levelProgress.level}</ThemedText></View>
-              </View>
-              <TouchableOpacity style={styles.editCircle} onPress={editing ? () => { setEditing(false); setDraft(null); } : startEditing} accessibilityLabel={editing ? 'Cancel editing' : 'Edit profile'}>
-                <Ionicons name={editing ? 'close' : 'create-outline'} size={18} color={COLORS.ink} />
-              </TouchableOpacity>
-            </View>
-            <XpProgress progress={levelProgress} />
-          </View>
-
-          <View style={styles.badgePreview}>
-            <View style={styles.badgePreviewHeader}><ThemedText style={styles.sectionTitle}>Your reward shelf</ThemedText><Ionicons name="ribbon-outline" size={20} color={COLORS.honeyDark} /></View>
-            <View style={styles.badgePreviewRow}>
-              {badges.slice(0, 4).map((badge) => <View key={badge.id} style={[styles.badgeOrb, !badge.unlocked && styles.badgeOrbLocked]}><Ionicons name={badge.icon} size={21} color={badge.unlocked ? COLORS.honeyDark : COLORS.muted} /></View>)}
-            </View>
-          </View>
-
-          {/* Student information */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <View><ThemedText style={styles.sectionTitle}>Student information</ThemedText><ThemedText style={styles.sectionHint}>Keep this current for better quest recommendations.</ThemedText></View>
-              {editing && <TouchableOpacity onPress={saveProfile} disabled={saving || Object.keys(fieldErrors).length > 0} style={styles.saveButton}><ThemedText style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</ThemedText></TouchableOpacity>}
-            </View>
-            {editing && draft ? (
-              <StudentInformationFields value={draft} onChange={setDraft} options={enrollment.options} errors={fieldErrors} loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} original={profile ?? undefined} />
-            ) : (
-              <View style={styles.infoList}>
-                <InfoRow label="Student number" value={profile?.student_number || 'Not provided'} />
-                <InfoRow label="Course" value={profile?.course || 'Not provided'} />
-                <InfoRow label="Year / section" value={`${profile?.year_level || 'Not provided'} · ${profile?.section || 'Not provided'}`} />
-                <InfoRow label="Campus" value={profile?.campus || 'Not provided'} />
-                <InfoRow label="Current goal" value={profile?.goal || 'No goal set'} />
-              </View>
-            )}
-          </View>
-
-          {/* Stats Grid */}
-          <View style={styles.grid}>
-            {stats.map((stat) => (
-              <View key={stat.id} style={styles.gridCard}>
-                <Ionicons name={stat.icon} size={20} color={COLORS.honeyDark} />
-                <ThemedText style={styles.gridValue}>{stat.value}</ThemedText>
-                <ThemedText style={styles.gridLabel}>{stat.label}</ThemedText>
-              </View>
-            ))}
-          </View>
-
-          {/* Durable completion history remains visible even if a quest is later deleted. */}
-          <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle}>Completion history</ThemedText><ThemedText style={styles.sectionHint}>Your latest recorded wins</ThemedText></View>
-          <View style={styles.activityCard}>
-            {completionHistory.length > 0 ? (
-              completionHistory.slice(0, 10).map((record) => (
-                <View key={record.id} style={styles.activityRow}>
-                  <View style={styles.dot} />
-                  <View style={styles.activityCopy}><ThemedText style={styles.activityText} numberOfLines={1}>Completed {record.title}</ThemedText><ThemedText style={styles.activityDate}>{new Date(record.completed_at).toLocaleDateString()}</ThemedText></View>
-                  <ThemedText style={styles.activityCategory}>{record.category}</ThemedText>
-                </View>
-              ))
-            ) : (
-              <ThemedText style={styles.emptyActivityText}>
-                No completion history yet. Mark a quest complete to record your first win.
-              </ThemedText>
-            )}
-          </View>
-
-          {/* Badges */}
-          <View style={styles.badgeSectionHeader}>
-            <ThemedText style={styles.sectionTitle}>Milestone Badges</ThemedText>
-            <ThemedText style={styles.badgeSub}>{unlockedBadgesCount} of {badges.length} unlocked</ThemedText>
-          </View>
-          <View style={styles.badgeRow}>
-            {badges.map((b) => (
-              <View
-                key={b.id}
-                style={[
-                  styles.badgeSquare,
-                  b.unlocked ? styles.badgeUnlocked : styles.badgeLocked,
-                ]}>
-                <Ionicons
-                  name={b.icon}
-                  size={20}
-                  color={b.unlocked ? COLORS.honeyDark : COLORS.muted}
-                />
-                <ThemedText
-                  style={[
-                    styles.badgeText,
-                    b.unlocked ? styles.badgeTextUnlocked : styles.badgeTextLocked,
-                  ]}
-                  numberOfLines={1}>
-                  {b.title}
-                </ThemedText>
-              </View>
-            ))}
-          </View>
-
-          {/* Places / Geofencing */}
-          <View style={styles.sectionCard}>
-            <TouchableOpacity
-              style={styles.settingsRow}
-              onPress={() => router.push('/manage-locations' as any)}
-              activeOpacity={0.8}>
-              <View style={styles.settingsIcon}>
-                <Ionicons name="location-outline" size={20} color={COLORS.honeyDark} />
-              </View>
-              <View style={styles.settingsInfo}>
-                <ThemedText style={styles.settingsLabel}>My Places</ThemedText>
-                <ThemedText style={styles.settingsDesc}>Manage gym, school, home for smart quests</ThemedText>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.muted} />
-            </TouchableOpacity>
-            <View style={styles.divider} />
-            <TouchableOpacity style={styles.settingsRow} onPress={refresh} activeOpacity={0.8}>
-              <View style={[styles.settingsIcon, styles.settingsIconBlue]}><Ionicons name="sync-outline" size={20} color="#4B73C2" /></View>
-              <View style={styles.settingsInfo}><ThemedText style={styles.settingsLabel}>Refresh my data</ThemedText><ThemedText style={styles.settingsDesc}>Sync your profile, quests, and progress</ThemedText></View>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.muted} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Account Actions */}
-          <View style={styles.actionSection}>
-            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} disabled={isSigningOut} activeOpacity={0.8}>
-              <Ionicons name="log-out-outline" size={17} color={COLORS.danger} />
-              <ThemedText style={styles.signOutButtonText}>Sign Out</ThemedText>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
+    const COLORS = useBeePalette();
+    const { user, profile, completionHistory, progressSummary, levelProgress, isRefreshing, refresh, updateProfile, signOut, isSigningOut, workspaceErrors, retryWorkspace, } = useUserData();
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState<StudentProfileUpdates | null>(null);
+    const [saving, setSaving] = useState(false);
+    const enrollment = useEnrollmentOptions();
+    const fieldErrors = draft ? validateStudent(draft, enrollment.options, profile ?? undefined) : {};
+    const displayName = profile?.display_name ||
+        user?.email?.split('@')[0] ||
+        (user ? 'Bee Explorer' : 'Guest Explorer');
+    const initials = displayName
+        .split(' ')
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join('');
+    const streakDays = profile?.current_streak ?? 0;
+    const totalXp = profile?.total_xp ?? 0;
+    const questsDone = progressSummary.totalCompleted;
+    const startEditing = () => {
+        if (!profile)
+            return;
+        setDraft({
+            student_number: profile.student_number,
+            name: profile.name,
+            course: profile.course,
+            year_level: profile.year_level,
+            section: profile.section,
+            campus: profile.campus,
+            goal: profile.goal,
+        });
+        setEditing(true);
+    };
+    const saveProfile = async () => {
+        if (!draft)
+            return;
+        if (Object.keys(fieldErrors).length > 0) {
+            Alert.alert('Complete your profile', Object.values(fieldErrors)[0] || 'Check your student information.');
+            return;
+        }
+        setSaving(true);
+        const result = await updateProfile(studentPayload(draft, profile ?? undefined));
+        setSaving(false);
+        if (!result.success) {
+            Alert.alert('Could not save profile', result.error || 'Please try again.');
+            return;
+        }
+        setEditing(false);
+        setDraft(null);
+    };
+    const badges = [
+        { id: 'first_quest', title: 'First Flight', desc: 'Complete 1 quest', unlocked: questsDone >= 1, icon: 'sparkles' as const },
+        { id: 'five_quests', title: 'Busy Worker', desc: 'Complete 5 quests', unlocked: questsDone >= 5, icon: 'trophy' as const },
+        { id: 'level_2', title: 'Hive Rising', desc: 'Reach Level 2', unlocked: levelProgress.level >= 2, icon: 'star' as const },
+        { id: 'streak_3', title: 'On A Roll', desc: 'Reach a 3-day streak', unlocked: streakDays >= 3, icon: 'flame' as const },
+        { id: 'level_5', title: 'Master Pollinator', desc: 'Reach Level 5', unlocked: levelProgress.level >= 5, icon: 'ribbon' as const },
+    ];
+    const unlockedBadgesCount = badges.filter((b) => b.unlocked).length;
+    const stats = [
+        { id: 1, label: 'Quests Done', value: String(questsDone), icon: 'checkmark-circle-outline' as const },
+        { id: 2, label: 'Current Streak', value: `${streakDays} days`, icon: 'flame-outline' as const },
+        { id: 3, label: 'Badges Earned', value: `${unlockedBadgesCount} / ${badges.length}`, icon: 'ribbon-outline' as const },
+        { id: 4, label: 'Total XP', value: String(totalXp), icon: 'sparkles-outline' as const },
+    ];
+    const handleSignOut = () => {
+        if (isSigningOut)
+            return;
+        Alert.alert('Sign Out', 'Are you sure you want to sign out of BeeBetter?', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Sign Out',
+                style: 'destructive',
+                onPress: () => { void signOut(); },
+            },
+        ]);
+    };
+    return <ScreenFrame tab refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={COLORS.honeyDark}/>}>
+    <ThemedText type="title">Profile</ThemedText>
+    <Surface>
+    <View style={styles.row}>
+    <View style={[styles.avatar, { backgroundColor: COLORS.honeySoft }]}>
+    <ThemedText type="subtitle">
+    {initials || 'B'}
+    </ThemedText>
     </View>
-  );
+    <View style={styles.flex}>
+    <ThemedText type="subtitle">
+    {displayName}
+    </ThemedText>
+    <ThemedText type="small" style={{ color: COLORS.muted }}>
+    {profile?.email || user?.email}
+    </ThemedText>
+    </View>
+    </View>
+    <XpProgress progress={levelProgress}/>
+      <View style={styles.stats}>
+        {stats.map(stat => <View key={stat.id} style={styles.stat}>
+        <ThemedText type="item">
+        {stat.value}
+        </ThemedText>
+        <ThemedText type="small" style={{ color: COLORS.muted }}>
+        {stat.label === 'Quests Done' ? 'Lifetime completions' : stat.label}
+        </ThemedText>
+        </View>)}
+    </View>
+    </Surface>
+    {(['profile', 'streak', 'progress'] as const).map(scope => workspaceErrors[scope] && <View key={scope}>
+        <ThemedText style={{ color: COLORS.danger }}>
+        {workspaceErrors[scope]}
+        </ThemedText>
+        <Button intent="quiet" label={'Retry ' + scope} onPress={() => void retryWorkspace(scope)}/>
+        </View>)}
+    <Surface>
+    <Disclosure title="Student information" summary={profile?.course || 'Your enrollment and current goal'} defaultOpen={false}>
+      {editing && draft ? <>
+        <StudentInformationFields value={draft} onChange={setDraft} options={enrollment.options} errors={fieldErrors} loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} disabled={saving} original={profile ?? undefined}/>
+        <Button label="Save student information" loading={saving} disabled={Object.keys(fieldErrors).length > 0} onPress={() => void saveProfile()}/>
+        <Button label="Cancel editing" intent="quiet" disabled={saving} onPress={() => { setEditing(false); setDraft(null); }}/>
+        </> : <>
+        <InfoRow label="Student number" value={profile?.student_number || 'Not provided'}/>
+        <InfoRow label="Course" value={profile?.course || 'Not provided'}/>
+        <InfoRow label="Year / section" value={(profile?.year_level || 'Not provided') + ' · ' + (profile?.section || 'Not provided')}/>
+        <InfoRow label="Campus" value={profile?.campus || 'Not provided'}/>
+        <InfoRow label="Current goal" value={profile?.goal || 'No goal set'}/>
+        <Button label="Edit student information" intent="secondary" icon="create-outline" onPress={startEditing}/>
+        </>}
+    </Disclosure>
+    </Surface>
+    <Surface>
+    <Disclosure title="Achievements" summary="Quest milestones and badges">
+    <View style={{ gap: 20 }}>
+        {badges.map(badge => <View key={badge.id} style={styles.row}>
+        <View style={[styles.avatar, { backgroundColor: badge.unlocked ? COLORS.honeySoft : COLORS.surfaceMuted }]}>
+        <Ionicons name={badge.icon} size={20} color={badge.unlocked ? COLORS.honeyDark : COLORS.muted}/>
+        </View>
+        <View style={styles.flex}>
+        <ThemedText type="item">
+        {badge.title}
+        </ThemedText>
+        <ThemedText type="small" style={{ color: COLORS.muted }}>
+        {badge.desc} · {badge.unlocked ? 'Unlocked' : 'Not yet reached'}
+        </ThemedText>
+        </View>
+        </View>)}
+    </View>
+    </Disclosure>
+    </Surface>
+    <Surface>
+    <Disclosure title="History" summary="Your latest recorded completions">
+        {completionHistory.length ? completionHistory.slice(0, 10).map(record => <View key={record.id} style={{ gap: 4 }}>
+        <ThemedText type="item">
+        {record.title}
+        </ThemedText>
+        <ThemedText type="small" style={{ color: COLORS.muted }}>
+        {new Date(record.completed_at).toLocaleDateString()} · {record.category}
+        </ThemedText>
+        </View>) : <ThemedText style={{ color: COLORS.muted }}>No completion history yet. Complete a quest to record your first win.</ThemedText>}
+    </Disclosure>
+    </Surface>
+    <View style={{ gap: 12 }}>
+    <ThemedText type="subtitle">Account</ThemedText>
+    <Button intent="secondary" icon="location-outline" label="Saved places" onPress={() => router.push('/manage-locations')}/>
+    <Button intent="quiet" icon="sync-outline" label="Refresh my data" loading={isRefreshing} onPress={() => void refresh()}/>
+    <Button intent="destructive" icon="log-out-outline" label="Sign out" loading={isSigningOut} onPress={handleSignOut}/>
+    </View>
+  </ScreenFrame>;
 }
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return <View style={styles.infoRow}><ThemedText style={styles.fieldLabel}>{label}</ThemedText><ThemedText style={styles.infoValue}>{value}</ThemedText></View>;
+function InfoRow({ label, value }: {
+    label: string;
+    value: string;
+}) {
+    const c = useBeePalette();
+    return <View style={{ gap: 4 }}>
+    <ThemedText type="small" style={{ color: c.muted }}>
+    {label}
+    </ThemedText>
+    <ThemedText>
+    {value}
+    </ThemedText>
+    </View>;
 }
-
-function HeroStat({ value, label }: { value: string; label: string }) {
-  return <View style={styles.heroStat}><ThemedText style={styles.heroStatValue}>{value}</ThemedText><ThemedText style={styles.heroStatLabel}>{label}</ThemedText></View>;
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  safeArea: { flex: 1 },
-  profileHero: { marginHorizontal: 20, marginTop: 8, padding: 20, borderRadius: Radii.xl, backgroundColor: COLORS.honeyDeep, ...BeeBetterShadow },
-  profileHeroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  profileHeroEyebrow: { color: '#FFD978', fontSize: 9, fontWeight: '900', letterSpacing: 1, marginTop: 18 },
-  profileHeroTitle: { color: '#FFFFFF', fontSize: 29, lineHeight: 34, fontWeight: '900', marginTop: 5 },
-  profileHeroSubtitle: { color: '#F6E8D1', fontSize: 12, lineHeight: 17, marginTop: 4, maxWidth: 280 },
-  heroStatRow: { flexDirection: 'row', gap: 9, marginTop: 18 },
-  heroStat: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, borderRadius: Radii.md, backgroundColor: 'rgba(255,255,255,0.12)' },
-  heroStatValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
-  heroStatLabel: { color: '#F6E8D1', fontSize: 10, marginTop: 2 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: COLORS.ink },
-  headerEmail: { fontSize: 11, color: COLORS.muted, marginTop: 1 },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: Radii.md,
-    backgroundColor: COLORS.honey,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerButton: {
-    width: 38,
-    height: 38,
-    borderRadius: Radii.md,
-    backgroundColor: COLORS.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...BeeBetterShadow,
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingBottom: 112,
-    gap: 12,
-  },
-  profileCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: Radii.lg,
-    padding: 18,
-    gap: 8,
-    ...BeeBetterShadow,
-  },
-  badgePreview: { padding: 16, borderRadius: Radii.lg, backgroundColor: COLORS.surfaceWarm, borderWidth: 1, borderColor: '#F4DFAE' },
-  badgePreviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  badgePreviewRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  badgeOrb: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honeySoft },
-  badgeOrbLocked: { backgroundColor: COLORS.surfaceMuted, opacity: 0.65 },
-  identityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  largeAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: COLORS.honey,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { fontSize: 20, fontWeight: '900', color: COLORS.ink },
-  identityCopy: { flex: 1, gap: 3 },
-  profileEmail: { fontSize: 11, color: COLORS.muted },
-  levelPill: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  levelPillText: { fontSize: 11, fontWeight: '800', color: COLORS.honeyDark },
-  editCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: COLORS.honeySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  progressLabel: { fontSize: 11, color: COLORS.muted, fontWeight: '700' },
-  progressValue: { fontSize: 11, color: COLORS.ink, fontWeight: '800' },
-  sectionHint: { fontSize: 10, color: COLORS.muted, marginTop: 2 },
-  saveButton: { backgroundColor: COLORS.ink, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
-  saveButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
-  sectionHeading: { gap: 2, marginTop: 6 },
-  profileTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  profileName: { fontSize: 17, fontWeight: '800', color: COLORS.ink },
-  profileLevel: { fontSize: 12, color: COLORS.muted },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  editText: { color: COLORS.honeyDark, fontSize: 12, fontWeight: '800' },
-  formGrid: { gap: 10 },
-  fieldLabel: { color: COLORS.muted, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', marginBottom: 4 },
-  profileInput: { backgroundColor: COLORS.surfaceMuted, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 10, color: COLORS.ink, fontSize: 13 },
-  infoList: { gap: 12 },
-  infoRow: { gap: 3 },
-  infoValue: { color: COLORS.ink, fontSize: 13 },
-  progressTrack: {
-    height: 8,
-    backgroundColor: COLORS.surfaceMuted,
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: COLORS.honey,
-    borderRadius: 10,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  gridCard: {
-    width: '48.5%',
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 14,
-    gap: 6,
-    ...BeeBetterShadow,
-  },
-  gridValue: { fontSize: 19, fontWeight: '800', color: COLORS.ink },
-  gridLabel: { fontSize: 11, color: COLORS.muted, fontWeight: '600' },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.ink,
-    marginTop: 6,
-  },
-  activityCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 14,
-    gap: 12,
-    ...BeeBetterShadow,
-  },
-  activityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.honeyDark,
-  },
-  activityText: {
-    fontSize: 12,
-    color: COLORS.ink,
-  },
-  activityCopy: { flex: 1, minWidth: 0 },
-  activityDate: { color: COLORS.muted, fontSize: 9, marginTop: 2 },
-  activityCategory: { color: COLORS.honeyDeep, fontSize: 9, fontWeight: '800', maxWidth: 90 },
-  activityTag: {
-    backgroundColor: COLORS.honeySoft,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  activityTagText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: COLORS.ink,
-  },
-  emptyActivityText: {
-    color: COLORS.muted,
-    fontSize: 12,
-    textAlign: 'center',
-    paddingVertical: 8,
-  },
-  badgeSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  badgeSub: { fontSize: 11, color: COLORS.muted, fontWeight: '600' },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  badgeSquare: {
-    width: '30.5%',
-    borderRadius: 14,
-    backgroundColor: COLORS.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 6,
-    gap: 6,
-    ...BeeBetterShadow,
-  },
-  badgeUnlocked: {
-    borderWidth: 1.5,
-    borderColor: COLORS.honey,
-  },
-  badgeLocked: {
-    opacity: 0.45,
-  },
-  badgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  badgeTextUnlocked: {
-    color: COLORS.ink,
-  },
-  badgeTextLocked: {
-    color: COLORS.muted,
-  },
-  actionSection: {
-    marginTop: 8,
-  },
-  sectionCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 14,
-    ...BeeBetterShadow,
-  },
-  settingsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  settingsIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    backgroundColor: COLORS.honeySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsIconBlue: { backgroundColor: '#EAF1FF' },
-  divider: { height: 1, backgroundColor: COLORS.surfaceMuted, marginVertical: 12 },
-  settingsInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  settingsLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: COLORS.ink,
-  },
-  settingsDesc: {
-    fontSize: 11,
-    color: COLORS.muted,
-  },
-  signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#FDEDEC',
-    borderRadius: 14,
-    paddingVertical: 12,
-  },
-  signOutButtonText: {
-    color: COLORS.danger,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  signInButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: COLORS.ink,
-    borderRadius: 14,
-    paddingVertical: 12,
-  },
-  signInButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-});
+const styles = StyleSheet.create({ row: { flexDirection: 'row', alignItems: 'center', gap: 12 }, flex: { flex: 1, minWidth: 0 }, avatar: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, stats: { flexDirection: 'row', flexWrap: 'wrap', gap: 20, paddingTop: 8 }, stat: { flexGrow: 1, flexBasis: '40%', gap: 4 } });

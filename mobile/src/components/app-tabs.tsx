@@ -1,13 +1,10 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 
-const COLORS = {
-  bg: '#FFF9ED',
-  honey: '#F6C445',
-  black: '#2D241D',
-  gray: '#88796B',
-};
+import { useBeePalette } from '@/constants/theme';
 
 export default function AppTabs() {
+  const palette = useBeePalette();
+  const COLORS = { bg: palette.card, honey: palette.honeySoft, black: palette.ink, gray: palette.muted };
   return (
     <NativeTabs
       backgroundColor={COLORS.bg}

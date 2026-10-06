@@ -3,9 +3,10 @@ import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, S
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Button as ActionButton, ChoiceChip, Field } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { QuestTimeInput } from '@/components/quest-time-input';
-import { BeeBetterColors as C, MaxContentWidth } from '@/constants/theme';
+import { Fonts, useBeePalette, useBeeStyles, type BeePalette, MaxContentWidth } from '@/constants/theme';
 import { useUserData, type Quest } from '@/hooks/use-user-data';
 import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useLocationContext } from '@/context/location-context';
@@ -13,6 +14,8 @@ import { getQuestIdeas } from '@/lib/quest-suggestions';
 import { formatLocalDateTime, parseLocalDateTime, parsePreferredTime, validateQuestDates } from '@/lib/quest-time';
 
 export default function AddQuestScreen() {
+  const C = useBeePalette();
+  const s = useBeeStyles(makeStyles);
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { quests, isLoading, error, refresh } = useUserData();
   const quest = quests.find(item => item.id === id);
@@ -25,6 +28,8 @@ export default function AddQuestScreen() {
   return <QuestForm key={id ?? 'new'} quest={quest} />;
 }
 function QuestForm({ quest }: { quest?: Quest }) {
+  const C = useBeePalette();
+  const s = useBeeStyles(makeStyles);
   const { user, quests, addQuest, updateQuest } = useUserData();
   const { activeLocations, isLoadingLocations } = useLocationContext();
   const { categories, loading, error, refresh, createCategory } = useQuestCategories();
@@ -85,19 +90,16 @@ function QuestForm({ quest }: { quest?: Quest }) {
   };
   return <SafeAreaView style={s.screen}>
     <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={s.header}><View style={s.flex}><ThemedText style={s.heading}>{quest ? 'Edit quest' : 'New quest'}</ThemedText><ThemedText style={s.hint}>Make a small promise to yourself.</ThemedText></View><TouchableOpacity style={s.iconButton} accessibilityRole="button" accessibilityLabel="Close quest form" onPress={() => router.back()}><Ionicons name="close" size={22} color={C.ink} /></TouchableOpacity></View>
+      <View style={s.header}><View style={s.flex}><ThemedText style={s.heading}>{quest ? 'Edit quest' : 'New quest'}</ThemedText></View><TouchableOpacity style={s.iconButton} accessibilityRole="button" accessibilityLabel="Close quest form" onPress={() => router.back()}><Ionicons name="close" size={22} color={C.ink} /></TouchableOpacity></View>
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         {!quest && <View style={s.row}><Choice label="Quick start" selected={mode === 'templates'} onPress={() => setMode('templates')} /><Choice label="Custom" selected={mode === 'custom'} onPress={() => setMode('custom')} /></View>}
-        <View style={s.intro}><ThemedText style={s.label}>A little win is waiting.</ThemedText><ThemedText style={s.hint}>Pick something useful, doable, and yours.</ThemedText></View>
         {mode === 'templates' ? <>
           <ThemedText style={s.hint}>Choose an idea, then make it your own.</ThemedText>
           {getQuestIdeas().map(idea => <TouchableOpacity key={idea.id} style={s.option} accessibilityRole="button" onPress={() => { setTitle(idea.title); setDescription(idea.description ?? ''); setCategory(categories.find(c => c.name === idea.category)?.name ?? ''); setXp(idea.xp); setMode('custom'); }}><Ionicons name={idea.icon} size={20} color={C.honeyDark} /><ThemedText style={[s.label, s.flex]}>{idea.title}</ThemedText><ThemedText style={s.hint}>+{idea.xp} XP</ThemedText></TouchableOpacity>)}
         </> : <>
           <ThemedText style={s.sectionTitle}>Quest details</ThemedText>
-          <ThemedText style={s.label}>Quest name</ThemedText>
-          <TextInput accessibilityLabel="Quest name" style={s.input} placeholder="e.g. Review my notes" placeholderTextColor={C.muted} value={title} onChangeText={setTitle} maxLength={100} />
-          <ThemedText style={s.label}>Description (optional)</ThemedText>
-          <TextInput accessibilityLabel="Description, optional" style={[s.input, s.textArea]} placeholder="What would you like to accomplish?" placeholderTextColor={C.muted} value={description} onChangeText={setDescription} multiline textAlignVertical="top" />
+<Field label="Quest name" accessibilityLabel="Quest name" style={s.input} placeholder="e.g. Review my notes" placeholderTextColor={C.muted} value={title} onChangeText={setTitle} maxLength={100} />
+<Field label="Description (optional)" accessibilityLabel="Description, optional" style={[s.input, s.textArea]} placeholder="What would you like to accomplish?" placeholderTextColor={C.muted} value={description} onChangeText={setDescription} multiline textAlignVertical="top" />
           <ThemedText style={s.label}>Category</ThemedText>
           <TouchableOpacity style={s.option} accessibilityRole="button" accessibilityLabel="Choose category" onPress={() => setCategoryOpen(true)}><ThemedText style={[s.label, s.flex]}>{category || 'Choose a category'}</ThemedText><Ionicons name="chevron-down" size={18} color={C.muted} /></TouchableOpacity>
           <Button label="Create new category" onPress={() => setCategoryOpen(true)} />
@@ -157,44 +159,37 @@ function QuestForm({ quest }: { quest?: Quest }) {
   </SafeAreaView>;
 }
 function Section({ title, summary, icon, children }: { title: string; summary: string; icon: keyof typeof Ionicons.glyphMap; children: ReactNode }) {
+  const C = useBeePalette();
+  const s = useBeeStyles(makeStyles);
   const [open, setOpen] = useState(false);
   return <View style={s.section}><TouchableOpacity style={s.sectionHeader} accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)}><Ionicons name={icon} size={19} color={C.honeyDark} /><View style={s.flex}><ThemedText style={s.label}>{title}</ThemedText><ThemedText style={s.hint} numberOfLines={2}>{summary}</ThemedText></View><Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={17} color={C.muted} /></TouchableOpacity>{open && <View style={s.sectionBody}>{children}</View>}</View>;
 }
-function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return <TouchableOpacity style={[s.choice, selected && s.selected]} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress}><ThemedText style={s.label}>{label}</ThemedText>{selected && <Ionicons name="checkmark" size={16} color={C.honeyDeep} />}</TouchableOpacity>;
-}
+function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <ChoiceChip label={label} selected={selected} onPress={onPress} />; }
 function Button({ label, onPress, primary = false, disabled = false }: { label: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
-  return <TouchableOpacity style={[s.button, primary && s.primary, disabled && s.disabled]} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}><ThemedText style={s.label}>{label}</ThemedText></TouchableOpacity>;
+  return <ActionButton label={label} onPress={onPress} intent={primary ? 'primary' : 'quiet'} disabled={disabled} />;
 }
-const s = StyleSheet.create({
+const makeStyles = (C: BeePalette) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.background },
   header: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 12 },
-  heading: { fontSize: 25, lineHeight: 32, fontWeight: '800', color: C.ink },
+  heading: { fontSize: 28, lineHeight: 34, fontWeight: '700', color: C.ink },
   flex: { flex: 1, minWidth: 0 },
-  hint: { fontSize: 12, lineHeight: 18, color: C.muted },
-  label: { fontSize: 13, lineHeight: 20, fontWeight: '600', color: C.ink },
-  sectionTitle: { fontSize: 17, lineHeight: 24, fontWeight: '700', color: C.ink },
-  iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: C.honeySoft },
-  content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', padding: 20, paddingTop: 4, gap: 10 },
+  hint: { fontSize: 14, lineHeight: 20, color: C.muted },
+  label: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: C.ink },
+  sectionTitle: { fontSize: 20, lineHeight: 28, fontWeight: '700', color: C.ink },
+  iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: C.honeySoft },
+  content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 20, paddingTop: 4, gap: 32 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  intro: { backgroundColor: C.honeySoft, padding: 12, borderRadius: 12, gap: 3, marginBottom: 4 },
-  input: { minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.card, fontSize: 14, color: C.ink },
+  input: { fontFamily: Fonts.sans, minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.card, fontSize: 16, color: C.ink , lineHeight: 24},
   textArea: { minHeight: 76 },
-  option: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.card },
+  option: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.card },
   divider: { height: 1, backgroundColor: C.surfaceMuted, marginVertical: 8 },
   sections: { borderWidth: 1, borderColor: C.surfaceMuted, borderRadius: 14, overflow: 'hidden' },
   section: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: C.surfaceMuted, backgroundColor: C.card },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, minHeight: 64 },
   sectionBody: { padding: 14, paddingTop: 0, gap: 12 },
-  choice: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 10, borderRadius: 10, backgroundColor: C.background, flexShrink: 1 },
-  selected: { backgroundColor: C.honeySoft },
-  button: { minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
-  primary: { backgroundColor: C.honey, minHeight: 48 },
-  disabled: { opacity: 0.45 },
   footer: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', paddingHorizontal: 20, paddingVertical: 10, gap: 6, borderTopWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.background },
-  error: { fontSize: 12, lineHeight: 18, color: C.danger },
+  error: { fontSize: 14, lineHeight: 20, color: C.danger },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(45,36,29,0.35)' },
-  modal: { maxHeight: '85%', width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', backgroundColor: C.background, padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
-  modalContent: { gap: 10, paddingBottom: 20 },
-});
+  modal: { maxHeight: '85%', width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', backgroundColor: C.background, padding: 20, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  modalContent: { gap: 10, paddingBottom: 20 } });

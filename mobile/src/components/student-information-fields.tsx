@@ -3,12 +3,14 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, TextInput, TouchableO
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as C } from '@/constants/theme';
+import { Fonts, useBeePalette, useBeeStyles, type BeePalette } from '@/constants/theme';
 import { PROGRAMS, YEARS, LIMITS, cleanName, cleanStudentNumber, normalizeProgram, normalizeYear, type StudentFields, type EnrollmentOption, type StudentErrors } from '@/lib/student-validation';
 
 export function StudentInformationFields({ value, onChange, options, errors, loading, loadError, onRetry, original, catalogueOnly = false, disabled = false }: {
   value: StudentFields; onChange: (value: StudentFields, field?: keyof StudentFields) => void; options: EnrollmentOption[]; errors: StudentErrors; loading: boolean; loadError: string | null; onRetry: () => void; original?: StudentFields; catalogueOnly?: boolean; disabled?: boolean;
 }) {
+  const C = useBeePalette();
+  const s = useBeeStyles(makeStyles);
   const [touched, setTouched] = useState<Partial<Record<keyof StudentFields, boolean>>>({});
   const [other, setOther] = useState(() => !!value.course && !(PROGRAMS as readonly string[]).includes(normalizeProgram(value.course)));
   const update = (field: keyof StudentFields, text: string) => {
@@ -43,6 +45,8 @@ export function StudentInformationFields({ value, onChange, options, errors, loa
   </View>;
 }
 export function StudentSelect({ label, value, options, onChange, emptyText = 'No options available yet.', disabled = false }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void; emptyText?: string; disabled?: boolean }) {
+  const C = useBeePalette();
+  const s = useBeeStyles(makeStyles);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const filtered = options.filter(option => option.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
@@ -58,14 +62,13 @@ export function StudentSelect({ label, value, options, onChange, emptyText = 'No
     </SafeAreaView></KeyboardAvoidingView></Modal>
   </View>;
 }
-const s = StyleSheet.create({
-  form: { gap: 12, marginBottom: 16 }, field: { gap: 5 }, label: { fontSize: 12, lineHeight: 18, fontWeight: '800', color: C.ink },
-  hint: { fontSize: 12, lineHeight: 18, color: C.muted }, error: { fontSize: 12, lineHeight: 18, color: C.danger },
-  input: { minHeight: 48, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.card, borderWidth: 1, borderColor: C.surfaceMuted, color: C.ink, fontSize: 14 }, invalid: { borderColor: C.danger },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10 }, copy: { flex: 1, color: C.ink, fontSize: 14 },
+const makeStyles = (C: BeePalette) => StyleSheet.create({
+  form: { gap: 12, marginBottom: 16 }, field: { gap: 5 }, label: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: C.ink },
+  hint: { fontSize: 14, lineHeight: 20, color: C.muted }, error: { fontSize: 14, lineHeight: 20, color: C.danger },
+  input: { fontFamily: Fonts.sans, minHeight: 48, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.card, borderWidth: 1, borderColor: C.surfaceMuted, color: C.ink, fontSize: 16 , lineHeight: 24}, invalid: { borderColor: C.danger },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10 }, copy: { flex: 1, color: C.ink, fontSize: 14 , lineHeight: 20},
   button: { minHeight: 48, minWidth: 48, justifyContent: 'center', alignItems: 'center' },
-  optionNotice: { gap: 4, paddingHorizontal: 2 }, refreshOptions: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }, refreshOptionsText: { color: C.honeyDeep, fontSize: 13, fontWeight: '700' },
+  optionNotice: { gap: 4, paddingHorizontal: 2 }, refreshOptions: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start' }, refreshOptionsText: { color: C.honeyDeep, fontSize: 14, fontWeight: '700' , lineHeight: 20},
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(45,36,29,0.35)' },
-  sheet: { maxHeight: '85%', padding: 20, backgroundColor: C.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  list: { gap: 8, paddingVertical: 12 }, option: { minHeight: 48, padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.card }, selected: { backgroundColor: C.honeySoft },
-});
+  sheet: { maxHeight: '85%', padding: 20, backgroundColor: C.background, borderTopLeftRadius: 28, borderTopRightRadius: 28, width: '100%', maxWidth: 640, alignSelf: 'center' },
+  list: { gap: 8, paddingVertical: 12 }, option: { minHeight: 48, padding: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.card }, selected: { backgroundColor: C.honeySoft } });

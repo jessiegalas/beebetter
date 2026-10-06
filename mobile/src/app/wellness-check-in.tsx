@@ -4,9 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
+import { Button } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { InlineMessage, PrivacyNote, RatingScale, WellnessHeader, type RatingOption } from '@/components/wellness-ui';
-import { BeeBetterColors as COLORS, BeeBetterShadow, MaxContentWidth, Radii } from '@/constants/theme';
+import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
 import { listMyCheckIns, saveMyCheckIn } from '@/lib/wellbeing-data';
 
@@ -28,6 +29,8 @@ function localDateKey(date = new Date()) {
 }
 
 export default function WellnessCheckInScreen() {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   const { user } = useUserData();
   const [wellbeing, setWellbeing] = useState<number | null>(null);
   const [stress, setStress] = useState<number | null>(null);
@@ -69,8 +72,7 @@ export default function WellnessCheckInScreen() {
     try {
       await saveMyCheckIn(user.id, {
         check_in_date: localDateKey(), overall_wellbeing: wellbeing, stress_level: stress,
-        energy_level: energy, motivation_level: motivation, note: note.trim() || null,
-      });
+        energy_level: energy, motivation_level: motivation, note: note.trim() || null });
       setExisting(true);
       setFeedback({ message: existing ? 'Today’s private check-in was updated.' : 'Your private check-in was saved.', tone: 'success' });
     } catch (error) {
@@ -113,10 +115,7 @@ export default function WellnessCheckInScreen() {
                   accessibilityLabel="Optional private check-in note" />
                 <ThemedText style={styles.counter}>{note.length}/1000</ThemedText>
                 {feedback && <InlineMessage {...feedback} />}
-                <TouchableOpacity style={[styles.primaryButton, saving && styles.disabled]} onPress={() => void submit()} disabled={saving} accessibilityRole="button">
-                  {saving ? <ActivityIndicator color={COLORS.ink} /> : <Ionicons name="lock-closed-outline" size={18} color={COLORS.ink} />}
-                  <ThemedText style={styles.primaryText}>{saving ? 'Saving…' : existing ? 'Update today’s check-in' : 'Save private check-in'}</ThemedText>
-                </TouchableOpacity>
+                <Button label={existing ? 'Update today’s check-in' : 'Save private check-in'} loading={saving} onPress={() => void submit()} />
               </View>
             )}
             <TouchableOpacity style={styles.historyLink} onPress={() => router.push('/wellness-history' as any)} accessibilityRole="button">
@@ -131,22 +130,19 @@ export default function WellnessCheckInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background }, safeArea: { flex: 1 },
-  content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 14 },
-  introCard: { flexDirection: 'row', gap: 13, padding: 17, borderRadius: Radii.lg, backgroundColor: COLORS.surfaceWarm },
+  content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 32 },
+  introCard: { flexDirection: 'row', gap: 13, padding: 20, borderRadius: 24, backgroundColor: COLORS.surfaceWarm },
   introIcon: { width: 45, height: 45, borderRadius: Radii.md, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
-  copy: { flex: 1, minWidth: 0 }, title: { color: COLORS.ink, fontSize: 19, lineHeight: 25, fontWeight: '900' },
-  body: { color: COLORS.muted, fontSize: 12, lineHeight: 18, marginTop: 2 },
+  copy: { flex: 1, minWidth: 0 }, title: { color: COLORS.ink, fontSize: 28, lineHeight: 34, fontWeight: '700' },
+  body: { color: COLORS.muted, fontSize: 16, lineHeight: 24, marginTop: 2 },
   loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  formCard: { padding: 18, borderRadius: Radii.lg, backgroundColor: COLORS.card, gap: 16, ...BeeBetterShadow },
+  formCard: { padding: 20, borderRadius: 24, backgroundColor: COLORS.card, gap: 16 },
   existing: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 11, borderRadius: Radii.md, backgroundColor: COLORS.honeySoft },
-  existingText: { flex: 1, color: COLORS.ink, fontSize: 11, lineHeight: 17 }, divider: { height: 1, backgroundColor: COLORS.surfaceMuted },
-  label: { color: COLORS.ink, fontSize: 14, lineHeight: 20, fontWeight: '800' }, hint: { color: COLORS.muted, fontSize: 11, lineHeight: 16 },
-  textArea: { minHeight: 108, borderWidth: 1, borderColor: COLORS.surfaceMuted, borderRadius: Radii.md, backgroundColor: COLORS.background, color: COLORS.ink, padding: 13, fontSize: 14 },
-  counter: { color: COLORS.muted, fontSize: 10, textAlign: 'right', marginTop: -12 },
-  primaryButton: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: Radii.md, backgroundColor: COLORS.honey },
-  primaryText: { color: COLORS.ink, fontSize: 13, fontWeight: '900' }, disabled: { opacity: 0.55 },
+  existingText: { flex: 1, color: COLORS.ink, fontSize: 14, lineHeight: 20 }, divider: { height: 1, backgroundColor: COLORS.surfaceMuted },
+  label: { color: COLORS.ink, fontSize: 14, lineHeight: 20, fontWeight: '700' }, hint: { color: COLORS.muted, fontSize: 14, lineHeight: 20 },
+  textArea: { fontFamily: Fonts.sans, minHeight: 108, borderWidth: 1, borderColor: COLORS.surfaceMuted, borderRadius: Radii.md, backgroundColor: COLORS.background, color: COLORS.ink, padding: 13, fontSize: 16 , lineHeight: 24},
+  counter: { color: COLORS.muted, fontSize: 14, textAlign: 'right', marginTop: -12 , lineHeight: 20},
   historyLink: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: Radii.lg, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.surfaceMuted },
-  linkTitle: { color: COLORS.ink, fontSize: 14, lineHeight: 20, fontWeight: '800' },
-});
+  linkTitle: { color: COLORS.ink, fontSize: 17, lineHeight: 24, fontWeight: '700' } });

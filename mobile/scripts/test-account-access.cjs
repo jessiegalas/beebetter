@@ -1,79 +1,5 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const ts = require('typescript');
-
-// Execute the real TS modules with deterministic service/native mocks. This is
-// a small hook lifecycle harness, not a substitute for Android navigation tests.
-function hooks() {
-  const slots = [];
-  let cursor = 0, pending = [], component, output, queued = false, alive = true;
-  const same = (a, b) => a && b && a.length === b.length && a.every((x, i) => Object.is(x, b[i]));
-  function render() {
-    if (!alive) return;
-    cursor = 0;
-    output = component();
-    const effects = pending; pending = [];
-    effects.forEach(fn => fn());
-    return output;
-  }
-  function schedule() {
-    if (!alive || queued) return;
-    queued = true;
-    queueMicrotask(() => { queued = false; render(); });
-  }
-  const react = {
-    createContext: () => ({ Provider: 'provider' }),
-    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
-    useState(initial) {
-      const i = cursor++;
-      if (!slots[i]) slots[i] = { value: typeof initial === 'function' ? initial() : initial };
-      const set = value => {
-        const next = typeof value === 'function' ? value(slots[i].value) : value;
-        if (!Object.is(next, slots[i].value)) { slots[i].value = next; schedule(); }
-      };
-      return [slots[i].value, set];
-    },
-    useRef(initial) { const i = cursor++; return slots[i] ?? (slots[i] = { current: initial }); },
-    useMemo(fn, deps) {
-      const i = cursor++;
-      if (!slots[i] || !same(slots[i].deps, deps)) slots[i] = { deps, value: fn() };
-      return slots[i].value;
-    },
-    useCallback(fn, deps) { return react.useMemo(() => fn, deps); },
-    useEffect(fn, deps) {
-      const i = cursor++;
-      if (!slots[i] || !same(slots[i].deps, deps)) {
-        const previous = slots[i];
-        slots[i] = { deps };
-        pending.push(() => { previous?.cleanup?.(); slots[i].cleanup = fn(); });
-      }
-    },
-  };
-  react.useLayoutEffect = react.useEffect;
-  return {
-    react,
-    mount(fn) { component = fn; return render(); },
-    render,
-    get value() { return output?.type === 'provider' ? output.props.value : output; },
-    unmount() { alive = false; slots.forEach(slot => slot?.cleanup?.()); },
-  };
-}
-const silentConsole = { ...console, warn() {}, error() {} };
-function load(relative, mocks = {}, globals = {}) {
-  const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', relative), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true },
-  }).outputText;
-  const module = { exports: {} };
-  vm.runInNewContext(code, {
-    module, exports: module.exports,
-    require: name => { if (name in mocks) return mocks[name]; throw new Error(`Unexpected import ${name} in ${relative}`); },
-    React: mocks.react, URL, URLSearchParams, AbortController, console: silentConsole, setTimeout, clearTimeout,
-    setInterval: () => 0, clearInterval() {}, ...globals,
-  }, { filename: relative });
-  return module.exports;
-}
+const { hooks, load } = require('./test-harness.cjs');
 const access = load('src/lib/account-access.ts');
 const authFlow = load('src/lib/auth-flow.ts');
 const validation = load('src/lib/student-validation.ts');
@@ -404,7 +330,9 @@ test('all private routes are excluded for every non-active access state', () => 
   const stack = Object.assign(() => null, { Protected: 'Protected', Screen: 'Screen' });
   let currentAccess;
   const pass = ({ children }) => children;
+  const features = load('src/constants/features.ts');
   const layout = load('src/app/_layout.tsx', {
+    '@/constants/features': features,
     react, 'expo-router': { Stack: stack, ThemeProvider: pass },
     'expo-splash-screen': { preventAutoHideAsync: async () => {} },
     'react-native': { useColorScheme: () => 'light', Platform: { OS: 'android' } },
@@ -427,7 +355,13 @@ test('all private routes are excluded for every non-active access state', () => 
   currentAccess = 'active';
   const privateRoutes = routes(layout.default());
   assert(privateRoutes.includes('(tabs)')); assert(privateRoutes.includes('add-quest'));
-  assert(privateRoutes.includes('support-requests')); assert(!privateRoutes.includes('auth'));
+  assert(!privateRoutes.includes('auth'));
+  assert.deepEqual(privateRoutes, ['(tabs)', 'notifications', 'add-quest', 'manage-locations']);
+  // Retained screens can return after a product decision, still behind admission.
+  features.MOBILE_WELLNESS_AND_SUPPORT_ENABLED = true;
+  assert(routes(layout.default()).includes('support-requests'));
+  currentAccess = 'signed_out';
+  assert.deepEqual(routes(layout.default()), ['auth']);
 });
 
 test('logout revokes a push registration already in flight', async () => {
@@ -699,26 +633,28 @@ function screen(relative, context, options = []) {
     '@/hooks/use-user-data': { useUserData: () => context }, '@/components/themed-text': { ThemedText: 'Text' },
     '@/components/student-onboarding': { StudentOnboarding: 'Onboarding' }, '@/components/student-information-fields': { StudentInformationFields: 'Fields' },
     '@/hooks/use-enrollment-options': { useEnrollmentOptions: () => enrollment }, '@/lib/student-validation': validation,
-    '@/constants/theme': { BeeBetterColors: {}, Radii: {}, BeeBetterShadow: {} },
+    '@/constants/theme': { Fonts: { sans: 'sans-serif' }, BeeBetterColors: {}, Radii: {}, BeeBetterShadow: {}, useBeePalette: () => ({}), useBeeStyles: factory => factory({}) },
+    '@/components/mobile-ui': { Button: 'ActionButton', Field: 'Field' },
+    '@/components/bee-visuals': { BeeMark: 'BeeMark' },
   });
   h.mount(() => relative.endsWith('auth.tsx') ? mod.default() : mod.StudentOnboarding());
   const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)];
   const text = node => !node ? '' : typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : text(node.props?.children);
-  return { h, enrollment, find: predicate => nodes(h.value).find(predicate), button: label => nodes(h.value).find(x => x.type === 'TouchableOpacity' && text(x) === label) };
+  return { h, enrollment, find: predicate => nodes(h.value).find(predicate), button: label => nodes(h.value).find(x => x.type === 'ActionButton' && x.props.label === label) || nodes(h.value).find(x => x.type === 'TouchableOpacity' && text(x) === label) };
 }
 test('Auth UI captures unconfirmed recipient even when email is edited', async () => {
   let recipient; const context = { access: 'signed_out', signIn: async () => ({ status: 'error', code: 'email_not_confirmed', message: 'Confirm email' }), resendConfirmation: async email => { recipient = email; return { status: 'completed' }; } };
   const s = screen('src/app/auth.tsx', context); const input = () => s.find(x => x.props?.accessibilityLabel === 'Email address, required');
   input().props.onChangeText('first@example.test'); s.find(x => x.props?.accessibilityLabel === 'Password, required').props.onChangeText('old'); await flush();
-  await s.find(x => x.type === 'TouchableOpacity' && x.props.accessibilityState?.busy === false && x.props.onPress && !x.props.disabled).props.onPress(); await flush();
+  await s.button('Sign in').props.onPress(); await flush();
   input().props.onChangeText('second@example.test'); await flush(); await s.button('Resend').props.onPress(); await flush(); assert.equal(recipient, 'first@example.test'); s.h.unmount();
 });
 test('pending Auth UI prevents duplicate requests and mode changes', async () => {
   const wait = deferred(); let requests = 0; const s = screen('src/app/auth.tsx', { access: 'signed_out', signIn: () => { requests++; return wait.promise; } });
   s.find(x => x.props?.accessibilityLabel === 'Email address, required').props.onChangeText('first@example.test');
   s.find(x => x.props?.accessibilityLabel === 'Password, required').props.onChangeText('old'); await flush();
-  const submit = s.find(x => x.type === 'TouchableOpacity' && x.props.accessibilityState?.busy === false && !x.props.disabled);
-  submit.props.onPress(); submit.props.onPress(); await flush(); assert.equal(requests, 1); assert.equal(s.button('Create account').props.disabled, true);
+  const submit = s.button('Sign in');
+  submit.props.onPress(); submit.props.onPress(); await flush(); assert.equal(requests, 1); assert.equal(s.find(x => x.type === 'TouchableOpacity' && x.props.accessibilityState?.selected === false).props.disabled, true);
   wait.resolve({ status: 'error', code: 'network_error', message: 'Retry' }); await flush(); s.h.unmount();
 });
 test('onboarding preserves explicit semester identity and requires reselection after rollover', async () => {

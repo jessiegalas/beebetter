@@ -7,15 +7,14 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Keyboard,
-} from 'react-native';
+  Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, type MapPressEvent } from 'react-native-maps';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { Fonts, useBeePalette, useBeeStyles, type BeePalette } from '@/constants/theme';
 import { useLocationContext } from '@/context/location-context';
 import type { UserLocation } from '@/hooks/use-user-locations';
 
@@ -31,6 +30,8 @@ const DEFAULT_RADIUS = 100;
 const RADIUS_STEP = 10;
 
 export default function ManageLocationsScreen() {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   const {
     locations,
     activeLocations,
@@ -41,8 +42,7 @@ export default function ManageLocationsScreen() {
     toggleActive,
     coords,
     requestPermissions,
-    getCurrentPosition,
-  } = useLocationContext();
+    getCurrentPosition } = useLocationContext();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<LocationForm>({
@@ -50,8 +50,7 @@ export default function ManageLocationsScreen() {
     label: '',
     latitude: '',
     longitude: '',
-    radius: String(DEFAULT_RADIUS),
-  });
+    radius: String(DEFAULT_RADIUS) });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -67,8 +66,7 @@ export default function ManageLocationsScreen() {
       label: loc.label || '',
       latitude: String(loc.latitude),
       longitude: String(loc.longitude),
-      radius: String(loc.radius),
-    });
+      radius: String(loc.radius) });
     setEditingId(loc.id);
     setFeedback(null);
   };
@@ -87,8 +85,7 @@ export default function ManageLocationsScreen() {
             if (!result.success) {
               setFeedback(result.error || 'Failed to delete');
             }
-          },
-        },
+          } },
       ]
     );
   };
@@ -170,16 +167,14 @@ export default function ManageLocationsScreen() {
           label: form.label.trim() || null,
           latitude: validated.lat,
           longitude: validated.lng,
-          radius: validated.rad,
-        });
+          radius: validated.rad });
       } else {
         result = await addLocation({
           name: form.name.trim(),
           label: form.label.trim() || undefined,
           latitude: validated.lat,
           longitude: validated.lng,
-          radius: validated.rad,
-        });
+          radius: validated.rad });
       }
 
       if (result.success) {
@@ -432,7 +427,7 @@ export default function ManageLocationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   safeArea: { flex: 1 },
   header: {
@@ -441,63 +436,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 16,
-    gap: 12,
-  },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center', ...BeeBetterShadow },
+    gap: 12 },
+  backButton: { width: 48, height: 48, borderRadius: 20, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1 },
-  headerTitle: { fontSize: 19, fontWeight: '800', color: COLORS.ink },
-  headerSubtitle: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
+  headerTitle: { fontSize: 28, fontWeight: '700', color: COLORS.ink , lineHeight: 34},
+  headerSubtitle: { fontSize: 14, color: COLORS.muted, marginTop: 2 , lineHeight: 20},
   headerSpacer: { width: 40 },
-  content: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
-  formCard: { backgroundColor: COLORS.card, borderRadius: 18, padding: 18, gap: 14, ...BeeBetterShadow },
+  content: { paddingHorizontal: 20, paddingBottom: 40, gap: 32 , width: '100%', maxWidth: 720, alignSelf: 'center'},
+  formCard: { backgroundColor: COLORS.card, borderRadius: 24, padding: 20, gap: 14 },
   formCardEditing: { borderWidth: 1.5, borderColor: COLORS.honey },
-  formTitle: { fontSize: 16, fontWeight: '800', color: COLORS.ink },
-  feedback: { fontSize: 12, lineHeight: 18 },
+  formTitle: { fontSize: 17, fontWeight: '700', color: COLORS.ink , lineHeight: 24},
+  feedback: { fontSize: 14, lineHeight: 20 },
   feedbackError: { color: COLORS.danger },
   feedbackWarning: { color: COLORS.honeyDark },
-  label: { fontSize: 12, fontWeight: '800', color: COLORS.ink, marginTop: 4 },
-  input: { backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: COLORS.ink },
+  label: { fontSize: 14, fontWeight: '700', color: COLORS.ink, marginTop: 4 , lineHeight: 20},
+  input: { fontFamily: Fonts.sans, backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: COLORS.ink , lineHeight: 24},
   map: { height: 190, borderRadius: 14, overflow: 'hidden' },
   radiusControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  radiusButton: { width: 42, height: 42, borderRadius: 12, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
-  radiusInput: { flex: 1, backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, fontWeight: '800', color: COLORS.ink },
+  radiusButton: { width: 48, height: 48, borderRadius: 12, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
+  radiusInput: { fontFamily: Fonts.sans, flex: 1, backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, fontWeight: '700', color: COLORS.ink , lineHeight: 24},
   radiusHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -6 },
   radiusLegend: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   radiusLegendDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2E9B62' },
-  radiusHint: { fontSize: 11, color: COLORS.muted },
+  radiusHint: { fontSize: 14, color: COLORS.muted , lineHeight: 20},
   coordsRow: { flexDirection: 'row', gap: 10 },
   coordInputWrapper: { flex: 1 },
   currentLocationButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: COLORS.honeySoft, borderRadius: 12 },
-  currentLocationButtonText: { color: COLORS.honeyDark, fontSize: 12, fontWeight: '700' },
+  currentLocationButtonText: { color: COLORS.honeyDark, fontSize: 14, fontWeight: '700' , lineHeight: 20},
   formActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   cancelButton: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: COLORS.surfaceMuted },
-  cancelButtonText: { color: COLORS.muted, fontSize: 13, fontWeight: '800' },
-  submitButton: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: COLORS.ink, ...BeeBetterShadow },
+  cancelButtonText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  submitButton: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: COLORS.honey },
   submitButtonEditing: { flex: 1 },
   submitButtonDisabled: { opacity: 0.65 },
-  submitButtonText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  sectionTitle: { fontSize: 14, fontWeight: '800', color: COLORS.ink, marginTop: 8 },
-  locationCard: { backgroundColor: COLORS.card, borderRadius: 16, padding: 14, gap: 10, ...BeeBetterShadow },
+  submitButtonText: { color: '#2D241D', fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: COLORS.ink, marginTop: 8 , lineHeight: 28},
+  locationCard: { backgroundColor: COLORS.card, borderRadius: 24, padding: 20, gap: 10 },
   locationCardInactive: { opacity: 0.6, borderWidth: 1, borderColor: COLORS.surfaceMuted },
   cardHeader: { gap: 2 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardName: { fontSize: 14, fontWeight: '800', color: COLORS.ink },
-  inactiveBadge: { fontSize: 10, fontWeight: '700', color: COLORS.muted, backgroundColor: COLORS.surfaceMuted, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  cardLabel: { fontSize: 11, color: COLORS.muted },
+  cardName: { fontSize: 14, fontWeight: '700', color: COLORS.ink , lineHeight: 20},
+  inactiveBadge: { fontSize: 14, fontWeight: '700', color: COLORS.muted, backgroundColor: COLORS.surfaceMuted, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 , lineHeight: 20},
+  cardLabel: { fontSize: 14, color: COLORS.muted , lineHeight: 20},
   cardDetails: { gap: 4, paddingTop: 2 },
-  detailText: { fontSize: 11, color: COLORS.muted, flexDirection: 'row', alignItems: 'center' },
+  detailText: { fontSize: 14, color: COLORS.muted, flexDirection: 'row', alignItems: 'center' , lineHeight: 20},
   cardActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
   actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10 },
   actionButtonActive: { backgroundColor: COLORS.honey },
   actionButtonInactive: { backgroundColor: COLORS.surfaceMuted },
-  actionButtonText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  actionButtonText: { color: '#2D241D', fontSize: 14, fontWeight: '700' , lineHeight: 20},
   actionButtonEdit: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10, backgroundColor: COLORS.surfaceMuted, borderWidth: 1, borderColor: COLORS.honey },
-  actionButtonTextEdit: { color: COLORS.honeyDark, fontSize: 11, fontWeight: '800' },
-  actionButtonDelete: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10, backgroundColor: '#FDEDEC' },
-  actionButtonTextDelete: { color: COLORS.danger, fontSize: 11, fontWeight: '800' },
+  actionButtonTextEdit: { color: COLORS.honeyDark, fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  actionButtonDelete: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10, backgroundColor: COLORS.peach },
+  actionButtonTextDelete: { color: COLORS.danger, fontSize: 14, fontWeight: '700' , lineHeight: 20},
   loadingContainer: { alignItems: 'center', paddingVertical: 40, gap: 10 },
-  loadingText: { color: COLORS.muted, fontSize: 12 },
+  loadingText: { color: COLORS.muted, fontSize: 14 , lineHeight: 20},
   emptyState: { alignItems: 'center', paddingVertical: 40, gap: 10 },
-  emptyTitle: { fontSize: 15, fontWeight: '800', color: COLORS.ink },
-  emptySubtitle: { color: COLORS.muted, fontSize: 12, textAlign: 'center', paddingHorizontal: 20 },
-});
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: COLORS.ink , lineHeight: 24},
+  emptySubtitle: { color: COLORS.muted, fontSize: 14, textAlign: 'center', paddingHorizontal: 20 , lineHeight: 20} });
