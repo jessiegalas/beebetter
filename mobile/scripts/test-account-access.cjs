@@ -138,7 +138,10 @@ function provider(initialUser = user('a'), initialState = {}) {
       if (state.rpc) { const result = state.rpc(name); if (result !== undefined) return result; }
       return ok(name === 'student_list_recommendation_candidates' ? [quest] : name === 'student_get_current_streak' ? 0 : name === 'student_get_registration_state' ? (state.registrationState || (state.missing ? 'unavailable' : 'active')) : []);
     })(); task.abortSignal = () => task; return task; },
-    storage: { from: () => ({ remove: async () => ok(null) }) },
+    storage: { from: () => ({
+      upload: async (path, bytes, options) => { state.uploads ??= []; state.uploads.push({ path, bytes, options }); return state.upload ? state.upload() : ok(null); },
+      remove: async paths => { state.removals ??= []; state.removals.push(paths); return ok(null); },
+    }) },
   };
   const notifications = {
     startQuestNotificationLifetime: (ownerId, isCurrent) => {
@@ -151,6 +154,9 @@ function provider(initialUser = user('a'), initialState = {}) {
     react: h.react,
     'expo-linking': { createURL: (path, options) => 'beebetter://' + path + (options.queryParams ? '?flow=recovery' : ''), getInitialURL: async () => state.initialUrl || null, addEventListener: (_, fn) => { state.link = fn; return { remove() {} }; } },
     '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation,
+    '@/lib/student-workspace': load('src/lib/student-workspace.ts', {}),
+    '@/lib/quest-completion': load('src/lib/quest-completion.ts'),
+    '@/lib/quest-completion-adapter': load('src/lib/quest-completion-adapter.ts', {}, { fetch: async uri => ({ arrayBuffer: async () => state.readProof ? state.readProof(uri) : new ArrayBuffer(2) }) }),
     'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallbacks.add(fn); return { remove() { appCallbacks.delete(fn); } }; } } },
     '@/supabase': { supabase, authRecoveryStorage: { get: async () => state.recoveryMarker, set: async () => { state.recoveryMarker = true; }, clear: async () => { state.recoveryMarker = false; } } }, '@/lib/account-access': access,
     '@/lib/quest-notifications': notifications,
@@ -332,6 +338,57 @@ test('completion finishing after logout does not trigger another user load', asy
   wait.resolve(ok(null)); await complete; await flush();
   assert.equal(p.state.queries.length, count); assert.equal(p.h.value.user, null); p.close();
 });
+
+test('duplicate completion is blocked while pending and a failed quest can retry', async () => {
+  const p = provider(); await flush(); const wait = deferred();
+  p.state.rpc = name => name === 'complete_quest' ? wait.promise : undefined;
+  const first = p.h.value.completeQuest('q1');
+  assert.match((await p.h.value.completeQuest('q1')).error, /already being completed/);
+  wait.resolve({ error: { message: 'Offline' } }); assert.equal((await first).success, false);
+  p.state.rpc = undefined; assert.equal((await p.h.value.completeQuest('q1')).success, true); p.close();
+});
+test('different quests complete independently and completed targets bypass dispatch', async () => {
+  const p = provider(); await flush(); const wait = deferred();
+  p.state.query = table => table === 'quests' ? ok({ status: 'active', requires_proof: false }) : undefined;
+  let calls = 0; p.state.rpc = name => name === 'complete_quest' ? (++calls === 1 ? wait.promise : ok(null)) : undefined;
+  const first = p.h.value.completeQuest('q1'); assert.equal((await p.h.value.completeQuest('other')).success, true);
+  wait.resolve(ok(null)); assert.equal((await first).success, true);
+  p.state.query = table => table === 'quests' ? ok({ status: 'completed', requires_proof: true }) : undefined;
+  assert.equal((await p.h.value.completeQuest('done')).success, true); assert.equal(calls, 2); p.close();
+});
+test('proof success uploads once and force-refreshes authoritative workspace slices', async () => {
+  const p = provider(); await flush(); const count = p.state.rpcCalls.length;
+  assert.equal((await p.h.value.completeQuest('q1', { uri: 'file:///proof.jpg', name: 'proof.jpg', mimeType: 'image/jpeg' })).success, true);
+  assert.equal(p.state.uploads.length, 1); assert.equal(p.state.removals, undefined);
+  const calls = p.state.rpcCalls.slice(count).map(call => call.name);
+  assert.equal(calls.filter(name => name === 'complete_quest').length, 1);
+  assert(calls.includes('student_list_recommendation_candidates')); assert(calls.includes('student_list_completion_history')); p.close();
+});
+for (const phase of ['readProof', 'upload']) test('logout during proof ' + phase + ' prevents RPC dispatch', async () => {
+  const p = provider(); await flush(); const wait = deferred(); p.state[phase] = () => wait.promise;
+  const task = p.h.value.completeQuest('q1', { uri: 'file:///proof.jpg', name: 'proof.jpg', mimeType: 'image/jpeg' });
+  await flush(); await p.h.value.signOut(); wait.resolve(phase === 'readProof' ? new ArrayBuffer(2) : ok(null));
+  assert.equal((await task).error, 'Session ended.');
+  assert(!p.state.rpcCalls.some(call => call.name === 'complete_quest')); assert.equal(p.state.removals, undefined); p.close();
+});
+test('old completion cannot release the new account duplicate guard or reload it', async () => {
+  const p = provider(); await flush(); const oldWait = deferred(), nextWait = deferred(); let calls = 0;
+  p.state.rpc = name => name === 'complete_quest' ? (++calls === 1 ? oldWait.promise : nextWait.promise) : undefined;
+  const oldTask = p.h.value.completeQuest('q1'); p.emit(user('b')); await flush();
+  const nextTask = p.h.value.completeQuest('q1'); const queryCount = p.state.queries.length;
+  oldWait.resolve(ok(null)); assert.equal((await oldTask).error, 'Session ended.'); await flush();
+  assert.equal(p.state.queries.length, queryCount); assert.equal(p.h.value.user.id, 'b');
+  assert.match((await p.h.value.completeQuest('q1')).error, /already being completed/);
+  nextWait.resolve(ok(null)); assert.equal((await nextTask).success, true); p.close();
+});
+test('workspace failure after completion preserves admission and referenced proof', async () => {
+  const p = provider(); await flush();
+  p.state.query = table => table === 'profiles' ? { error: { message: 'Profile unavailable' } } : undefined;
+  assert.equal((await p.h.value.completeQuest('q1', { uri: 'file:///proof.jpg', name: 'proof.jpg', mimeType: 'image/jpeg' })).success, true);
+  await flush(); assert.equal(p.h.value.access, 'active'); assert(p.h.value.workspaceErrors.profile);
+  assert.equal(p.state.removals, undefined); p.close();
+});
+
 test('account switch discards the previous profile response', async () => {
   const p = provider(); const wait = deferred();
   p.state.query = table => table === 'profiles' ? wait.promise : undefined;
@@ -597,6 +654,18 @@ test('workspace slice errors preserve unrelated data and remain visible after to
   const p = provider(); p.state.rpc = name => name === 'student_get_current_streak' ? { data: null, error: { code: 'network_error' } } : undefined; await flush();
   assert.equal(p.h.value.access, 'active'); assert(p.h.value.workspaceErrors.streak); assert.equal(p.h.value.quests.length, 1);
   p.emit(user('a'), 'TOKEN_REFRESHED'); await flush(); assert(p.h.value.error); assert(p.h.value.workspaceErrors.streak); p.close();
+});
+test('scoped retry revalidates admission and clears only the attempted workspace error', async () => {
+  const p = provider(); p.state.rpc = name => ['student_get_current_streak', 'student_list_recommendation_candidates'].includes(name) ? { data: null, error: { code: 'network_error' } } : undefined; await flush();
+  assert(p.h.value.workspaceErrors.streak); assert(p.h.value.workspaceErrors.quests);
+  p.state.rpc = null; const before = p.state.rpcCalls.length; const profiles = p.state.queries.filter(x => x === 'profiles:select').length;
+  await p.h.value.retryWorkspace('streak'); await flush();
+  assert.equal(p.h.value.workspaceErrors.streak, undefined); assert(p.h.value.workspaceErrors.quests); assert(p.h.value.error);
+  assert.equal(p.state.queries.filter(x => x === 'profiles:select').length, profiles);
+  assert.deepEqual(p.state.rpcCalls.slice(before).map(call => call.name), ['student_get_registration_state', 'student_get_current_streak']);
+  p.state.status = 'Inactive'; const calls = p.state.rpcCalls.length;
+  await p.h.value.retryWorkspace('quests'); await flush(); assert.equal(p.h.value.access, 'blocked');
+  assert(!p.state.rpcCalls.slice(calls).some(call => call.name === 'student_list_recommendation_candidates')); p.close();
 });
 test('token refresh verifies admission without reloading workspace', async () => {
   const p = provider(); await flush(); const profiles = p.state.queries.filter(x => x === 'profiles:select').length;

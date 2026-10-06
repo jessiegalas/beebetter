@@ -5,6 +5,9 @@ import type { CompletionRecord } from '@/lib/quest-priority';
 import { User } from '@supabase/supabase-js';
 import { supabase, authRecoveryStorage } from '@/supabase';
 import { authFailure, parseAuthCallback, type AuthenticationResult, type AuthOperationResult, type AuthFailure, type RegistrationInput } from '@/lib/auth-flow';
+import { createStudentWorkspaceReader, type WorkspaceSlice, type WorkspaceErrors } from '@/lib/student-workspace';
+import { createQuestCompletion, type ProofFile } from '@/lib/quest-completion';
+import { createQuestCompletionAdapter } from '@/lib/quest-completion-adapter';
 import { passwordError } from '@/lib/student-validation';
 import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
 import {
@@ -46,11 +49,7 @@ export type Quest = QuestContextFields & {
   proof_submitted_at: string | null;
 };
 
-export type ProofFile = {
-  uri: string;
-  name: string;
-  mimeType: string;
-};
+export type { ProofFile } from '@/lib/quest-completion';
 
 export type UserProfile = {
   id: string;
@@ -77,7 +76,7 @@ export type LevelProgress = {
   xpForNextLevel: number;
   progressPercent: number;
 };
-export type WorkspaceErrors = Partial<Record<'profile' | 'streak' | 'progress' | 'quests', string>>;
+export type { WorkspaceErrors, WorkspaceSlice } from '@/lib/student-workspace';
 export type ProgressSummary = { totalCompleted: number; byCategory: Record<string, number> };
 
 export function calculateLevel(totalXp: number): LevelProgress {
@@ -117,6 +116,7 @@ interface UserDataContextType {
   levelProgress: LevelProgress;
   updateProfile: (updates: StudentProfileUpdates) => Promise<{ success: boolean; error?: string }>;
   refresh: () => Promise<void>;
+  retryWorkspace: (slice: WorkspaceSlice) => Promise<void>;
   completeQuest: (questId: string, proof?: ProofFile) => Promise<{ success: boolean; error?: string }>;
   deleteQuest: (questId: string) => Promise<{ success: boolean; error?: string }>;
   addQuest: (quest: QuestDraft) => Promise<{ success: boolean; error?: string }>;
@@ -148,8 +148,10 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const recoveryRequired = useRef(false);
   const startupReady = useRef(false);
   const lastCallback = useRef<string | null>(null);
-  const loadTask = useRef<{ id: string | null; workspace: boolean; task: Promise<void> } | null>(null);
+  const loadTask = useRef<{ id: string | null; workspace: boolean | WorkspaceSlice; task: Promise<void> } | null>(null);
   const loadController = useRef<AbortController | null>(null);
+  const [workspaceReader] = useState(() => createStudentWorkspaceReader(supabase));
+  const [questCompletion] = useState(() => createQuestCompletion(createQuestCompletionAdapter(supabase)));
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [registrationEmail, setRegistrationEmail] = useState<string | null>(null);
   const [access, setAccess] = useState<AccountAccess>('checking');
@@ -166,10 +168,15 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const [progressSummary, setProgressSummary] = useState<ProgressSummary>({ totalCompleted: 0, byCategory: {} });
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [workspaceFailure, setError] = useState<string | null>(null);
   const [workspaceErrors, setWorkspaceErrors] = useState<WorkspaceErrors>({});
+  const failedSlice = (['profile', 'streak', 'progress', 'quests'] as WorkspaceSlice[]).findLast(slice => workspaceErrors[slice]);
+  const error = failedSlice
+    ? failedSlice[0].toUpperCase() + failedSlice.slice(1) + ' could not be refreshed. Retry to load current workspace data.'
+    : workspaceFailure;
 
   const clearUserData = useCallback(() => {
+    workspaceReader.cancel();
     setUser(null);
     setProfile(null);
     setQuests([]);
@@ -182,14 +189,14 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setWorkspaceErrors({});
     completingQuests.current.clear();
-  }, []);
+  }, [workspaceReader]);
 
   const endSession = useCallback((reason?: string): Promise<SignOutResult> => {
     if (logoutTask.current) return logoutTask.current;
     fence.close();
     loadTask.current = null;
     authenticationEpoch.current += 1;
-    loadController.current?.abort();
+    loadController.current?.abort(); workspaceReader.cancel();
     requestVersion.current += 1;
     sessionUser.current = null;
     setRegistrationEmail(null);
@@ -230,12 +237,12 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }).finally(() => { logoutTask.current = null; setIsSigningOut(false); });
     logoutTask.current = task;
     return task;
-  }, [clearUserData, fence]);
+  }, [clearUserData, fence, workspaceReader]);
 
   const beginAuthentication = useCallback(() => {
     if (logoutTask.current || cleanupFailed.current || authenticationTask.current) return false;
     fence.beginAuthentication();
-    loadController.current?.abort();
+    loadController.current?.abort(); workspaceReader.cancel();
     loadTask.current = null;
     sessionUser.current = null;
     requestVersion.current += 1;
@@ -243,7 +250,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     setAccess('signed_out');
     setAccessMessage(null);
     return true;
-  }, [clearUserData, fence]);
+  }, [clearUserData, fence, workspaceReader]);
 
   const authRedirect = useCallback((recovery = false) => Linking.createURL('auth', {
     ...(Platform.OS !== 'web' ? { scheme: 'beebetter' } : {}),
@@ -330,10 +337,10 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, [clearUserData, runAuthentication]);
 
-  const loadUserData = useCallback(async (currentUser: User | null, showLoading = false, workspace = true) => {
+  const loadUserData = useCallback(async (currentUser: User | null, showLoading = false, workspace: boolean | WorkspaceSlice = true) => {
     if (!fence.accept(currentUser?.id ?? null)) return;
     const isSessionCurrent = fence.capture();
-    loadController.current?.abort();
+    loadController.current?.abort(); workspaceReader.cancel();
     const controller = new AbortController();
     loadController.current = controller;
     const version = ++requestVersion.current;
@@ -377,86 +384,21 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       admitted = true;
       if (!workspace) return;
 
-      setWorkspaceErrors({});
-      // A failed slice must not stop unrelated workspace reads.
-      const safeRead = async (read: PromiseLike<{ data: any; error: any }>) => {
-        try { return await read; } catch { return { data: null, error: { code: 'network_error' } }; }
-      };
-      const [{ data: profileData, error: profileErr }, { data: calculatedStreak, error: streakError }] = await Promise.all([
-        safeRead(supabase.from('profiles').select('*').eq('id', currentUser.id).abortSignal(controller.signal).maybeSingle()),
-        safeRead(supabase.rpc('student_get_current_streak').abortSignal(controller.signal)),
-      ]);
-      if (!isCurrent()) return;
-      if (profileErr) setWorkspaceErrors(previous => ({ ...previous, profile: 'Profile refresh failed.' }));
-      if (profileErr) setError('Profile could not be refreshed. Retry to load current workspace data.');
-      if (streakError) setWorkspaceErrors(previous => ({ ...previous, streak: 'Streak refresh failed.' }));
-      if (streakError) setError('Streak could not be refreshed. Retry to load current workspace data.');
-      if (!isCurrent()) return;
-
-      if (profileData || studentData) {
-        setProfile(previous => ({
-          id: currentUser.id,
-          display_name: profileData?.display_name ?? studentData?.name ?? null,
-          student_number: studentData?.student_number ?? `LEGACY-${currentUser.id.replaceAll('-', '').slice(0, 8).toUpperCase()}`,
-          name: studentData?.name ?? profileData?.display_name ?? currentUser.email?.split('@')[0] ?? 'Bee Explorer',
-          email: studentData?.email ?? currentUser.email ?? '',
-          course: studentData?.course ?? 'Undeclared',
-          year_level: studentData?.year_level ?? 'Not specified',
-          section: studentData?.section ?? 'Not specified',
-          campus: studentData?.campus ?? 'Not specified',
-          goal: studentData?.goal ?? '',
-          status: 'Active',
-          level: profileData?.level ?? previous?.level ?? 1,
-          total_xp: profileData?.total_xp ?? previous?.total_xp ?? 0,
-          current_streak: typeof calculatedStreak === 'number' ? calculatedStreak : profileData?.current_streak ?? previous?.current_streak ?? 0,
-          created_at: profileData?.created_at ?? studentData?.created_at ?? new Date().toISOString(),
-          updated_at: profileData?.updated_at ?? studentData?.updated_at ?? new Date().toISOString(),
-        }));
+      const result = await workspaceReader.read({ user: currentUser, student: studentData, isCurrent }, workspace === true ? 'all' : workspace);
+      if (!result || !isCurrent()) return;
+      setWorkspaceErrors(previous => {
+        const next = { ...previous };
+        result.slices.forEach(slice => { delete next[slice]; });
+        return { ...next, ...result.errors };
+      });
+      setProfile(result.updateProfile);
+      if (result.history) {
+        setCompletionHistory(result.history.rows);
+        setCompletionHistoryHasMore(result.history.hasMore);
       }
+      if (result.progressSummary) setProgressSummary(result.progressSummary);
+      if (result.quests) { setQuests(result.quests); setQuestsHasMore(false); }
 
-      // Durable history supplements existing completed quests; old databases can still be read.
-      const [{ data: historyData, error: historyError }, { data: progressData, error: progressError }] = await Promise.all([
-        safeRead(supabase.rpc('student_list_completion_history', { page_size: 100, page_offset: 0 }).abortSignal(controller.signal)),
-        safeRead(supabase.rpc('student_progress_summary').abortSignal(controller.signal)),
-      ]);
-      if (!isCurrent()) return;
-      if (historyError || progressError) setWorkspaceErrors(previous => ({ ...previous, progress: 'Progress refresh failed.' }));
-      if (historyError || progressError) setError('Progress could not be refreshed. Retry to load current workspace data.');
-      const historyRows = (historyData ?? []) as (CompletionRecord & { total_count: number })[];
-      if (!historyError) {
-        setCompletionHistory(historyRows);
-        setCompletionHistoryHasMore(Number(historyRows[0]?.total_count ?? 0) > historyRows.length);
-      }
-      if (!progressError && progressData?.[0]) {
-        const value = progressData[0];
-        setProgressSummary({ totalCompleted: Number(value.total_completed), byCategory: { Academics: Number(value.academics_completed), Habits: Number(value.habits_completed), Social: Number(value.social_completed), Health: Number(value.health_completed) } });
-        setProfile(current => current ? { ...current, total_xp: Number(value.total_xp), level: Number(value.level), current_streak: Number(value.current_streak) } : current);
-      }
-
-      // 2. Fetch Quests
-      const allCandidates: Quest[] = [];
-      const candidatePageSize = 200;
-      let candidateOffset = 0;
-      let candidateError: { code?: string; message: string } | null = null;
-      do {
-        const { data, error } = await supabase.rpc('student_list_recommendation_candidates', {
-          page_size: candidatePageSize, page_offset: candidateOffset,
-        }).abortSignal(controller.signal);
-        if (error) { candidateError = error; break; }
-        const page = (data ?? []) as Quest[];
-        allCandidates.push(...page);
-        candidateOffset += page.length;
-        if (page.length < candidatePageSize) break;
-      } while (isCurrent());
-
-      if (!isCurrent()) return;
-      if (candidateError) {
-        setWorkspaceErrors(previous => ({ ...previous, quests: 'Quest refresh failed.' }));
-        setError('Quests could not be refreshed. Retry to load current workspace data.');
-      } else {
-        setQuests(allCandidates);
-        setQuestsHasMore(false);
-      }
     } catch {
       if (isCurrent() && admitted) {
         setError('Workspace data could not be refreshed. Retry to load current data.');
@@ -472,13 +414,13 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     } finally {
       if (isCurrent()) { setIsLoading(false); setIsRefreshing(false); }
     }
-  }, [clearUserData, endSession, fence]);
+  }, [clearUserData, endSession, fence, workspaceReader]);
 
-  const fetchUserData = useCallback(function fetchWorkspace(currentUser: User | null, showLoading = false, workspace = true, force = false): Promise<void> {
+  const fetchUserData = useCallback(function fetchWorkspace(currentUser: User | null, showLoading = false, workspace: boolean | WorkspaceSlice = true, force = false): Promise<void> {
     if (!force && loadTask.current?.id === (currentUser?.id ?? null)) {
-      if (workspace && !loadTask.current.workspace) {
+      if (workspace && loadTask.current.workspace !== true && loadTask.current.workspace !== workspace) {
         const isCurrent = fence.capture();
-        return loadTask.current.task.then(() => { if (isCurrent()) return fetchWorkspace(currentUser, showLoading, true); });
+        return loadTask.current.task.then(() => { if (isCurrent()) return fetchWorkspace(currentUser, showLoading, workspace); });
       }
       return loadTask.current.task;
     }
@@ -556,7 +498,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       if (!isMounted || !fence.accept(nextUser?.id ?? null)) return;
       const changed = sessionUser.current?.id !== nextUser?.id;
       sessionUser.current = nextUser;
-      if (changed || !nextUser) { loadController.current?.abort(); loadTask.current = null; requestVersion.current += 1; }
+      if (changed || !nextUser) { loadController.current?.abort(); workspaceReader.cancel(); loadTask.current = null; requestVersion.current += 1; }
       setRegistrationEmail(nextUser?.email ?? null);
       if (changed || !nextUser) clearUserData();
       if (!nextUser) {
@@ -607,14 +549,14 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       isMounted = false;
       fence.close();
       authenticationEpoch.current += 1;
-      loadController.current?.abort();
+      loadController.current?.abort(); workspaceReader.cancel();
       requestVersion.current += 1;
       startupReady.current = false;
       linkSubscription.remove();
       timers.forEach(clearTimeout);
       subscription.unsubscribe();
     };
-  }, [clearUserData, fetchUserData, fence, handleAuthCallback]);
+  }, [clearUserData, fetchUserData, fence, handleAuthCallback, workspaceReader]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -626,7 +568,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     return () => { subscription.remove(); supabase.auth.stopAutoRefresh(); };
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refreshWorkspace = useCallback(async (scope: WorkspaceSlice | 'all') => {
     const isCurrent = fence.capture();
     if (!isCurrent()) return;
     setIsRefreshing(true);
@@ -635,7 +577,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       if (!isCurrent()) return;
       if (error) throw error;
       sessionUser.current = session?.user ?? null;
-      await fetchUserData(sessionUser.current, false, true);
+      await fetchUserData(sessionUser.current, false, scope === 'all' ? true : scope);
     } catch {
       if (isCurrent()) {
         fence.invalidate();
@@ -646,6 +588,8 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       }
     } finally { if (isCurrent()) setIsRefreshing(false); }
   }, [clearUserData, fetchUserData, fence]);
+  const refresh = useCallback(() => refreshWorkspace('all'), [refreshWorkspace]);
+  const retryWorkspace = useCallback((slice: WorkspaceSlice) => refreshWorkspace(slice), [refreshWorkspace]);
 
   const completeQuest = useCallback(async (questId: string, proof?: ProofFile): Promise<{ success: boolean; error?: string }> => {
     if (!user || !isAdmittedSession()) {
@@ -679,44 +623,22 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     if (completingQuests.current.has(questId)) return { success: false, error: 'This quest is already being completed.' };
     completingQuests.current.add(questId);
 
-    let proofPath: string | null = null;
-
     try {
-      if (proof) {
-        const extension = proof.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
-        proofPath = `${user.id}/${questId}/${Date.now()}.${extension}`;
-        const response = await fetch(proof.uri);
-        const fileBuffer = await response.arrayBuffer();
-        if (!isCurrent()) return { success: false, error: 'Session ended.' };
-        const { error: uploadError } = await supabase.storage
-          .from('quest-proofs')
-          .upload(proofPath, fileBuffer, { contentType: proof.mimeType, upsert: false });
-        if (uploadError) throw uploadError;
-      }
-
-      if (!isCurrent()) return { success: false, error: 'Session ended.' };
-      const { error: completionError } = await supabase.rpc('complete_quest', {
-        quest_id_value: questId,
-        proof_path_value: proofPath,
-        proof_mime_type_value: proof?.mimeType ?? null,
-      });
-      if (completionError) {
-        if (completionError.code === 'PGRST202') throw new Error('Quest completion needs the context-aware database update (008).');
-        throw completionError;
-      }
+      const result = await questCompletion.run({ ownerId: user.id, questId, proof, isCurrent });
+      if (result.status === 'failed') return { success: false, error: result.message };
+      if (result.status === 'cancelled') return { success: false, error: 'Session ended.' };
       // Refresh server timestamps, durable history and XP together.
       if (isCurrent()) await fetchUserData(user, false, true, true);
       return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
-      if (proofPath && isCurrent()) {
-        await supabase.storage.from('quest-proofs').remove([proofPath]).catch(() => {});
-      }
+      // Completion has already been acknowledged; refresh failures must not
+      // remove the proof now referenced by the server.
       return {
         success: false,
         error: err instanceof Error ? err.message : (err as { message?: string })?.message || 'Failed to complete quest.',
       };
     } finally { if (isCurrent()) completingQuests.current.delete(questId); }
-  }, [user, quests, fetchUserData, isAdmittedSession, fence]);
+  }, [user, quests, fetchUserData, isAdmittedSession, fence, questCompletion]);
 
   const notificationOwnerId = user?.id;
   useEffect(() => {
@@ -852,6 +774,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       levelProgress,
       updateProfile,
       refresh,
+      retryWorkspace,
       completeQuest,
       deleteQuest,
       addQuest,
@@ -886,6 +809,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       levelProgress,
       updateProfile,
       refresh,
+      retryWorkspace,
       completeQuest,
       deleteQuest,
       addQuest,

@@ -58,6 +58,8 @@
     "lint": "expo lint",
     "test:context": "node scripts/test-quest-priority.cjs",
     "test:students": "node scripts/test-student-validation.cjs",
+    "test:completion": "node scripts/test-quest-completion.cjs",
+    "test:workspace": "node scripts/test-student-workspace.cjs",
     "test:auth": "node scripts/test-account-access.cjs"
   },
   "private": true

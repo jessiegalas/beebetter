@@ -24,6 +24,7 @@ Run from this directory; select checks for affected behavior:
 npx tsc --noEmit
 npm run lint
 npm run test:context
+npm run test:workspace
 npm run test:students
 npm run test:auth
 node scripts/test-quest-notifications.cjs
