@@ -15,7 +15,10 @@ export function StudentInformationFields({ value, onChange, options, errors, loa
   const [other, setOther] = useState(() => !!value.course && !(PROGRAMS as readonly string[]).includes(normalizeProgram(value.course)));
   const update = (field: keyof StudentFields, text: string) => {
     setTouched(previous => ({ ...previous, [field]: true }));
-    onChange({ ...value, [field]: text, ...(['course', 'year_level', 'campus'].includes(field) ? { section: '' } : {}) }, field);
+    const cleared = catalogueOnly && field === 'course' ? { year_level: '', campus: '', section: '' }
+      : catalogueOnly && field === 'year_level' ? { campus: '', section: '' }
+      : ['course', 'year_level', 'campus'].includes(field) ? { section: '' } : {};
+    onChange({ ...value, ...cleared, [field]: text }, field);
   };
   const message = (field: keyof StudentFields) => (touched[field] || !!value[field]) && errors[field] ? <ThemedText style={s.error} accessibilityLiveRegion="polite">{errors[field]}</ThemedText> : null;
   const textField = (field: 'name' | 'student_number' | 'goal' | 'course', label: string, placeholder: string) => <View style={s.field}>

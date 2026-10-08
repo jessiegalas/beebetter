@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/mobile-ui';
@@ -7,16 +7,18 @@ import { StudentInformationFields } from '@/components/student-information-field
 import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 import { useUserData } from '@/hooks/use-user-data';
 import { studentPayload, validateStudent, type StudentFields, type RegistrationEnrollmentOption } from '@/lib/student-validation';
+import { emptyStudentFields } from '@/lib/auth-flow';
 import { useBeeStyles, type BeePalette } from '@/constants/theme';
 
 export function StudentOnboarding() {
   const styles = useBeeStyles(makeStyles);
-  const { registrationEmail, isAuthBusy, isSigningOut, completeRegistration, signOut } = useUserData();
+  const { registrationEmail, registrationDraft, registrationError, isAuthBusy, isSigningOut, completeRegistration, signOut } = useUserData();
   const enrollment = useEnrollmentOptions<RegistrationEnrollmentOption>('registration', true);
-  const [student, setStudent] = useState<StudentFields>({ name: '', student_number: '', course: '', year_level: '', section: '', campus: '', goal: '' });
-  const [selection, setSelection] = useState<{ option: string; semester: string } | null>(null);
+  const [student, setStudent] = useState<StudentFields>(() => registrationDraft?.student ?? emptyStudentFields());
+  const [selection, setSelection] = useState<{ option: string; semester: string } | null>(() => registrationDraft ? { option: registrationDraft.enrollmentOptionId, semester: registrationDraft.semesterId } : null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const pending = useRef(false);
+  useEffect(() => { setFeedback(registrationError ?? null); }, [registrationError]);
   const selected = enrollment.options.find(option => option.id === selection?.option && option.semester_id === selection?.semester);
   const errors = validateStudent(student, enrollment.options);
   const busy = isAuthBusy || isSigningOut;
@@ -46,7 +48,7 @@ export function StudentOnboarding() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
         <ThemedText style={styles.title}>Complete your student information</ThemedText>
-        <ThemedText style={styles.copy}>Email confirmed: {registrationEmail}. Enter your official student information to continue.</ThemedText>
+        <ThemedText style={styles.copy}>Email confirmed: {registrationEmail}. {registrationDraft ? 'Check your saved student information below.' : 'Enter your official student information to continue.'}</ThemedText>
         {semester && <ThemedText style={styles.semester}>Enrollment period: {semester.academic_year} / {semester.term}</ThemedText>}
         <StudentInformationFields value={student} onChange={change} options={enrollment.options} errors={errors} loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} catalogueOnly disabled={busy || enrollment.loading} />
         {selection && !selected && !enrollment.loading && <ThemedText accessibilityRole="alert" style={styles.error}>The enrollment choices changed. Select your section again to confirm the displayed period.</ThemedText>}

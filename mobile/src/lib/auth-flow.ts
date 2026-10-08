@@ -1,3 +1,5 @@
+import { LIMITS, type StudentFields } from './student-validation';
+
 export type AuthFailure = { status: 'error'; code: string; message: string };
 export type AuthOperationResult = { status: 'completed' } | AuthFailure;
 export type AuthenticationResult = { status: 'session_created' | 'confirmation_required' } | AuthFailure;
@@ -16,6 +18,9 @@ export function authFailure(error: unknown): AuthFailure {
     flow_state_not_found: 'Open the newest link on the device that requested it, or sign in after confirming your email.',
     flow_state_expired: 'This link has expired. Request another email.',
     registration_unavailable: 'Account creation is temporarily unavailable. Please try again later.',
+    invalid_registration: 'Check your student information and try again.',
+    enrollment_changed: 'The enrollment choices changed. Select your section again for the current semester.',
+    student_number_unavailable: 'This student number is unavailable. Check it or contact your administrator.',
     operation_cancelled: 'This operation was cancelled. Please try again.',
   };
   const category = Object.hasOwn(messages, code) ? code : ['network_error', 'operation_busy', 'enrollment_changed', 'invalid_registration', 'student_number_unavailable', 'recovery_session_missing'].includes(code) ? code : 'other';
@@ -49,3 +54,36 @@ export function parseAuthCallback(raw: string, webOrigin?: string): AuthCallback
 export type RegistrationInput = {
   name: string; studentNumber: string; goal: string; semesterId: string; enrollmentOptionId: string;
 };
+
+export type RegistrationDraft = {
+  version: 1;
+  student: StudentFields;
+  semesterId: string;
+  enrollmentOptionId: string;
+};
+
+export const emptyStudentFields = (): StudentFields => ({
+  name: '', student_number: '', course: '', year_level: '', section: '', campus: '', goal: '',
+});
+
+// Auth metadata is editable input, never evidence of student admission.
+export function readRegistrationDraft(value: unknown): RegistrationDraft | null {
+  if (!value || typeof value !== 'object') return null;
+  const draft = value as Partial<RegistrationDraft>;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (draft.version !== 1 || typeof draft.semesterId !== 'string' || !uuid.test(draft.semesterId)
+    || typeof draft.enrollmentOptionId !== 'string' || !uuid.test(draft.enrollmentOptionId)
+    || !draft.student || typeof draft.student !== 'object') return null;
+  const student = emptyStudentFields();
+  for (const field of Object.keys(student) as (keyof StudentFields)[]) {
+    const text = draft.student[field];
+    if (typeof text !== 'string' || text.length > (field === 'year_level' ? 30 : LIMITS[field])) return null;
+    student[field] = text;
+  }
+  return { version: 1, student, semesterId: draft.semesterId, enrollmentOptionId: draft.enrollmentOptionId };
+}
+
+export function registrationInput(draft: RegistrationDraft): RegistrationInput {
+  return { name: draft.student.name, studentNumber: draft.student.student_number, goal: draft.student.goal,
+    semesterId: draft.semesterId, enrollmentOptionId: draft.enrollmentOptionId };
+}

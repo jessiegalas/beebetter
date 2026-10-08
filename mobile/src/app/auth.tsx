@@ -6,9 +6,12 @@ import { useUserData } from '@/hooks/use-user-data';
 import { Button, Field } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { BeeMark } from '@/components/bee-visuals';
+import { StudentInformationFields } from '@/components/student-information-fields';
+import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
+import { emptyStudentFields, type RegistrationDraft } from '@/lib/auth-flow';
 import { StudentOnboarding } from '@/components/student-onboarding';
 import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
-import { emailError, passwordError, LIMITS } from '@/lib/student-validation';
+import { emailError, passwordError, LIMITS, studentPayload, validateStudent, type StudentFields, type RegistrationEnrollmentOption } from '@/lib/student-validation';
 
 export default function AuthScreen() {
   const COLORS = useBeePalette();
@@ -27,11 +30,26 @@ export default function AuthScreen() {
   const [remaining, setRemaining] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
+  const [student, setStudent] = useState<StudentFields>(emptyStudentFields);
+  const [selection, setSelection] = useState<{ option: string; semester: string } | null>(null);
   const recovery = access === 'recovery_required';
+  const signup = mode === 'sign-up' && !recovery;
+  const enrollment = useEnrollmentOptions<RegistrationEnrollmentOption>('signup', true, signup);
+  const selected = enrollment.options.find(option => option.id === selection?.option && option.semester_id === selection?.semester);
+  const studentErrors = validateStudent(student, enrollment.options);
+  const semester = enrollment.options[0];
+  const changeStudent = (next: StudentFields, field?: keyof StudentFields) => {
+    setStudent(next); setFeedback(null);
+    if (field && ['course', 'year_level', 'campus', 'section'].includes(field)) {
+      const option = enrollment.options.find(option => option.course === next.course && option.year_level === next.year_level && option.campus === next.campus && option.section === next.section);
+      setSelection(option ? { option: option.id, semester: option.semester_id } : null);
+    }
+  };
   const busy = isSubmitting || isAuthBusy || isSigningOut;
   const emailValidation = emailError(email);
   const passwordValidation = recovery || mode === 'sign-up' ? passwordError(password) : !password ? 'Enter your password.' : undefined;
-  const invalid = recovery ? !!passwordValidation : !!emailValidation || (mode !== 'forgot' && !!passwordValidation);
+  const invalid = recovery ? !!passwordValidation : !!emailValidation || (mode !== 'forgot' && !!passwordValidation)
+    || (signup && (enrollment.loading || !!enrollment.error || !selected || Object.keys(studentErrors).length > 0));
 
   useEffect(() => {
     if (!resendUntil) return;
@@ -44,17 +62,20 @@ export default function AuthScreen() {
     if (submitting.current || busy || invalid) return;
     submitting.current = true; setIsSubmitting(true); setFeedback(null); setSuccess(false);
     const attemptedEmail = email.trim().toLowerCase();
+    const draft: RegistrationDraft | null = selected ? { version: 1, student: studentPayload(student),
+      semesterId: selected.semester_id, enrollmentOptionId: selected.id } : null;
     try {
       const result = recovery ? await updateRecoveryPassword(password)
         : mode === 'forgot' ? await requestPasswordReset(attemptedEmail)
-        : mode === 'sign-up' ? await signUp(attemptedEmail, password)
+        : mode === 'sign-up' && draft ? await signUp(attemptedEmail, password, draft)
         : await signIn(attemptedEmail, password);
       if (result.status === 'error') {
         setFeedback(result.message);
         if (result.code === 'email_not_confirmed') setConfirmationEmail(attemptedEmail);
+        if (signup && result.code === 'enrollment_changed') { setSelection(null); enrollment.retry(); }
       } else if (result.status === 'confirmation_required') {
         setConfirmationEmail(attemptedEmail); setMode('sign-in'); setPassword(''); setSuccess(true);
-        setFeedback('If registration can proceed, check your email to confirm it, then sign in.');
+        setFeedback('If registration can proceed, confirm your email, then sign in. Your saved student information will be used to finish registration.');
       } else if (mode === 'forgot' && !recovery) {
         setSuccess(true); setFeedback('If an account matches this email, you will receive password reset instructions.');
       } else if (recovery) {
@@ -87,7 +108,7 @@ export default function AuthScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={{ marginBottom: 24 }}><BeeMark size={48} /></View>
         <ThemedText style={styles.title}>{recovery ? 'Choose a new password' : mode === 'forgot' ? 'Reset your password' : mode === 'sign-up' ? 'Create your account' : 'Welcome to BeeBetter'}</ThemedText>
-        <ThemedText style={styles.subtitle}>{recovery ? 'Update your password before continuing to your student account.' : mode === 'sign-up' ? 'Confirm your email first. You will enter your student information afterward.' : mode === 'forgot' ? 'Enter your account email to receive a reset link.' : 'Sign in to access your quests, streak, and skill tree.'}</ThemedText>
+        <ThemedText style={styles.subtitle}>{recovery ? 'Update your password before continuing to your student account.' : mode === 'sign-up' ? 'Enter your student information for the current semester, then confirm your email to finish registration.' : mode === 'forgot' ? 'Enter your account email to receive a reset link.' : 'Sign in to access your quests, streak, and skill tree.'}</ThemedText>
         {!recovery && <View style={styles.modeRow}>{(['sign-in', 'sign-up'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value, disabled: busy }} disabled={busy} style={[styles.modeButton, mode === value && styles.modeButtonActive]} onPress={() => { if (submitting.current || busy) return; setMode(value); setFeedback(null); setPassword(''); }}><ThemedText style={styles.modeText}>{value === 'sign-in' ? 'Sign in' : 'Create account'}</ThemedText></TouchableOpacity>)}</View>}
         {!recovery && <>
           <Field label="Email address *" style={styles.input} editable={!busy} value={email} onChangeText={value => setEmail(value.replace(/\s/g, ''))} onBlur={() => setEmailTouched(true)} maxLength={LIMITS.email} accessibilityLabel="Email address, required" autoComplete="email" placeholder="you@example.com" placeholderTextColor={COLORS.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
@@ -100,6 +121,12 @@ export default function AuthScreen() {
             <TouchableOpacity disabled={busy} style={[styles.passwordToggle, { minWidth: 48, minHeight: 48, justifyContent: 'center' }]} onPress={() => setShowPassword(value => !value)} accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={19} color={COLORS.muted} /></TouchableOpacity>
           </View>
           {!!password && passwordValidation && <ThemedText accessibilityRole="alert" style={styles.feedback}>{passwordValidation}</ThemedText>}
+        </>}
+        {signup && <>
+          {semester && <ThemedText style={styles.label}>Enrollment period: {semester.academic_year} / {semester.term}</ThemedText>}
+          <StudentInformationFields value={student} onChange={changeStudent} options={enrollment.options} errors={studentErrors}
+            loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} catalogueOnly disabled={busy || enrollment.loading} />
+          {selection && !selected && !enrollment.loading && <ThemedText accessibilityRole="alert" style={styles.feedback}>The enrollment choices changed. Select your section again for the displayed period.</ThemedText>}
         </>}
         {accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>}
         {feedback && <ThemedText accessibilityLiveRegion="polite" style={[styles.feedback, success && styles.successFeedback]}>{feedback}</ThemedText>}

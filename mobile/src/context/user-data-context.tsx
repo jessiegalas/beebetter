@@ -4,11 +4,11 @@ import * as Linking from 'expo-linking';
 import type { CompletionRecord } from '@/lib/quest-priority';
 import { User } from '@supabase/supabase-js';
 import { supabase, authRecoveryStorage } from '@/supabase';
-import { authFailure, parseAuthCallback, type AuthenticationResult, type AuthOperationResult, type AuthFailure, type RegistrationInput } from '@/lib/auth-flow';
+import { authFailure, parseAuthCallback, readRegistrationDraft, registrationInput, type RegistrationDraft, type AuthenticationResult, type AuthOperationResult, type AuthFailure, type RegistrationInput } from '@/lib/auth-flow';
 import { createStudentWorkspaceReader, type WorkspaceSlice, type WorkspaceErrors } from '@/lib/student-workspace';
 import { createQuestCompletion, type ProofFile } from '@/lib/quest-completion';
 import { createQuestCompletionAdapter } from '@/lib/quest-completion-adapter';
-import { passwordError } from '@/lib/student-validation';
+import { passwordError, studentPayload, validateStudent, type RegistrationEnrollmentOption } from '@/lib/student-validation';
 import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
 import {
   startQuestNotificationLifetime,
@@ -94,7 +94,7 @@ interface UserDataContextType {
   accessMessage: string | null;
   isSigningOut: boolean;
   signIn: (email: string, password: string) => Promise<AuthenticationResult>;
-  signUp: (email: string, password: string) => Promise<AuthenticationResult>;
+  signUp: (email: string, password: string, draft: RegistrationDraft) => Promise<AuthenticationResult>;
   resendConfirmation: (email: string) => Promise<AuthOperationResult>;
   requestPasswordReset: (email: string) => Promise<AuthOperationResult>;
   updateRecoveryPassword: (password: string) => Promise<AuthOperationResult>;
@@ -102,6 +102,8 @@ interface UserDataContextType {
   handleAuthCallback: (url: string) => Promise<AuthOperationResult>;
   isAuthBusy: boolean;
   registrationEmail: string | null;
+  registrationDraft: RegistrationDraft | null;
+  registrationError: string | null;
   profile: UserProfile | null;
   quests: Quest[];
   questsHasMore: boolean;
@@ -154,6 +156,9 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const [questCompletion] = useState(() => createQuestCompletion(createQuestCompletionAdapter(supabase)));
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [registrationEmail, setRegistrationEmail] = useState<string | null>(null);
+  const [registrationDraft, setRegistrationDraft] = useState<RegistrationDraft | null>(null);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const automaticRegistrationAttempt = useRef<string | null>(null);
   const [access, setAccess] = useState<AccountAccess>('checking');
   const [accessMessage, setAccessMessage] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -200,6 +205,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     requestVersion.current += 1;
     sessionUser.current = null;
     setRegistrationEmail(null);
+    setRegistrationDraft(null); setRegistrationError(null); automaticRegistrationAttempt.current = null;
     clearUserData();
     setAccess(reason ? 'blocked' : 'signed_out');
     setAccessMessage(reason ?? null);
@@ -242,6 +248,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const beginAuthentication = useCallback(() => {
     if (logoutTask.current || cleanupFailed.current || authenticationTask.current) return false;
     fence.beginAuthentication();
+    setRegistrationDraft(null); setRegistrationError(null); automaticRegistrationAttempt.current = null;
     loadController.current?.abort(); workspaceReader.cancel();
     loadTask.current = null;
     sessionUser.current = null;
@@ -281,7 +288,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       return error ? authFailure(error) : { status: 'session_created' };
     }, true), [runAuthentication]);
 
-  const signUp = useCallback((email: string, password: string): Promise<AuthenticationResult> =>
+  const signUp = useCallback((email: string, password: string, value: RegistrationDraft): Promise<AuthenticationResult> =>
     runAuthentication<AuthenticationResult>(async () => {
       const invalid = passwordError(password);
       if (invalid) return authFailure({ code: 'weak_password', message: invalid });
@@ -289,8 +296,16 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       // new intent to the legacy trigger before the additive migration exists.
       const ready = await supabase.rpc('registration_enrollment_options_v2');
       if (ready.error) return authFailure({ code: 'registration_unavailable' });
+      const draft = readRegistrationDraft(value);
+      if (!draft) return authFailure({ code: 'invalid_registration' });
+      const options = (ready.data ?? []) as RegistrationEnrollmentOption[];
+      const student = studentPayload(draft.student);
+      const selected = options.find(option => option.id === draft.enrollmentOptionId && option.semester_id === draft.semesterId);
+      if (!selected || selected.course !== student.course || selected.year_level !== student.year_level
+        || selected.campus !== student.campus || selected.section !== student.section) return authFailure({ code: 'enrollment_changed' });
+      if (Object.keys(validateStudent(student, options)).length) return authFailure({ code: 'invalid_registration' });
       const { data, error } = await supabase.auth.signUp({ email, password,
-        options: { data: { signup_intent: 'student_registration' }, emailRedirectTo: authRedirect() } });
+        options: { data: { signup_intent: 'student_registration', registration_draft: { ...draft, student } }, emailRedirectTo: authRedirect() } });
       if (error?.code === 'user_already_exists' || error?.code === 'email_exists') return { status: 'confirmation_required' };
       return error ? authFailure(error) : { status: data.session ? 'session_created' : 'confirmation_required' };
     }, true), [authRedirect, runAuthentication]);
@@ -369,7 +384,9 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         if (!isCurrent()) return;
         if (registration.error) throw registration.error;
         if (registration.data === 'onboarding_required') {
-          clearUserData(); setRegistrationEmail(currentUser.email ?? null); setAccess('onboarding_required'); setAccessMessage(null); return;
+          clearUserData(); setRegistrationEmail(currentUser.email ?? null);
+          setRegistrationDraft(readRegistrationDraft(currentUser.user_metadata?.registration_draft));
+          setAccess('onboarding_required'); setAccessMessage(null); return;
         }
         if (registration.data !== 'active') {
           await endSession(studentAccessMessage(studentData) ?? 'Your student account is unavailable. Confirm your email or contact your administrator.');
@@ -453,6 +470,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     runAuthentication<AuthOperationResult>(async () => {
       if (!sessionUser.current || recoveryRequired.current) return authFailure({ code: 'registration_unavailable' });
       const isCurrent = fence.capture();
+      setRegistrationError(null);
       const { data, error } = await supabase.rpc('student_complete_registration', {
         name_value: input.name, student_number_value: input.studentNumber, goal_value: input.goal,
         semester_id_value: input.semesterId, enrollment_option_id_value: input.enrollmentOptionId,
@@ -460,10 +478,33 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       if (!isCurrent()) return authFailure({ code: 'operation_cancelled' });
       if (error) return authFailure(error);
       if (data?.status !== 'completed') return authFailure({ code: data?.code ?? 'registration_unavailable', message: data?.message });
+      setRegistrationDraft(null);
+      // This best-effort cleanup is serialized with Auth operations. It must not
+      // undo committed registration or run for an account that replaced this one.
+      if (sessionUser.current?.user_metadata?.registration_draft) {
+        try {
+          const cleanup = await supabase.auth.updateUser({ data: { registration_draft: null } });
+          if (cleanup.error) console.warn('Registration draft cleanup pending');
+        } catch { console.warn('Registration draft cleanup pending'); }
+      }
+      if (!isCurrent()) return authFailure({ code: 'operation_cancelled' });
       const currentUser = sessionUser.current;
       setTimeout(() => { if (isCurrent()) void fetchUserData(currentUser, true, true, true); }, 0);
       return { status: 'completed' };
     }), [fetchUserData, fence, runAuthentication]);
+
+  useEffect(() => {
+    const identity = sessionUser.current?.id;
+    if (access !== 'onboarding_required' || !identity || !registrationDraft || isAuthBusy || isSigningOut
+      || recoveryRequired.current || automaticRegistrationAttempt.current === identity) return;
+    automaticRegistrationAttempt.current = identity;
+    const isCurrent = fence.capture(identity);
+    // At most one automatic attempt per login. Failures leave the populated form
+    // available for correction/retry rather than repeating on every refresh.
+    void completeRegistration(registrationInput(registrationDraft)).then(result => {
+      if (isCurrent() && result.status === 'error') setRegistrationError(result.message);
+    });
+  }, [access, registrationDraft, isAuthBusy, isSigningOut, completeRegistration, fence]);
 
   const updateProfile = useCallback(async (updates: StudentProfileUpdates) => {
     if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };
@@ -498,7 +539,9 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       if (!isMounted || !fence.accept(nextUser?.id ?? null)) return;
       const changed = sessionUser.current?.id !== nextUser?.id;
       sessionUser.current = nextUser;
-      if (changed || !nextUser) { loadController.current?.abort(); workspaceReader.cancel(); loadTask.current = null; requestVersion.current += 1; }
+      if (changed || !nextUser) {
+        setRegistrationDraft(null); setRegistrationError(null); automaticRegistrationAttempt.current = null;
+        loadController.current?.abort(); workspaceReader.cancel(); loadTask.current = null; requestVersion.current += 1; }
       setRegistrationEmail(nextUser?.email ?? null);
       if (changed || !nextUser) clearUserData();
       if (!nextUser) {
@@ -760,6 +803,8 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       handleAuthCallback,
       isAuthBusy,
       registrationEmail,
+      registrationDraft,
+      registrationError,
       profile,
       quests,
       questsHasMore,
@@ -795,6 +840,8 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       handleAuthCallback,
       isAuthBusy,
       registrationEmail,
+      registrationDraft,
+      registrationError,
       profile,
       quests,
       questsHasMore,
