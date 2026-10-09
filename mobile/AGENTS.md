@@ -5,6 +5,10 @@
 Student app: Expo SDK 57, React Native 0.86, React 19.2, TypeScript 6, Expo Router.
 Read [root rules](../AGENTS.md) first. Paths below are relative to `mobile/`.
 
+## Frontend design
+
+ALWAYS read [shared frontend design instructions](../docs/agent/frontend-design.md) before UI work. Use the installed UI foundations and preserve the reference's layout, spacing and hierarchy.
+
 ## Strict Guardrails
 
 - ALWAYS keep session/profile/quest state and admission/logout ownership in `src/context/user-data-context.tsx`; `use-user-data.ts` is a re-export.

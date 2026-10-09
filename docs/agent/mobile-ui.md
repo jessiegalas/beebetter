@@ -8,6 +8,10 @@ MOBILE_WELLNESS_AND_SUPPORT_ENABLED in mobile/src/constants/features.ts is curre
 
 Do not re-enable these features as part of unrelated UI work. Re-enabling requires an explicit product decision and verification of navigation, admission, privacy/consent and recommendation behavior. The synthetic preview adapter can render retained screens independently; it does not make them available in the application.
 
+## Design instructions and UI foundations
+
+Read [shared frontend design instructions](frontend-design.md) before presentation changes. NativeWind v4, Tailwind CSS v3 and React Native Reusables are configured for incremental adoption. New registry controls live in mobile/src/components/ui; existing mobile-ui controls remain until intentionally migrated. Favor open layouts, whitespace and typography; use surfaces only when content needs a distinct boundary. Match supplied reference proportions and hierarchy.
+
 ## Visual system
 
 Use the semantic palettes, Typography, Spacing and Radii in mobile/src/constants/theme.ts. Light mode uses neutral surfaces with honey accents; dark mode follows the device setting. Application state and authorization remain in the existing providers/database.

@@ -27,6 +27,10 @@ Terminology is authoritative in [GLOSSARY.md](GLOSSARY.md): `/admin` is exclusiv
 This is the repository root; the surrounding THESIS directory is not. Mobile: Expo/React Native; admin: React/Vite; backend: Supabase PostgreSQL/Auth/Storage.
 Each app owns its package/lockfile; there is no root npm workspace.
 
+## Frontend design
+
+For any frontend design or UI change, ALWAYS read [frontend design instructions](docs/agent/frontend-design.md) and the affected app guide. Follow user references closely; favor clean, minimal layouts with whitespace and typography over repeated boxed cards.
+
 ## Strict Guardrails
 
 - ALWAYS read the affected [mobile](mobile/AGENTS.md), [admin](admin/AGENTS.md), or [Supabase](supabase/AGENTS.md) guide; read all affected scopes for cross-module work.

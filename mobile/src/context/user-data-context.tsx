@@ -9,6 +9,7 @@ import { createStudentWorkspaceReader, type WorkspaceSlice, type WorkspaceErrors
 import { createQuestCompletion, type ProofFile } from '@/lib/quest-completion';
 import { createQuestCompletionAdapter } from '@/lib/quest-completion-adapter';
 import { passwordError, studentPayload, validateStudent, type RegistrationEnrollmentOption } from '@/lib/student-validation';
+import { readEnrollmentOptions, requestEnrollmentCatalogue } from '@/lib/enrollment-catalogue';
 import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
 import {
   startQuestNotificationLifetime,
@@ -88,6 +89,8 @@ export function calculateLevel(totalXp: number): LevelProgress {
   return { level, currentLevelXp, xpForNextLevel, progressPercent };
 }
 
+export type AuthOperation = 'sign_in' | 'sign_up' | 'resend_confirmation' | 'password_reset' | 'password_update' | 'callback' | 'registration';
+
 interface UserDataContextType {
   user: User | null;
   access: AccountAccess;
@@ -101,6 +104,7 @@ interface UserDataContextType {
   completeRegistration: (input: RegistrationInput) => Promise<AuthOperationResult>;
   handleAuthCallback: (url: string) => Promise<AuthOperationResult>;
   isAuthBusy: boolean;
+  authOperation: AuthOperation | null;
   registrationEmail: string | null;
   registrationDraft: RegistrationDraft | null;
   registrationError: string | null;
@@ -154,7 +158,8 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const loadController = useRef<AbortController | null>(null);
   const [workspaceReader] = useState(() => createStudentWorkspaceReader(supabase));
   const [questCompletion] = useState(() => createQuestCompletion(createQuestCompletionAdapter(supabase)));
-  const [isAuthBusy, setIsAuthBusy] = useState(false);
+  const [authOperation, setAuthOperation] = useState<AuthOperation | null>(null);
+  const isAuthBusy = authOperation !== null;
   const [registrationEmail, setRegistrationEmail] = useState<string | null>(null);
   const [registrationDraft, setRegistrationDraft] = useState<RegistrationDraft | null>(null);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
@@ -265,40 +270,43 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   }), []);
 
   const runAuthentication = useCallback(<T extends AuthenticationResult | AuthOperationResult,>(
-    operation: () => Promise<T>, replaceSession = false,
+    kind: AuthOperation, operation: () => Promise<T>, replaceSession = false,
   ): Promise<T | AuthFailure> => {
     if (logoutTask.current || cleanupFailed.current || authenticationTask.current) {
       return Promise.resolve(authFailure({ code: 'operation_busy', message: 'Wait for the current operation, or retry sign-out.' }));
     }
     if (replaceSession && !beginAuthentication()) return Promise.resolve(authFailure({ code: 'operation_cancelled' }));
     const epoch = authenticationEpoch.current;
-    setIsAuthBusy(true);
+    setAuthOperation(kind);
     const task = Promise.resolve().then(operation).then(result => epoch === authenticationEpoch.current
       ? result : authFailure({ code: 'operation_cancelled' })).catch(authFailure).finally(() => {
-      if (authenticationTask.current === task) authenticationTask.current = null;
-      setIsAuthBusy(false);
+      if (authenticationTask.current === task) { authenticationTask.current = null; setAuthOperation(null); }
     });
     authenticationTask.current = task;
     return task;
   }, [beginAuthentication]);
 
   const signIn = useCallback((email: string, password: string): Promise<AuthenticationResult> =>
-    runAuthentication<AuthenticationResult>(async () => {
+    runAuthentication<AuthenticationResult>('sign_in', async () => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       return error ? authFailure(error) : { status: 'session_created' };
     }, true), [runAuthentication]);
 
   const signUp = useCallback((email: string, password: string, value: RegistrationDraft): Promise<AuthenticationResult> =>
-    runAuthentication<AuthenticationResult>(async () => {
+    runAuthentication<AuthenticationResult>('sign_up', async () => {
       const invalid = passwordError(password);
       if (invalid) return authFailure({ code: 'weak_password', message: invalid });
       // The v2 catalogue doubles as a read-only rollout check: do not send the
       // new intent to the legacy trigger before the additive migration exists.
-      const ready = await supabase.rpc('registration_enrollment_options_v2');
+      const epoch = authenticationEpoch.current;
+      const ready = await requestEnrollmentCatalogue(signal => supabase.rpc('registration_enrollment_options_v2').abortSignal(signal));
+      if (epoch !== authenticationEpoch.current) return authFailure({ code: 'operation_cancelled' });
       if (ready.error) return authFailure({ code: 'registration_unavailable' });
       const draft = readRegistrationDraft(value);
       if (!draft) return authFailure({ code: 'invalid_registration' });
-      const options = (ready.data ?? []) as RegistrationEnrollmentOption[];
+      let options: RegistrationEnrollmentOption[];
+      try { options = readEnrollmentOptions(ready.data, 'registration'); }
+      catch { return authFailure({ code: 'registration_unavailable' }); }
       const student = studentPayload(draft.student);
       const selected = options.find(option => option.id === draft.enrollmentOptionId && option.semester_id === draft.semesterId);
       if (!selected || selected.course !== student.course || selected.year_level !== student.year_level
@@ -311,14 +319,14 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }, true), [authRedirect, runAuthentication]);
 
   const resendConfirmation = useCallback((email: string): Promise<AuthOperationResult> =>
-    runAuthentication<AuthOperationResult>(async () => {
+    runAuthentication<AuthOperationResult>('resend_confirmation', async () => {
       const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: authRedirect() } });
       if (error?.code === 'user_not_found' || error?.code === 'user_already_exists') return { status: 'completed' };
       return error ? authFailure(error) : { status: 'completed' };
     }), [authRedirect, runAuthentication]);
 
   const requestPasswordReset = useCallback((email: string): Promise<AuthOperationResult> =>
-    runAuthentication<AuthOperationResult>(async () => {
+    runAuthentication<AuthOperationResult>('password_reset', async () => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: authRedirect(true) });
       return error ? authFailure(error) : { status: 'completed' };
     }), [authRedirect, runAuthentication]);
@@ -332,7 +340,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       setAccessMessage(failure.message);
       return failure;
     }
-    const result = await runAuthentication<AuthOperationResult>(async () => {
+    const result = await runAuthentication<AuthOperationResult>('callback', async () => {
       if (callback.recovery) {
           // Persist before exchanging: SIGNED_IN may arrive during the call.
           await authRecoveryStorage.set();
@@ -449,7 +457,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   }, [loadUserData, fence]);
 
   const updateRecoveryPassword = useCallback((password: string): Promise<AuthOperationResult> =>
-    runAuthentication<AuthOperationResult>(async () => {
+    runAuthentication<AuthOperationResult>('password_update', async () => {
       if (!recoveryRequired.current || !sessionUser.current) return authFailure({ code: 'recovery_session_missing', message: 'Request and open a new password reset email first.' });
       const invalid = passwordError(password);
       if (invalid) return authFailure({ code: 'weak_password', message: invalid });
@@ -467,7 +475,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }), [fetchUserData, fence, runAuthentication]);
 
   const completeRegistration = useCallback((input: RegistrationInput): Promise<AuthOperationResult> =>
-    runAuthentication<AuthOperationResult>(async () => {
+    runAuthentication<AuthOperationResult>('registration', async () => {
       if (!sessionUser.current || recoveryRequired.current) return authFailure({ code: 'registration_unavailable' });
       const isCurrent = fence.capture();
       setRegistrationError(null);
@@ -513,7 +521,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error: studentError } = await supabase
         .from('students')
-        .update({ ...updates, email: profile?.email ?? user.email ?? '' })
+        .update(updates)
         .eq('id', user.id)
         .select('*')
         .single();
@@ -529,7 +537,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Could not update profile.' };
     }
-  }, [profile, user, isAdmittedSession, fence]);
+  }, [user, isAdmittedSession, fence]);
 
   useEffect(() => {
     fence.beginAuthentication();
@@ -802,6 +810,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       completeRegistration,
       handleAuthCallback,
       isAuthBusy,
+      authOperation,
       registrationEmail,
       registrationDraft,
       registrationError,
@@ -839,6 +848,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       completeRegistration,
       handleAuthCallback,
       isAuthBusy,
+      authOperation,
       registrationEmail,
       registrationDraft,
       registrationError,

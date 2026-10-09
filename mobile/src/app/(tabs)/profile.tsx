@@ -16,7 +16,7 @@ export default function ProfileScreen() {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<StudentProfileUpdates | null>(null);
     const [saving, setSaving] = useState(false);
-    const enrollment = useEnrollmentOptions();
+    const enrollment = useEnrollmentOptions({ kind: 'profile', context: user?.id ?? 'profile' });
     const fieldErrors = draft ? validateStudent(draft, enrollment.options, profile ?? undefined) : {};
     const displayName = profile?.display_name ||
         user?.email?.split('@')[0] ||

@@ -2,22 +2,11 @@
 
 Source files and migration names do not establish hosted deployment state. On 2026-10-08, read-only requests against the mobile-configured project verified that email confirmation is enabled and registration_enrollment_options_v2 returns one option for 2026-2027 / 1st Semester at Cavite State University Bacoor City Campus. The restricted student_get_registration_state endpoint exists and rejects anonymous access. These checks do not establish the protected completion signature, individual account eligibility, Auth hook configuration or real delivery.
 
-## Established student login repair
+## Established student confirmation
 
-Supabase rejects an unconfirmed identity before the mobile app receives a session. Keep global Confirm Email enabled for new registrations. Established active student identities with missing confirmation require a targeted operator repair; no client-side guard can substitute for it.
+Supabase rejects an unconfirmed identity before the app receives a session. Keep Confirm Email enabled. For this rollout, established students must confirm through email: use the app's resend action, verify SMTP/inbox delivery, open the latest link, and sign in again. Existing shorter login passwords remain valid.
 
-The server-only repair-student-email-confirmation.cjs script uses the installed mobile Supabase SDK and operator-supplied SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. It does not read client .env files or print credentials, emails or names. Never put the privileged key in EXPO_PUBLIC_ configuration.
-
-From the repository root, with server-only credentials supplied through the operator environment:
-
-~~~powershell
-node supabase/repair-student-email-confirmation.cjs --preview
-node supabase/repair-student-email-confirmation.cjs --apply <reviewed-preview-file>
-~~~
-
-Preview is read-only against the backend and writes a private UUID/timestamp manifest under ignored supabase/.temp/. Review this frozen roster with an authorized operator before applying it. Preview requires matching Auth/student UUIDs, Active student status, an unconfirmed non-anonymous email identity, no administrator row (including inactive administrators), and no student_registration/admin_access_request intent or incomplete draft. It excludes identities and student rows created after preview began.
-
-Apply accepts only that project-bound roster and rechecks eligibility and row creation timestamps before each auth.admin.updateUserById(id, { email_confirm: true }). It never expands the roster or changes passwords, student status, enrollment or history. Rerunning the same manifest skips already-confirmed/ineligible accounts. Any API failure stops the run; a partial apply is retried with the same manifest. Hosted account changes require separate rollout authorization. No hosted repair was executed during implementation.
+The server-only repair-student-email-confirmation.cjs utility remains available for separately approved operator work, but automatic confirmation is not part of this rollout. Do not run its --apply mode as a substitute for student email confirmation. No account confirmations, passwords, statuses, or enrollment records were changed by this refactor.
 
 ## Signup and confirmation
 
@@ -30,8 +19,24 @@ Verify deployed migration state and the protected student_complete_registration(
 ## Release verification
 
 1. Inspect hosted confirmation/password/redirect settings, SMTP delivery and whether migration 027's access-token hook is enabled. Preserve existing claim transformations and active administrator access. Keep Confirm Email enabled. Set hosted minimum new/reset password length to 15 characters with the backend-compatible 72-byte maximum; existing shorter login passwords remain valid.
-2. On an explicitly authorized disposable Supabase database, apply migrations in order and run tests/student-registration.sql with psql -X -v ON_ERROR_STOP=1 -f. Verify authorization, unconfirmed/direct-insert denial, administrator/suspended denial, uniqueness, idempotency, history, legacy signup and semester rollover. Concurrent same-account calls must produce one student/history row; competing student numbers must produce one success. Installing SQL alone does not enable the Auth hook.
+2. On an explicitly authorized disposable Supabase database, run verify-local-supabase.ps1, which applies migrations once and executes notification, registration, hardening, and concurrency suites. Verify authorization, unconfirmed/direct-insert denial, administrator/suspended denial, uniqueness, idempotency, history, legacy signup and semester rollover. Concurrent same-account calls must produce one student/history row; competing student numbers must produce one success. Installing SQL alone does not enable the Auth hook.
 3. Register exact native redirects beebetter://auth and beebetter://auth?flow=recovery plus approved web /auth and /auth?flow=recovery origins. Web hosting must serve /auth cold starts. Test PKCE on the requesting device/browser, manual login after cross-device confirmation, and legacy implicit callbacks only on the Auth route.
-4. Verify repaired synthetic legacy login without email interaction, unchanged shorter passwords, suspended-account denial, new-account confirmation, signup fields/current-semester choices, automatic completion, restart/manual login, correction/retry, duplicate numbers and semester changes. Also test delivery/network errors, expired/reused links, cold/warm recovery, logout during delayed completion and account switching. Recovery remains restricted until successful password update/logout clears its persisted marker.
+4. Verify synthetic legacy login after email confirmation, unchanged shorter passwords, suspended-account denial, new-account confirmation, signup fields/current-semester choices, automatic completion, restart/manual login, correction/retry, duplicate numbers and semester changes. Also test delivery/network errors, expired/reused links, cold/warm recovery, logout during delayed completion and account switching. Recovery remains restricted until successful password update/logout clears its persisted marker.
 5. Run mobile TypeScript/lint/auth/student tests, admin enrollment-flow tests and node supabase/tests/student-email-repair.cjs. Repair tests use in-memory synthetic accounts; mocked tests do not establish hosted delivery, protected PostgreSQL behavior, native deep linking or database concurrency.
 6. Regenerate docs/agent/db-schema.sql only after separately authorized schema deployment if needed. Monitor sanitized failure categories without recording emails, student numbers, passwords, tokens or callback URLs. Retain existing records and history; do not reclaim student numbers automatically.
+
+## Registration refactor and compatible hardening
+
+The client uses one shared registration form, an explicitly typed catalogue hook, validated RPC payloads, and a 20-second catalogue deadline. Initial loading, successful emptiness, errors, and background refresh have separate states. Refresh failures retain prior choices and entered details, but registration waits for a successful fresh catalogue. Changing program/year/campus clears dependent choices. Signup and onboarding retain the existing mobile-ui controls and semantic palette; no global registry migration is included.
+
+Authentication serialization and busy state remain in user-data-context. Screens retain only immediate tap guards. Admission, recovery, notification cleanup, session/account fencing, and protected routes remain provider-owned. New profile saves omit email.
+
+Prepared migrations (not evidence of deployment):
+- 035_registration_enrollment_locking.sql locks semesters before sections and serializes draft activation with section edits/removal.
+- 036_student_auth_email_and_grants.sql derives student email from Auth, synchronizes subsequent valid Auth changes, reconciles current projections without rewriting history, and removes destructive grants on affected tables. Existing authenticated email-update column permission is retained for installed older clients.
+
+Before deployment, run the read-only tests/registration-preflight.sql through an authorized metadata connection and compare hosted functions, triggers, policies, and grants against migrations 025/032/034/035/036. The checked-in schema snapshot predates parts of the registration contract. Do not execute 034 again based on old documentation. Verify trigger ordering, Auth-hook access, service-role jobs, legacy updates, and schema drift before approving 035/036.
+
+Apply compatible database changes before releasing the client. Test an older installed build against the resulting backend. Revoke legacy email-update permission only after those builds are retired. Keep consent, progression, OSAS suppression/audits, history, and provisional-feature flags intact.
+
+Visual checks use the isolated synthetic preview adapter, without Supabase. Loading/empty/error/refresh/correction states, narrow/large/tablet/landscape viewports, light/dark appearance, and enlarged text are represented. Static screenshots do not prove native font scaling, keyboard clearance, screen-reader operation, email delivery, or deep-link integration; verify these on devices and authorized staging identities before release.

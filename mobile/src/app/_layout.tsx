@@ -1,3 +1,5 @@
+import '@/global.css';
+import { PortalHost } from '@rn-primitives/portal';
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { Platform, useColorScheme } from 'react-native';
@@ -45,6 +47,7 @@ export default function RootLayout() {
             <AnimatedSplashOverlay />
             <AppNavigator />
             {Platform.OS === 'android' && <QuestNotificationResponse />}
+            <PortalHost />
           </ThemeProvider>
         </QuestPriorityProvider>
       </LocationProvider>

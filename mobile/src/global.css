@@ -1,3 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 :root {
   --font-display:
     Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,
@@ -6,4 +9,32 @@
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
   --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
+}
+
+/* Keep these semantic tokens aligned with src/constants/theme.ts. */
+@layer base {
+  :root {
+    --background: 220 23% 97%; --foreground: 26 22% 15%;
+    --card: 0 0% 100%; --card-foreground: 26 22% 15%;
+    --popover: 0 0% 100%; --popover-foreground: 26 22% 15%;
+    --primary: 43 91% 62%; --primary-foreground: 26 22% 15%;
+    --secondary: 223 17% 92%; --secondary-foreground: 26 22% 15%;
+    --muted: 223 17% 92%; --muted-foreground: 28 9% 39%;
+    --accent: 45 100% 90%; --accent-foreground: 26 22% 15%;
+    --destructive: 6 56% 45%; --destructive-foreground: 0 0% 100%;
+    --border: 223 17% 85%; --input: 223 17% 85%; --ring: 34 68% 31%; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: 220 11% 11%; --foreground: 40 21% 95%;
+      --card: 218 10% 16%; --card-foreground: 40 21% 95%;
+      --popover: 218 10% 16%; --popover-foreground: 40 21% 95%;
+      --primary: 43 91% 62%; --primary-foreground: 26 22% 15%;
+      --secondary: 217 9% 28%; --secondary-foreground: 40 21% 95%;
+      --muted: 217 9% 28%; --muted-foreground: 35 9% 73%;
+      --accent: 44 30% 17%; --accent-foreground: 40 21% 95%;
+      --destructive: 8 80% 78%; --destructive-foreground: 220 11% 11%;
+      --border: 217 9% 28%; --input: 217 9% 28%; --ring: 40 75% 65%;
+    }
+  }
 }

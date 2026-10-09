@@ -28,4 +28,11 @@ $assertions = Join-Path $PSScriptRoot 'tests/quest-notifications.sql'
 & psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -f $assertions
 if ($LASTEXITCODE -ne 0) { throw 'Quest notification database assertions failed.' }
 
+foreach ($suite in @('student-registration.sql','registration-hardening.sql')) {
+  & psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -f (Join-Path $PSScriptRoot ('tests/' + $suite))
+  if ($LASTEXITCODE -ne 0) { throw "Registration assertions failed: $suite" }
+}
+
 & (Join-Path $PSScriptRoot 'verify-notification-concurrency.ps1') -DatabaseUrl $DatabaseUrl
+if ($LASTEXITCODE -ne 0) { throw 'Notification concurrency checks failed.' }
+& (Join-Path $PSScriptRoot 'verify-registration-concurrency.ps1') -DatabaseUrl $DatabaseUrl

@@ -5,6 +5,10 @@
 Browser management/OSAS app: React 19.2, Vite 8, TypeScript 6, Supabase.
 Read [root rules](../AGENTS.md) first. Navigation uses local section state; paths below are relative to `admin/`.
 
+## Frontend design
+
+ALWAYS read [shared frontend design instructions](../docs/agent/frontend-design.md) before UI work. Use the installed UI foundations and preserve the reference's layout, spacing and hierarchy.
+
 ## Strict Guardrails
 
 - `/admin` is exclusively OSAS. All active ordinary and super-admin accounts receive reporting and support access; inactive admins are denied. Admin-account management remains super-admin-only. See [glossary](../GLOSSARY.md).

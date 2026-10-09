@@ -7,7 +7,15 @@ begin
   begin execute command; exception when insufficient_privilege then return; end;
   raise exception 'Expected privilege denial';
 end; $$;
-create temporary table fixture_option as select * from public.registration_enrollment_options_v2() limit 1;
+-- Self-contained fixture, including a clean install with no enrollment rows.
+update public.academic_semesters set status='archived',archived_at=now() where status='active';
+insert into public.academic_semesters(id,academic_year,term,status,activated_at)
+values('03400000-0000-4000-8000-000000000102','2034-2035','Registration fixture','active',now());
+insert into public.student_enrollment_options(id,semester_id,course,year_level,campus,section)
+values('03400000-0000-4000-8000-000000000101','03400000-0000-4000-8000-000000000102',
+ 'BSCS','4th Year','Cavite State University Bacoor City Campus','1');
+create temporary table fixture_option as
+select * from public.registration_enrollment_options_v2() where id='03400000-0000-4000-8000-000000000101';
 grant select on fixture_option to authenticated;
 select pg_temp.assert_true(exists(select 1 from fixture_option),'active option required');
 insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data)
@@ -54,11 +62,11 @@ set local role authenticated;
 select pg_temp.assert_true((select public.student_complete_registration('Other Student','934000003','Build habits',semester_id,id)->>'code'='enrollment_changed' from fixture_option),'archived option requires reselection');
 reset role;
 update public.student_enrollment_options set is_active=true where id=(select id from fixture_option);
-update public.academic_semesters set status='archived' where id=(select semester_id from fixture_option);
+update public.academic_semesters set status='archived',archived_at=now() where id=(select semester_id from fixture_option);
 set local role authenticated;
 select pg_temp.assert_true((select public.student_complete_registration('Other Student','934000003','Build habits',semester_id,id)->>'code'='enrollment_changed' from fixture_option),'semester rollover rejects old period');
 reset role;
-update public.academic_semesters set status='active' where id=(select semester_id from fixture_option);
+update public.academic_semesters set status='active',activated_at=now(),archived_at=null where id=(select semester_id from fixture_option);
 update public.students set status='Inactive' where id='03400000-0000-4000-8000-000000000001';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','03400000-0000-4000-8000-000000000001',true);

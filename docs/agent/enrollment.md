@@ -29,3 +29,11 @@ Read for signup/profile validation, admin student edits, semesters/sections, or 
 Validate shared changes in both clients using [testing](testing.md). Pre-migration enrollment changes cannot be reconstructed; see [known limitations](known-limitations.md).
 
 Migration 034 contract checks, established-student email repair, and hosted Auth/deep-link release checks: [student authentication rollout](../../supabase/STUDENT_AUTH_ROLLOUT.md). New/reset passwords require 15 characters; existing shorter login passwords remain valid.
+
+## Registration client boundaries
+
+Signup and onboarding share use-registration-form.ts. Draft initialization is account-scoped; metadata refreshes cannot replace edits. Explicit option/semester IDs must still match a successfully refreshed catalogue before submission.
+
+useEnrollmentOptions accepts an object with kind (registration/profile), context, and enabled. It returns idle/loading/ready/empty/error, options, isRefreshing, loading, error, and retry. Registration uses v2; profile editing keeps the legacy endpoint. Responses are validated and bounded to 20 seconds; failed refreshes retain choices but block registration submission. Dependent catalogue fields expose prerequisite hints and disabled accessibility state.
+
+Prepared migrations 035/036 cover enrollment locking and Auth-owned student email/grants; verify hosted definitions before separately authorized rollout. They retain older client email-update payload compatibility and do not rewrite enrollment history. Legacy confirmation in this rollout uses email, not the operator auto-confirmation utility. See [rollout](../../supabase/STUDENT_AUTH_ROLLOUT.md).

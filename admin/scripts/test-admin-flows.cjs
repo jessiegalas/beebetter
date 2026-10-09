@@ -64,7 +64,7 @@ async function reports() {
   await flush();
   await applyDate('2026-01-01');
   requests[1].pending.resolve(result('current')); await flush();
-  requests[0].pending.resolve(result('stale')); await flush();
+  await flush(); requests[0].pending.resolve(result('stale')); await flush();
   const displayed = nodes(h.value).find(node => typeof node.type === 'function' && node.props.data);
   assert.equal(displayed.props.data.id, 'current');
   button(h.value, 'Export displayed data as CSV').props.onClick(); await flush();
@@ -208,24 +208,27 @@ async function semesters() {
 async function enrollment() {
   const h = hookHarness(), requests = [];
   let context = 'sign-in', appState;
+  const validation = load('mobile/src/lib/student-validation.ts', h).exports;
+  const catalogue = load('mobile/src/lib/enrollment-catalogue.ts', h, { './student-validation': validation }).exports;
   const mod = load('mobile/src/hooks/use-enrollment-options.ts', h, {
+    '@/lib/enrollment-catalogue': catalogue,
     'react-native': { AppState: { currentState: 'active', addEventListener: (_event, fn) => { appState = fn; return { remove() {} }; } } },
     '@/supabase': { supabase: { rpc: () => ({ abortSignal: signal => { const pending = deferred(); requests.push({ signal, pending }); return pending.promise; } }) } },
   });
-  h.mount(() => mod.exports.useEnrollmentOptions(context));
-  requests[0].pending.resolve({ data: [], error: null }); await flush();
-  context = 'sign-up'; h.render();
+  h.mount(() => mod.exports.useEnrollmentOptions({ kind: 'profile', context }));
+  await flush(); requests[0].pending.resolve({ data: [], error: null }); await flush();
+  context = 'sign-up'; h.render(); await flush();
   assert.equal(h.value.loading, true);
-  const fresh = [{ id: 'b', course: 'BSCS', year_level: '4th Year', campus: 'Campus', section: 'B' }];
+  const fresh = [{ id: '03400000-0000-4000-8000-000000000101', course: 'BSCS', year_level: '4th Year', campus: 'Campus', section: 'B' }];
   requests[1].pending.resolve({ data: fresh, error: null }); await flush();
   assert.equal(h.value.options[0].section, 'B');
   h.value.retry(); await flush();
-  assert.equal(requests[1].signal.aborted, true);
+  assert.equal(h.value.isRefreshing, true);
   requests[2].pending.resolve({ data: null, error: new Error('Offline') }); await flush();
-  assert(h.value.error); assert.equal(h.value.options.length, 0);
+  assert(h.value.error); assert.equal(h.value.status, 'error'); assert.equal(h.value.options.length, 1);
   appState('background'); appState('active'); await flush();
   requests[3].pending.resolve({ data: fresh, error: null }); await flush();
-  assert.equal(h.value.options[0].id, 'b'); assert.equal(h.value.error, null);
+  assert.equal(h.value.options[0].id, fresh[0].id); assert.equal(h.value.error, null);
   h.value.retry(); await flush(); h.unmount();
   assert.equal(requests[4].signal.aborted, true);
 }
