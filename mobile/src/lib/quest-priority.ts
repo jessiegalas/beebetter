@@ -1,5 +1,5 @@
 import type { Quest } from '../context/user-data-context';
-import { timestamp } from './quest-time';
+import { isStoredPreferredTime, timestamp } from './quest-time';
 
 export type CompletionRecord = {
   id: string;
@@ -130,7 +130,7 @@ export function prioritizeQuests(quests: Quest[], context: PriorityContext): Ran
       else if (minutes > 30 && minutes <= 120) { add(26, 'Scheduled soon', 'schedule_soon'); timeMatch = true; }
       else if (minutes > 120) { score -= 12; futureSchedule = true; notes.push('Scheduled for later'); }
       else add(8, 'Scheduled earlier', 'schedule_earlier');
-    } else if (quest.preferred_time && /^([01]\d|2[0-3]):[0-5]\d(:00)?$/.test(quest.preferred_time)) {
+    } else if (isStoredPreferredTime(quest.preferred_time)) {
       const [hour, minute] = quest.preferred_time.split(':').map(Number);
       const now = new Date(context.now);
       const difference = (hour * 60 + minute - now.getHours() * 60 - now.getMinutes() + 1440) % 1440;

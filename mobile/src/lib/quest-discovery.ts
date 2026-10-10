@@ -1,6 +1,6 @@
 import type { Category, QuestStatus } from '../context/user-data-context';
 import type { RankedQuest } from './quest-priority';
-import { timestamp } from './quest-time';
+import { isStoredPreferredTime, timestamp } from './quest-time';
 
 export type QuestFilters = {
   category: Category | null;
@@ -25,7 +25,7 @@ export function filterAllQuests(ranked: RankedQuest[], filters: QuestFilters, no
     if (filters.status !== 'all' && quest.status !== filters.status) return false;
     if (filters.nearby && !nearby) return false;
     const scheduled = timestamp(quest.scheduled_at), deadline = timestamp(quest.deadline_at);
-    const preferred = !!quest.preferred_time && /^([01]\d|2[0-3]):[0-5]\d(:00)?$/.test(quest.preferred_time);
+    const preferred = isStoredPreferredTime(quest.preferred_time);
     const hasTime = scheduled !== null || deadline !== null || preferred;
     if (filters.time === 'scheduled') return hasTime;
     if (filters.time === 'anytime') return !hasTime;

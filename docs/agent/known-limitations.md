@@ -15,15 +15,12 @@ Read for affected behavior before relying on old documentation or asserting prod
 
 ## Historical documentation
 
-- Root `README.md` is minimal; `admin/README.md` describes older unpaginated access superseded by 022.
-- Former `SYSTEM_DIAGNOSTIC.md` and `PHASE_6_VERIFICATION.md` described the 001-015 era, including issues later addressed; both are absent in the current tree. The removed mobile navigator is not active architecture.
-- Former `mobile/CONTEXT_AWARE.md` predates server-enforced prerequisites/current candidate retrieval and has an incomplete database-test list. Former `mobile/STUDENT_REGISTRATION.md` stops at 025 and omits later migrations/separate Auth hook activation. Both are absent in the current working tree; do not route tasks to them.
-- Former `DEPLOYMENT.md` described flat SQL paths and 001-027; it, `DATABASE_NORMALIZATION_AUDIT.md`, and `ACCOUNT_ACCESS_VERIFICATION.md` are absent. The current tree has numbered files under `supabase/migrations/` and 028 plus a notification Edge Function. Use [database contracts](database-contracts.md) and the [function README](../../supabase/functions/quest-notifications/README.md), then confirm actual deployment. Recover relevant historical procedures/preflight queries from Git only when needed; verify against current code.
+- Older removed audits/setup guides describe earlier migration chains, flat SQL paths and superseded clients. Use [database contracts](database-contracts.md), [testing](testing.md) and the [notification function README](../../supabase/functions/quest-notifications/README.md). Recover historical procedures from Git only when needed and verify them against current source and deployed definitions.
 - The old three-quest local 18:00 reminder description is superseded by cloud registration and schedule/deadline push in current source. See [location and notifications](location-and-notifications.md).
-- `verify-local-supabase.ps1` and the optional PGlite fixture still read old flat paths; the runner can apply zero migrations. The former real database account-access suite `supabase/test_account_access.cjs` is also absent. Current full-chain/broader SQL regression coverage is not established; see [testing](testing.md).
+- `verify-local-supabase.ps1` reads numbered files from `supabase/migrations/` and fails on zero files. Only the optional PGlite fixture still uses old flat paths. The former real database account-access suite is absent; available SQL suites and unverified coverage are documented in [testing](testing.md).
 
 ## Operational readiness
 
-Source alone cannot establish configured Auth/email redirects, hook activation, approved active-semester sections, explicit admin/OSAS grants, private Storage, an operated proof-cleanup worker, native background-location correctness, or deployed push credentials/function/Cron.
+Source alone cannot establish configured Auth/email redirects, hook activation, approved active-semester sections, active admin roles, private Storage, an operated proof-cleanup worker, native background-location correctness, or deployed push credentials/function/Cron.
 
 Proof cleanup has no checked-in worker; notification delivery does have an Edge Function but requires separate operational setup. Push is best effort, with offline token-revocation and in-flight delivery limitations. UI report dates hardcode Asia/Manila while SQL reads configuration; inspect both before changing timezone policy. Do not describe old audit results or source availability as current operational verification.

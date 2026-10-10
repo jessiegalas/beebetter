@@ -7,12 +7,13 @@ Read when choosing checks for affected behavior. Batch related edits, run target
 | Working directory | Commands and triggers |
 | --- | --- |
 | `mobile/` | `npx tsc --noEmit`; `npm run lint`; `npm run test:context` for ranking/context; `npm run test:students` for student validation; `npm run test:auth` for account/session lifecycle. |
+| `mobile/` | `npm run test:workspace` for workspace reads/cancellation; `npm run test:completion` for proof/completion coordination; `npm run test:ui` for synthetic screen interactions. |
 | `mobile/` | `node scripts/test-quest-notifications.cjs` for current notification actions/registration (present in working tree; no npm script). |
 | `admin/` | `npm run build` (`tsc -b` plus Vite); `npm run lint` (Oxlint, not ESLint); `npm run test:report` for CSV/report behavior; `npm run test:auth` for mocked session/role/access-request behavior. |
 | `admin/` | `npm run test:flows` for mocked report request/export ordering, student query transitions, semester edit/activation flow, and mobile enrollment refresh/cancellation. |
 | Repository root | `git diff --check`; inspect changed-file scope and documentation paths. |
 
-Shared validation or cross-client contracts require checks in both apps. For shared student validation, include mobile TypeScript/student tests and admin checks. Do not use mobile's template `reset-project` script as validation. Documentation-only tasks require diff/path/reference checks, not application test suites or migration execution.
+Shared validation or cross-client contracts require checks in both apps. For shared student validation, include mobile TypeScript/student tests and admin checks. Documentation-only tasks require diff/path/reference checks, not application test suites or migration execution.
 
 Mobile tests are Node `.cjs` scripts transpiling TypeScript, not Jest/device tests. Auth uses a small hook lifecycle harness and mocked service/native APIs; former `ACCOUNT_ACCESS_VERIFICATION.md` supplied device acceptance but is absent. Admin report tests cover CSV content, suppression, missing values, and formula escaping, not database RLS/RPCs. Admin auth tests cover hook state and stale lookups with mocked services; they do not prove request-table RLS or guarded RPC authorization. There is no checked-in admin browser end-to-end suite.
 
@@ -20,7 +21,7 @@ Mobile tests are Node `.cjs` scripts transpiling TypeScript, not Jest/device tes
 
 - Native location: foreground allowed/denied, background denied, stale GPS, overlapping regions, resume, sign-out cleanup, proof-required completion. Physical hardware is required; Expo Go/web cannot establish background geofencing.
 - Account/session/notifications: routing and account switching on hardware; notification denial/re-enable, body/Open/Complete taps, duplicate taps, foreground/background/cold start, proof changed after delivery, prerequisites, offline failure, expired Auth, token rotation, logout, geofence cooldown/exit/offline behavior. See the [function acceptance guide](../../supabase/functions/quest-notifications/README.md).
-- Admin: ordinary/super-admin versus each OSAS permission, revoked/inactive access, pagination/search, RPC errors, semester lifecycle, support-event retention, suppressed/export-failure states. Use authorized synthetic data, never real student fixtures.
+- Admin: ordinary/super-admin access to both OSAS capabilities independent of legacy permission rows, revoked/inactive access, pagination/search, RPC errors, semester lifecycle, support-event retention, suppressed/export-failure states. Use authorized synthetic data, never real student fixtures.
 - Session checks: focus, visibility and interval checks must preserve signed-out login/signup forms. Signed-in checks must retain the workspace while pending and close it after confirmed revocation or verification failure.
 - `admin` flow tests also cover page-size/filter preservation, fixed Bacoor campus, invalid numeric section rejection, and unchanged legacy labels. They are mocked client checks, not PostgreSQL authorization proof.
 
@@ -35,7 +36,6 @@ There is no package manifest/test command in `supabase/`. The documented root co
 This is a **mutating migration runner with notification, registration, and hardening assertions**, not a dry run. It requires psql and a provisioned disposable Supabase with Auth/Storage, accepts loopback hosts only, and uses `ON_ERROR_STOP`. Migration execution requires explicit authorization even locally; never run it for documentation/review tasks.
 
 The runner discovers numbered files in supabase/migrations, fails on zero files, applies each exactly once, and runs notification authorization/concurrent claims, self-contained registration/hardening assertions, and two-session registration-versus-removal/archival/activation checks. CI provisions its empty stack outside the checkout to prevent automatic double application. Historical filenames still do not establish configured CLI migration history.
-
 
 Former root command `node supabase/test_account_access.cjs` is **unavailable**: the suite and its setup reference `DEPLOYMENT.md` were removed from the current tree. Preserve its coverage requirements for future authorized database work: real Auth/student suspension on a configured disposable loopback stack with hook 027 enabled; active login, suspension by admin RPC, denied inactive login/refresh, old-token write rejection, hook execution denial for clients, suspended logout, reactivation, and active-admin exemption. It created/removed synthetic users; retained anonymous history could remain until stack disposal. Test clean and upgraded synthetic pre-027 data plus staging signup/email confirmation. An absent/disabled hook must fail inactive-login checks. This was account-access coverage, not full-schema coverage; do not claim it was run or restore scripts during unrelated tasks.
 

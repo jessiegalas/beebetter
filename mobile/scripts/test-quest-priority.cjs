@@ -165,6 +165,21 @@ test('time filters handle local today preferred times missing and invalid dates'
   assert.deepEqual(ids('scheduled'), ['daily', 'future', 'today']);
   assert.deepEqual(ids('anytime'), ['invalid', 'none']);
 });
+test('stored preferred times agree between recommendations and discovery filters', () => {
+  for (const [value, expected] of [
+    ['10:00', true], ['10:00:00', true],
+    ['10:00:01', false], ['24:00', false], ['10:60', false],
+    [' 10:00 ', false], ['', false], [null, false], [undefined, false],
+  ]) {
+    const items = rank([quest('preferred', { preferred_time: value })]);
+    assert.equal(items[0].reasonCodes.includes('preferred_now'), expected, String(value));
+    for (const time of ['scheduled', 'today', 'anytime']) {
+      const visible = filterAllQuests(items, { ...DEFAULT_FILTERS, time }, now).length === 1;
+      assert.equal(visible, time === 'anytime' ? !expected : expected, `${time}: ${value}`);
+    }
+  }
+});
+
 test('overdue excludes completed and pending quests', () => {
   const items = rank(['active', 'rejected', 'completed', 'pending'].map(status => quest(status, { status, deadline_at: iso(-1) })));
   assert.deepEqual(filterAllQuests(items, { ...DEFAULT_FILTERS, time: 'overdue' }, now).map(item => item.quest.id).sort(), ['active', 'rejected']);

@@ -58,7 +58,8 @@ Efficiency rules:
 Run from this repository root:
 
 ```powershell
-git diff --check```
+git diff --check
+```
 
 Use affected scoped commands; check both apps for shared contracts. Report actual results and skipped checks.
 For documentation-only work, inspect the diff and links; do not run broad application suites or migrations.

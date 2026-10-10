@@ -1,12 +1,12 @@
 # Student authentication rollout
 
-Source files and migration names do not establish hosted deployment state. On 2026-10-08, read-only requests against the mobile-configured project verified that email confirmation is enabled and registration_enrollment_options_v2 returns one option for 2026-2027 / 1st Semester at Cavite State University Bacoor City Campus. The restricted student_get_registration_state endpoint exists and rejects anonymous access. These checks do not establish the protected completion signature, individual account eligibility, Auth hook configuration or real delivery.
+Source files and migration names do not establish hosted deployment state. Inspect the [current public schema snapshot](../docs/agent/db-schema.sql) for deployed registration definitions and verify Auth settings separately. Catalogue availability does not establish protected completion behavior, individual account eligibility, Auth hook configuration or real email delivery.
 
 ## Established student confirmation
 
 Supabase rejects an unconfirmed identity before the app receives a session. Keep Confirm Email enabled. For this rollout, established students must confirm through email: use the app's resend action, verify SMTP/inbox delivery, open the latest link, and sign in again. Existing shorter login passwords remain valid.
 
-The server-only repair-student-email-confirmation.cjs utility remains available for separately approved operator work, but automatic confirmation is not part of this rollout. Do not run its --apply mode as a substitute for student email confirmation. No account confirmations, passwords, statuses, or enrollment records were changed by this refactor.
+The server-only repair-student-email-confirmation.cjs utility remains available for separately approved operator work, but automatic confirmation is not part of this rollout. Do not run its --apply mode as a substitute for student email confirmation.
 
 ## Signup and confirmation
 
@@ -25,17 +25,18 @@ Verify deployed migration state and the protected student_complete_registration(
 5. Run mobile TypeScript/lint/auth/student tests, admin enrollment-flow tests and node supabase/tests/student-email-repair.cjs. Repair tests use in-memory synthetic accounts; mocked tests do not establish hosted delivery, protected PostgreSQL behavior, native deep linking or database concurrency.
 6. Regenerate docs/agent/db-schema.sql only after separately authorized schema deployment if needed. Monitor sanitized failure categories without recording emails, student numbers, passwords, tokens or callback URLs. Retain existing records and history; do not reclaim student numbers automatically.
 
-## Registration refactor and compatible hardening
+## Client boundaries and compatible hardening
 
-The client uses one shared registration form, an explicitly typed catalogue hook, validated RPC payloads, and a 20-second catalogue deadline. Initial loading, successful emptiness, errors, and background refresh have separate states. Refresh failures retain prior choices and entered details, but registration waits for a successful fresh catalogue. Changing program/year/campus clears dependent choices. Signup and onboarding retain the existing mobile-ui controls and semantic palette; no global registry migration is included.
+See [registration client boundaries](../docs/agent/enrollment.md#registration-client-boundaries) for shared form/catalogue ownership, refresh validation and retained drafts.
 
 Authentication serialization and busy state remain in user-data-context. Screens retain only immediate tap guards. Admission, recovery, notification cleanup, session/account fencing, and protected routes remain provider-owned. New profile saves omit email.
 
-Prepared migrations (not evidence of deployment):
+Migration contracts (verify against hosted definitions before rollout):
+
 - 035_registration_enrollment_locking.sql locks semesters before sections and serializes draft activation with section edits/removal.
 - 036_student_auth_email_and_grants.sql derives student email from Auth, synchronizes subsequent valid Auth changes, reconciles current projections without rewriting history, and removes destructive grants on affected tables. Existing authenticated email-update column permission is retained for installed older clients.
 
-Before deployment, run the read-only tests/registration-preflight.sql through an authorized metadata connection and compare hosted functions, triggers, policies, and grants against migrations 025/032/034/035/036. The checked-in schema snapshot predates parts of the registration contract. Do not execute 034 again based on old documentation. Verify trigger ordering, Auth-hook access, service-role jobs, legacy updates, and schema drift before approving 035/036.
+Before deployment, run the read-only tests/registration-preflight.sql through an authorized metadata connection and compare hosted functions, triggers, policies, and grants against migrations 025/032/034/035/036. The checked-in public schema snapshot was refreshed from the hosted database on 2026-10-10; inspect its current registration definitions instead of inferring deployment from older notes. Do not execute 034 again based on old documentation. Verify trigger ordering, Auth-hook access, service-role jobs, legacy updates, and schema drift before approving 035/036.
 
 Apply compatible database changes before releasing the client. Test an older installed build against the resulting backend. Revoke legacy email-update permission only after those builds are retired. Keep consent, progression, OSAS suppression/audits, history, and provisional-feature flags intact.
 

@@ -28,6 +28,11 @@ export function parsePreferredTime(value: string): string | null {
   return value.trim();
 }
 
+/** Stored times may include zero seconds; form input stays HH:mm. */
+export function isStoredPreferredTime(value?: string | null): value is string {
+  return !!value && /^([01]\d|2[0-3]):[0-5]\d(:00)?$/.test(value);
+}
+
 export function timestamp(value?: string | null): number | null {
   if (!value) return null;
   const time = Date.parse(value);
