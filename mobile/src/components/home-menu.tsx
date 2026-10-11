@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { Button, IconButton, useReducedMotion } from './mobile-ui';
+import { IconButton, useReducedMotion } from './mobile-ui';
 import { ThemedText } from './themed-text';
 import { UserAvatar } from './user-avatar';
-import { Borders, Controls, Layout, Radii, Spacing, useBeePalette } from '@/constants/theme';
+import { Borders, Controls, Layout, Radii, Spacing, States, useBeePalette } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
 
 export function HomeMenu({ visible, onClose, displayName, avatarUri }: { visible: boolean; onClose: () => void; displayName: string; avatarUri?: string }) {
@@ -14,7 +15,7 @@ export function HomeMenu({ visible, onClose, displayName, avatarUri }: { visible
   const { width } = useWindowDimensions();
   const { levelProgress, signOut, isSigningOut } = useUserData();
   const percent = Math.max(0, Math.min(100, levelProgress.progressPercent));
-  const open = (route: '/profile' | '/manage-locations' | '/skill-tree' | '/notifications') => { onClose(); router.push(route); };
+  const open = (route: '/profile' | '/manage-locations' | '/skill-tree' | '/notifications' | '/settings') => { onClose(); router.push(route); };
   const logout = () => {
     if (isSigningOut) return;
     Alert.alert('Sign Out', 'Are you sure you want to sign out of BeeBetter?', [
@@ -47,14 +48,14 @@ export function HomeMenu({ visible, onClose, displayName, avatarUri }: { visible
           </View>
           <View style={[s.divider, { backgroundColor: c.surfaceMuted }]} />
           <View style={s.group}>
-            <MenuItem icon="settings-outline" label="Settings" disabled />
+            <MenuItem icon="settings-outline" label="Settings" onPress={() => open('/settings')} />
             <MenuItem icon="help-circle-outline" label="Help & Support" disabled />
             <MenuItem icon="notifications-outline" label="Notifications" onPress={() => open('/notifications')} />
-            <Button intent="quiet" icon="log-out-outline" label="Log Out" loading={isSigningOut} onPress={logout} />
+            <MenuItem icon="log-out-outline" label="Log Out" danger busy={isSigningOut} onPress={logout} />
           </View>
         </ScrollView>
         <View style={s.footer}>
-          <Ionicons name="flower-outline" size={Controls.iconSize} color={c.muted} accessible={false} />
+          <Image source={require('../../assets/images/beebetter-logo.png')} style={s.logo} contentFit="contain" accessible={false} />
           <ThemedText type="small" style={{ color: c.muted, textAlign: 'center' }}>Small steps. Big progress.</ThemedText>
         </View>
       </SafeAreaView>
@@ -63,11 +64,11 @@ export function HomeMenu({ visible, onClose, displayName, avatarUri }: { visible
   </Modal>;
 }
 
-function MenuItem({ icon, label, onPress, featured = false, disabled = false }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress?: () => void; featured?: boolean; disabled?: boolean }) {
+function MenuItem({ icon, label, onPress, featured = false, disabled = false, danger = false, busy = false }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress?: () => void; featured?: boolean; disabled?: boolean; danger?: boolean; busy?: boolean }) {
   const c = useBeePalette(), [focused, setFocused] = useState(false);
-  return <Pressable cssInterop={false} onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={label} accessibilityHint={disabled ? 'Coming soon' : undefined} accessibilityState={{ disabled }} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.row, { backgroundColor: pressed ? c.surfaceMuted : featured ? c.card : 'transparent', borderColor: focused ? c.focus : 'transparent' }]}>
-    <Ionicons name={icon} size={Controls.iconSize} color={disabled ? c.muted : c.foreground} accessible={false} />
-    <ThemedText type="label" style={[s.copy, { color: disabled ? c.muted : c.foreground }]}>{label}</ThemedText>
+  return <Pressable cssInterop={false} onPress={onPress} disabled={disabled || busy} accessibilityRole="button" accessibilityLabel={label} accessibilityHint={disabled ? 'Coming soon' : undefined} accessibilityState={{ disabled: disabled || busy, busy }} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.row, { backgroundColor: disabled ? c.disabled : pressed ? c.surfaceMuted : featured ? c.card : 'transparent', borderColor: focused && !danger ? c.focus : 'transparent' }, danger && { borderWidth: 0, opacity: focused ? States.pressedOpacity : 1 }]}>
+    {busy ? <ActivityIndicator color={c.danger} /> : <Ionicons name={icon} size={Controls.iconSize} color={disabled ? c.disabledForeground : danger ? c.danger : c.foreground} accessible={false} />}
+    <ThemedText type={disabled ? 'small' : 'label'} style={[s.copy, { color: disabled ? c.disabledForeground : danger ? c.danger : c.foreground }]}>{label}</ThemedText>
     {featured && <Ionicons name="chevron-forward" size={16} color={c.muted} accessible={false} />}
   </Pressable>;
 }
@@ -83,5 +84,6 @@ const s = StyleSheet.create({
   group: { gap: Spacing.sm },
   row: { minHeight: Controls.minHeight, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, borderWidth: Borders.focus, borderRadius: Radii.md },
   divider: { height: Borders.default },
+  logo: { width: Controls.minHeight, height: Controls.minHeight, borderRadius: Radii.sm },
   footer: { padding: Spacing.lg, alignItems: 'center', gap: Spacing.sm },
 });

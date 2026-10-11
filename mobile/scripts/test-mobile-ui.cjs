@@ -14,7 +14,7 @@ native.StyleSheet = { create: x => x }; native.Platform = { OS:'web' }; native.u
 const presentation = { Button:'Button', IconButton:'IconButton', Surface:'Surface', ScreenFrame:'ScreenFrame', Sheet:'Sheet', Field:'Field', ChoiceChip:'ChoiceChip', StatusMessage:'StatusMessage' };
 const features = load('src/constants/features.ts');
 const theme = { Borders:tokens.borders, Controls:tokens.controls, Layout:tokens.layout, Spacing:tokens.spacing, States:tokens.states, Typography:tokens.typography, Fonts: { sans: 'sans-serif' }, BeeBetterColors:c, Radii:tokens.radii, MaxContentWidth:720, useBeePalette:()=>c, useBeeStyles:fn=>fn(c) };
-function basics(h) { return { react:h.react, '@/constants/features':features, 'react-native':native, 'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'}, '@expo/vector-icons':{Ionicons:'Icon'}, '@/constants/theme':theme, '@/components/themed-text':{ThemedText:'Text'}, './themed-text':{ThemedText:'Text'}, '@/components/mobile-ui':presentation, '@/components/xp-visuals':{XpBadge:'XpBadge',QuestReward:'QuestReward',XpProgress:'XpProgress'}, '@/components/bee-visuals':{BeeMark:'BeeMark'}, '@/components/user-avatar':{UserAvatar:'Avatar'}, '@/components/home-menu':{HomeMenu:'HomeMenu'}, '@/hooks/use-app-appearance':{useAppAppearance:()=>({scheme:'light',toggleTheme(){}})}, '@/context/location-context':{useLocationContext:()=>({locations:[]})} }; }
+function basics(h) { return { react:h.react, 'expo-image':{Image:'Image'}, '../../assets/images/beebetter-logo.png':5, '../../../assets/svg/book-svgrepo-com.svg':1, '../../../assets/svg/health-insurance-round-svgrepo-com.svg':2, '../../../assets/svg/user-social-network-svgrepo-com.svg':3, '../../../assets/svg/infinite-symbol-svgrepo-com.svg':4, '@/constants/features':features, 'react-native':native, 'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'}, '@expo/vector-icons':{Ionicons:'Icon'}, '@/constants/theme':theme, '@/components/themed-text':{ThemedText:'Text'}, './themed-text':{ThemedText:'Text'}, '@/components/mobile-ui':presentation, '@/components/xp-visuals':{XpBadge:'XpBadge',QuestReward:'QuestReward',XpProgress:'XpProgress'}, '@/components/bee-visuals':{BeeMark:'BeeMark'}, '@/components/user-avatar':{UserAvatar:'Avatar'}, '@/components/home-menu':{HomeMenu:'HomeMenu'}, '@/hooks/use-app-appearance':{useAppAppearance:()=>({scheme:'light',toggleTheme(){}})}, '@/context/location-context':{useLocationContext:()=>({locations:[]})} }; }
 const quests = [
  {id:'q1',title:'A long quest title that wraps instead of losing useful information',category:'Academics',status:'active',xp:25,requires_proof:false},
  {id:'q2',title:'Walk outdoors',category:'Health',status:'active',xp:15,requires_proof:true},
@@ -47,8 +47,8 @@ test('shared buttons expose loading and keyboard focus feedback',async()=>{const
 test('button intents stay distinct in both themes through pressed and disabled states', () => {
  for (const palette of [tokens.light, tokens.dark]) {
   const h=hooks();const mod=load('src/components/mobile-ui.tsx',{...basics(h),'@/constants/theme':{...theme,useBeePalette:()=>palette}});
-  const backgrounds={primary:palette.primary,secondary:palette.card,quiet:'transparent',destructive:palette.danger,accent:palette.accent};
-  const pressed={primary:palette.primaryPressed,secondary:palette.surfaceMuted,quiet:palette.surfaceMuted,destructive:palette.dangerPressed,accent:palette.accent};
+  const backgrounds={primary:palette.primary,secondary:palette.card,quiet:'transparent',destructive:palette.danger,accent:palette.accent,'accent-quiet':'transparent'};
+  const pressed={primary:palette.primaryPressed,secondary:palette.surfaceMuted,quiet:palette.surfaceMuted,destructive:palette.dangerPressed,accent:palette.accent,'accent-quiet':'transparent'};
   for(const intent of Object.keys(backgrounds)) {
    h.mount(()=>mod.Button({label:'Action',intent,onPress(){}}));
    assert.equal(h.value.props.style({pressed:false})[1].backgroundColor,backgrounds[intent]);
@@ -194,19 +194,26 @@ test('rotated background covers portrait, landscape and wide screens throughout 
  }
 });
 test('Home header, shortcuts and recommendation use existing account and quest data', async () => {
- const h=hooks(),routes=[];let toggles=0;
+ const h=hooks(),routes=[];
  const data={user:{email:'fallback@example.test',user_metadata:{avatar_url:'https://example.test/avatar.jpg'}},profile:{display_name:'Brightsteel',current_streak:7},progressSummary:{totalCompleted:19},levelProgress:{level:4,currentLevelXp:23,xpForNextLevel:100,progressPercent:23},workspaceErrors:{},isLoading:false,isRefreshing:false,refresh(){},retryWorkspace(){}};
  const quest={...quests[0],description:'Actual quest description',location_id:'place-1',xp:25};
- const mod=load('src/app/(tabs)/index.tsx',{...basics(h),'react-native':{...native,useWindowDimensions:()=>({width:320,fontScale:1})},'@/hooks/use-app-appearance':{useAppAppearance:()=>({scheme:'light',toggleTheme:()=>toggles++})},'expo-router':{router:{push:r=>routes.push(r)}},'@/hooks/use-user-data':{useUserData:()=>data},'@/context/location-context':{useLocationContext:()=>({locations:[{id:'place-1',name:'Library'}]})},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:[{quest,reasons:['Actual ranking reason']}],locationAvailable:true})},'@/lib/quest-discovery':load('src/lib/quest-discovery.ts',{'./quest-time':load('src/lib/quest-time.ts')})});
+ const mod=load('src/app/(tabs)/index.tsx',{...basics(h),'react-native':{...native,useWindowDimensions:()=>({width:320,fontScale:1})},'expo-router':{router:{push:r=>routes.push(r)}},'@/hooks/use-user-data':{useUserData:()=>data},'@/context/location-context':{useLocationContext:()=>({locations:[{id:'place-1',name:'Library'}]})},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:[{quest,reasons:['Actual ranking reason']}],locationAvailable:true})},'@/lib/quest-discovery':load('src/lib/quest-discovery.ts',{'./quest-time':load('src/lib/quest-time.ts')})});
  h.mount(()=>mod.default());
- const content=text(h.value);assert.ok(content.includes('Hi, Brightsteel!'));assert.ok(content.indexOf('Actual quest description')<content.indexOf('Your progress'));assert.ok(content.includes('Library'));assert.ok(content.includes('+25 XP'));assert.ok(content.includes('7 days'));assert.ok(content.includes('19'));
+ const content=text(h.value);assert.ok(content.includes('Hi, Brightsteel!'));assert.ok(content.indexOf('Actual quest description')<content.indexOf('Your progress'));assert.ok(content.includes('Library'));assert.ok(content.includes('+25 XP'));assert.equal(text(find(h.value,n=>n.props?.accessibilityLabel==='Current streak: 7 days')),'7');assert.ok(content.includes('19'));
  const greeting=find(h.value,n=>n.type==='Text'&&text(n)==='Hi, Brightsteel!');assert.equal(greeting.props.numberOfLines,1);
  assert.equal(find(h.value,n=>n.type==='Avatar').props.uri,data.user.user_metadata.avatar_url);
  assert.equal(find(h.value,n=>n.type==='XpProgress').props.progress,data.levelProgress);
- find(h.value,n=>n.props?.label==='Switch to dark mode').props.onPress();assert.equal(toggles,1);
+ // A changed recommendation category updates the image without a separate state.
+ for(const [category,asset] of [['Academics',1],['Health',2],['Social',3],['Habits',4],[' health ',2],['My custom category',1],['__proto__',1],[null,1]]) {
+  quest.category=category;h.render();assert.equal(find(h.value,n=>n.type==='Image').props.source,asset);
+ }
+ assert.equal(find(h.value,n=>n.props?.label==='Switch to dark mode'),undefined);
+ find(h.value,n=>n.props?.label==='Open notifications').props.onPress();
+ find(h.value,n=>n.props?.accessibilityLabel==='Open Skill Tree, level 4').props.onPress();
+ assert.equal(content.includes('all time'),false);
  find(h.value,n=>n.props?.label==='Open menu').props.onPress();await flush();assert.equal(find(h.value,n=>n.type==='HomeMenu').props.visible,true);
  for(const label of ['Profile','Save Places','Skill Tree'])find(h.value,n=>typeof n.type==='function'&&n.props.label===label).props.onPress();
- assert.deepEqual(routes,['/profile','/manage-locations','/skill-tree']);button(h.value,'View quest').props.onPress();assert.equal(routes.at(-1).params.questId,quest.id);
+ assert.deepEqual(routes,['/notifications','/skill-tree','/profile','/manage-locations','/skill-tree']);button(h.value,'View quest').props.onPress();assert.equal(routes.at(-1).params.questId,quest.id);
  data.user.user_metadata={};data.profile.display_name='';h.render();assert.ok(text(h.value).includes('Hi, fallback!'));assert.equal(find(h.value,n=>n.type==='Avatar').props.uri,undefined);h.unmount();
 });
 test('side panel preserves destinations and provider logout, with requested placeholder buttons', () => {
@@ -215,11 +222,11 @@ test('side panel preserves destinations and provider logout, with requested plac
  const mod=load('src/components/home-menu.tsx',{...basics(h),'./mobile-ui':{...presentation,useReducedMotion:()=>true},'./themed-text':{ThemedText:'Text'},'./user-avatar':{UserAvatar:'Avatar'},'react-native':{...native,Alert:{alert:(...args)=>alerts.push(args)}},'expo-router':{router:{push:r=>routes.push(r)}},'@/hooks/use-user-data':{useUserData:()=>data}});
  h.mount(()=>mod.HomeMenu({visible:true,onClose:()=>closed++,displayName:'Actual Student'}));
  assert.equal(h.value.props.animationType,'none');assert.equal(find(h.value,n=>n.props?.accessibilityViewIsModal).props.accessibilityViewIsModal,true);
- for(const label of ['Profile','Save Places','Skill Tree','Notifications'])find(h.value,n=>typeof n.type==='function'&&n.props.label===label).props.onPress();
- assert.deepEqual(routes,['/profile','/manage-locations','/skill-tree','/notifications']);assert.equal(closed,4);
- for(const label of ['Settings','Help & Support']){const item=find(h.value,n=>typeof n.type==='function'&&n.props.label===label);assert.equal(item.props.disabled,true);assert.equal(item.props.onPress,undefined);}
- button(h.value,'Log Out').props.onPress();assert.equal(signouts,0);alerts[0][2].find(b=>b.style==='destructive').onPress();assert.equal(signouts,1);
- data.isSigningOut=true;h.render();button(h.value,'Log Out').props.onPress();assert.equal(alerts.length,1);h.unmount();
+ for(const label of ['Profile','Save Places','Skill Tree','Notifications','Settings'])find(h.value,n=>typeof n.type==='function'&&n.props.label===label).props.onPress();
+ assert.deepEqual(routes,['/profile','/manage-locations','/skill-tree','/notifications','/settings']);assert.equal(closed,5);
+ for(const label of ['Help & Support']){const item=find(h.value,n=>typeof n.type==='function'&&n.props.label===label);assert.equal(item.props.disabled,true);assert.equal(item.props.onPress,undefined);}
+ find(h.value,n=>typeof n.type==='function'&&n.props.label==='Log Out').props.onPress();assert.equal(signouts,0);alerts[0][2].find(b=>b.style==='destructive').onPress();assert.equal(signouts,1);
+ data.isSigningOut=true;h.render();find(h.value,n=>typeof n.type==='function'&&n.props.label==='Log Out').props.onPress();assert.equal(alerts.length,1);h.unmount();
 });
 test('avatar displays an existing image, falls back on error and accepts a new image', async () => {
  const h=hooks();let uri='https://example.test/first.png';
@@ -245,6 +252,18 @@ test('compact XP presentation retains accurate progress and the default profile 
  h.mount(()=>mod.XpProgress({progress,compact}));await flush();assert.equal(find(h.value,n=>n.type==='AnimatedView').props.style[1].width.value,'40%');assert.ok(text(h.value).includes('40 / 100 XP'));assert.ok(text(h.value).includes('60 XP'));
  progress={...progress,currentLevelXp:75,progressPercent:75};h.render();await flush();assert.equal(find(h.value,n=>n.props?.accessibilityRole==='progressbar').props.accessibilityValue.now,75);assert.equal(find(h.value,n=>n.type==='AnimatedView').props.style[1].width.value,'75%');
  compact=false;h.render();assert.ok(text(h.value).includes('Level 3'));h.unmount();
+});
+
+test('Settings opens General and its Dark Mode switch uses the saved appearance owner', () => {
+ const routes=[];let scheme='light';const saved=[];const h=hooks();
+ const router={push:r=>routes.push(r),back:()=>routes.push('back')};
+ const settings=load('src/app/settings/index.tsx',{...basics(h),'expo-router':{router}});
+ h.mount(()=>settings.default());button(h.value,'General').props.onPress();assert.equal(routes[0],'/settings/general');
+ find(h.value,n=>n.props?.label==='Back from Settings').props.onPress();assert.equal(routes[1],'back');h.unmount();
+ const g=hooks();const general=load('src/app/settings/general.tsx',{...basics(g),'expo-router':{router},'@/hooks/use-app-appearance':{useAppAppearance:()=>({scheme}),setAppAppearance:next=>{saved.push(next);scheme=next}}});
+ g.mount(()=>general.default());const toggle=()=>find(g.value,n=>n.type==='Switch');
+ assert.equal(toggle().props.value,false);toggle().props.onValueChange(true);g.render();assert.equal(toggle().props.value,true);
+ toggle().props.onValueChange(false);g.render();assert.equal(toggle().props.value,false);assert.deepEqual(saved,['dark','light']);g.unmount();
 });
 
 (async()=>{for(const {name,fn} of cases){await fn();console.log('PASS '+name)}console.log(cases.length+' mobile UI regressions passed.')})().catch(error=>{console.error(error);process.exitCode=1});

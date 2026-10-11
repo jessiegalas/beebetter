@@ -31,6 +31,8 @@ function AppNavigator() {
         <Stack.Screen name="notifications" options={{ presentation: 'modal' }} />
         <Stack.Screen name="add-quest" options={{ presentation: 'modal' }} />
         <Stack.Screen name="manage-locations" />
+        <Stack.Screen name="settings/index" />
+        <Stack.Screen name="settings/general" />
         <Stack.Protected guard={MOBILE_WELLNESS_AND_SUPPORT_ENABLED}>
           <Stack.Screen name="wellness-check-in" />
           <Stack.Screen name="self-management-reflection" />

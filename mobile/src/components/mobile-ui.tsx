@@ -32,17 +32,18 @@ export function Surface({ children, featured = false, style }: {
     {children}
     </View>;
 }
-export function Button({ label, onPress, intent = 'primary', icon, disabled = false, loading = false, style }: {
+export function Button({ label, onPress, intent = 'primary', icon, disabled = false, loading = false, foregroundColor, style }: {
     label: string;
     onPress: () => void;
-    intent?: 'primary' | 'secondary' | 'quiet' | 'destructive' | 'accent';
+    intent?: 'primary' | 'secondary' | 'quiet' | 'destructive' | 'accent' | 'accent-quiet';
     icon?: Icon;
     disabled?: boolean;
     loading?: boolean;
+    foregroundColor?: string;
     style?: StyleProp<ViewStyle>;
 }) {
     const c = useBeePalette(), [focused, setFocused] = useState(false), blocked = disabled || loading;
-    const color = disabled ? c.disabledForeground : intent === 'primary' ? c.primaryForeground : intent === 'accent' ? c.accentForeground : intent === 'destructive' ? c.dangerForeground : intent === 'quiet' ? c.primary : c.foreground;
+    const color = disabled ? c.disabledForeground : foregroundColor ?? (intent === 'primary' ? c.primaryForeground : intent === 'accent' ? c.accentForeground : intent === 'accent-quiet' ? c.accent : intent === 'destructive' ? c.dangerForeground : intent === 'quiet' ? c.primary : c.foreground);
     return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: blocked, busy: loading }} disabled={blocked} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => {
         let backgroundColor = 'transparent';
         if (intent === 'accent') backgroundColor = c.accent;
@@ -50,8 +51,8 @@ export function Button({ label, onPress, intent = 'primary', icon, disabled = fa
         if (intent === 'secondary') backgroundColor = pressed ? c.surfaceMuted : c.card;
         if (intent === 'quiet' && pressed) backgroundColor = c.surfaceMuted;
         if (intent === 'destructive') backgroundColor = pressed ? c.dangerPressed : c.danger;
-        const focusColor = intent === 'primary' ? c.primaryForeground : intent === 'accent' ? c.accentForeground : intent === 'destructive' ? c.dangerForeground : c.focus;
-        return [s.button, { backgroundColor: disabled ? c.disabled : backgroundColor, borderColor: focused ? focusColor : intent === 'secondary' && !disabled ? c.input : 'transparent' }, intent === 'accent' && pressed && { opacity: States.pressedOpacity }, style];
+        const focusColor = intent === 'primary' ? c.primaryForeground : intent === 'accent' ? c.accentForeground : intent === 'accent-quiet' ? c.accent : intent === 'destructive' ? c.dangerForeground : c.focus;
+        return [s.button, { backgroundColor: disabled ? c.disabled : backgroundColor, borderColor: focused ? focusColor : intent === 'secondary' && !disabled ? c.input : 'transparent' }, (intent === 'accent' || intent === 'accent-quiet') && pressed && { opacity: States.pressedOpacity }, style];
     }}>
     {loading ? <ActivityIndicator color={color}/> : icon && <Ionicons name={icon} size={Controls.iconSize} color={color} accessible={false}/>}
     <ThemedText type="label" style={{ color, flexShrink: 1, textAlign: 'center' }}>

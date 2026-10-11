@@ -31,11 +31,11 @@ export function XpProgress({ progress, compact = false }: { progress: LevelProgr
       <View style={s.level}><Ionicons name="ribbon" size={22} color={C.foreground} /><ThemedText style={s.levelText}>Level {progress.level}</ThemedText></View>
       <ThemedText style={s.caption}>{progress.currentLevelXp} / {progress.xpForNextLevel} XP</ThemedText>
     </View>}
-    <View style={s.track} accessibilityRole="progressbar" accessibilityLabel={'XP progress toward level ' + (progress.level + 1)} accessibilityValue={{ min: 0, max: 100, now: percent }}>
-      <Animated.View style={[s.fill, { width: fill.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]} />
+    <View style={[s.track, compact && s.compactTrack]} accessibilityRole="progressbar" accessibilityLabel={'XP progress toward level ' + (progress.level + 1)} accessibilityValue={{ min: 0, max: 100, now: percent }}>
+      <Animated.View style={[s.fill, { width: fill.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }, compact && s.compactFill]} />
     </View>
-    {compact && <ThemedText style={s.caption}>{progress.currentLevelXp} / {progress.xpForNextLevel} XP</ThemedText>}
-    <ThemedText style={s.caption}><ThemedText style={s.remaining}>{Math.max(0, progress.xpForNextLevel - progress.currentLevelXp)} XP</ThemedText> to Level {progress.level + 1}</ThemedText>
+    {compact && <ThemedText style={s.compactXp}>{progress.currentLevelXp} / {progress.xpForNextLevel} XP</ThemedText>}
+    <ThemedText style={[s.caption, compact && s.compactCaption]}><ThemedText style={compact ? s.compactCaption : s.remaining}>{Math.max(0, progress.xpForNextLevel - progress.currentLevelXp)} XP</ThemedText> to Level {progress.level + 1}</ThemedText>
   </View>;
 }
 export function QuestReward({ title, xp, previousLevel, progress, onClose }: { title: string; xp: number; previousLevel: number; progress: LevelProgress; onClose: () => void }) {
@@ -54,6 +54,10 @@ export function QuestReward({ title, xp, previousLevel, progress, onClose }: { t
 }
 const makeStyles = (C: BeePalette) => StyleSheet.create({
   progress: { gap: Spacing.sm },
+  compactTrack: { height: Spacing.md },
+  compactFill: { borderWidth: 0, borderRadius: Radii.pill },
+  compactXp: { ...Typography.section, color: C.foreground, marginTop: Spacing.xs },
+  compactCaption: { ...Typography.body, color: C.muted },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: Spacing.sm },
   level: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   levelText: { ...Typography.section, color: C.foreground },
