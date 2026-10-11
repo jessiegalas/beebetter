@@ -390,7 +390,7 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
     viewButton: { flex: 1, minHeight: 48, justifyContent: 'center', alignItems: 'center', padding: 10, borderRadius: Radii.md, backgroundColor: COLORS.card },
     viewToggle: { flexDirection: 'row', gap: 10 },
     contextHint: { fontSize: 14, lineHeight: 20, color: COLORS.muted },
-    container: { flex: 1, backgroundColor: COLORS.background },
+    container: { flex: 1, backgroundColor: 'transparent' },
     safeArea: { flex: 1 },
     content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 112 },
     filterPill: { backgroundColor: COLORS.card, borderRadius: Radii.pill, paddingHorizontal: 14, paddingVertical: 9, minHeight: 48, justifyContent: 'center', borderWidth: 1, borderColor: COLORS.surfaceMuted },

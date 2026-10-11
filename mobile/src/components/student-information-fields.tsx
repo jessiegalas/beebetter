@@ -3,7 +3,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, TextInput, TouchableO
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
-import { Fonts, useBeePalette, useBeeStyles, type BeePalette } from '@/constants/theme';
+import { Borders, Controls, Radii, Fonts, useBeePalette, useBeeStyles, type BeePalette } from '@/constants/theme';
 import { PROGRAMS, YEARS, LIMITS, cleanName, cleanStudentNumber, normalizeProgram, normalizeYear, type StudentFields, type EnrollmentOption, type StudentErrors } from '@/lib/student-validation';
 
 export function StudentInformationFields({ value, onChange, options, errors, loading, loadError, onRetry, original, catalogueOnly = false, disabled = false, catalogueDisabled = false, refreshing = false, touched: controlledTouched, onTouch, showErrors = false, onRegisterInput }: {
@@ -29,7 +29,7 @@ export function StudentInformationFields({ value, onChange, options, errors, loa
   const message = (field: keyof StudentFields) => (showErrors || touched[field] || (!controlledTouched && !!value[field])) && errors[field] ? <ThemedText style={s.error} accessibilityLiveRegion="polite">{errors[field]}</ThemedText> : null;
   const textField = (field: 'name' | 'student_number' | 'goal' | 'course', label: string, placeholder: string) => <View style={s.field}>
     <ThemedText style={s.label}>{label} *</ThemedText>
-    <TextInput ref={node => onRegisterInput?.(field, node)} editable={!disabled} accessibilityLabel={label + ', required'} value={value[field]} onChangeText={text => update(field, field === 'name' ? cleanName(text) : field === 'student_number' ? cleanStudentNumber(text) : text)} onFocus={() => setFocused(field)} onBlur={() => { setFocused(null); touch(field); }} maxLength={LIMITS[field]} keyboardType={field === 'student_number' ? 'number-pad' : 'default'} autoCapitalize={field === 'student_number' ? 'none' : 'words'} autoCorrect={false} style={[s.input, focused === field && s.focused, errors[field] && (touched[field] || showErrors) && s.invalid]} placeholder={placeholder} placeholderTextColor={C.muted} />
+    <TextInput ref={node => onRegisterInput?.(field, node)} editable={!disabled} accessibilityLabel={label + ', required'} value={value[field]} onChangeText={text => update(field, field === 'name' ? cleanName(text) : field === 'student_number' ? cleanStudentNumber(text) : text)} onFocus={() => setFocused(field)} onBlur={() => { setFocused(null); touch(field); }} maxLength={LIMITS[field]} keyboardType={field === 'student_number' ? 'number-pad' : 'default'} autoCapitalize={field === 'student_number' ? 'none' : 'words'} autoCorrect={false} style={[s.input, disabled && s.disabled, focused === field && s.focused, errors[field] && (touched[field] || showErrors) && s.invalid]} placeholder={placeholder} placeholderTextColor={C.muted} />
     {message(field)}
     {field === 'name' && <ThemedText style={s.hint}>Up to 30 characters</ThemedText>}
     {field === 'student_number' && <ThemedText style={s.hint}>Exactly 9 digits</ThemedText>}
@@ -63,7 +63,7 @@ export function StudentSelect({ label, value, options, onChange, emptyText = 'No
   if (disabled && open) setOpen(false);
   const filtered = options.filter(option => option.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   return <View style={s.field}><ThemedText style={s.label}>{label} *</ThemedText>
-    <TouchableOpacity ref={focusRef} disabled={disabled} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={[s.input, s.row, focused && s.focused, disabled && s.disabled]} accessibilityRole="button" accessibilityLabel={label + ', ' + (value || 'choose an option')} accessibilityState={{ expanded: open, disabled }} onPress={() => { setSearch(''); setOpen(true); }}><ThemedText style={s.copy}>{value || 'Choose ' + label.toLowerCase()}</ThemedText><Ionicons name="chevron-down" size={18} color={C.muted} /></TouchableOpacity>
+    <TouchableOpacity ref={focusRef} disabled={disabled} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={[s.input, s.row, focused && s.focused, disabled && s.disabled]} accessibilityRole="button" accessibilityLabel={label + ', ' + (value || 'choose an option')} accessibilityState={{ expanded: open, disabled }} onPress={() => { setSearch(''); setOpen(true); }}><ThemedText style={[s.copy, disabled && { color: C.disabledForeground }]}>{value || 'Choose ' + label.toLowerCase()}</ThemedText><Ionicons name="chevron-down" size={18} color={C.muted} /></TouchableOpacity>
     {helperText && <ThemedText style={s.hint}>{helperText}</ThemedText>}
     <Modal visible={open && !disabled} transparent animationType="none" onRequestClose={() => setOpen(false)}><KeyboardAvoidingView style={s.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><SafeAreaView style={s.sheet} edges={['bottom']} accessibilityViewIsModal>
       <View style={s.row}><ThemedText style={[s.label, s.copy]}>Choose {label.toLowerCase()}</ThemedText><TouchableOpacity style={s.button} accessibilityRole="button" accessibilityLabel="Close options" onPress={() => setOpen(false)}><Ionicons name="close" size={24} color={C.ink} /></TouchableOpacity></View>
@@ -78,7 +78,7 @@ export function StudentSelect({ label, value, options, onChange, emptyText = 'No
 const makeStyles = (C: BeePalette) => StyleSheet.create({
   form: { gap: 12, marginBottom: 16 }, field: { gap: 5 }, label: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: C.ink },
   hint: { fontSize: 14, lineHeight: 20, color: C.muted }, error: { fontSize: 14, lineHeight: 20, color: C.danger },
-  input: { fontFamily: Fonts.sans, minHeight: 48, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.card, borderWidth: 1, borderColor: C.surfaceMuted, color: C.ink, fontSize: 16 , lineHeight: 24}, invalid: { borderColor: C.danger }, focused: { borderColor: C.honeyDark, borderWidth: 2 }, disabled: { opacity: 0.6 },
+  input: { fontFamily: Fonts.sans, minHeight: Controls.minHeight, borderRadius: Radii.md, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.card, borderWidth: Borders.focus, borderColor: C.input, color: C.ink, fontSize: 16 , lineHeight: 24}, invalid: { borderColor: C.danger }, focused: { borderColor: C.focus }, disabled: { backgroundColor: C.disabled, color: C.disabledForeground },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 }, copy: { flex: 1, color: C.ink, fontSize: 14 , lineHeight: 20},
   button: { minHeight: 48, minWidth: 48, justifyContent: 'center', alignItems: 'center' },
   optionNotice: { gap: 4, paddingHorizontal: 2 }, refreshOptions: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start' }, refreshOptionsText: { color: C.honeyDeep, fontSize: 14, fontWeight: '700' , lineHeight: 20},

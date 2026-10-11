@@ -111,7 +111,7 @@ function ReflectionField({ label, placeholder, value, onChange }: { label: strin
 }
 
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background }, safeArea: { flex: 1 },
+  container: { flex: 1, backgroundColor: 'transparent' }, safeArea: { flex: 1 },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 32 },
   hero: { gap: 8 },
   copy: { flex: 1, minWidth: 0 }, body: { color: COLORS.muted, fontSize: 16, lineHeight: 24, marginTop: 2 },

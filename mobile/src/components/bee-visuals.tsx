@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, TouchableOpacity, View, type ViewStyle } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
+import { useBeePalette, useBeeStyles, type BeePalette, Radii, Spacing, Typography, Controls, States } from '@/constants/theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -15,10 +15,11 @@ type VisualTileProps = {
 };
 
 export function BeeMark({ size = 56 }: { size?: number }) {
+  const COLORS = useBeePalette();
   const styles = useBeeStyles(makeStyles);
   return (
     <View style={[styles.beeMark, { width: size, height: size, borderRadius: size * 0.34 }]}>
-      <Ionicons name="sunny" size={size * 0.48} color="#5B351A" />
+      <Ionicons name="sunny" size={size * 0.48} color={COLORS.accentForeground} accessible={false} />
       <View style={[styles.beeStripe, { width: size * 0.42, top: size * 0.45 }]} />
     </View>
   );
@@ -30,14 +31,14 @@ export function VisualTile({ icon, label, color, onPress, style }: VisualTilePro
   const content = (
     <>
       <View style={[styles.tileIcon, { backgroundColor: color }]}>
-        <Ionicons name={icon} size={24} color={COLORS.ink} />
+        <Ionicons name={icon} size={24} color={COLORS.foreground} />
       </View>
       <ThemedText style={styles.tileLabel} numberOfLines={2}>{label}</ThemedText>
     </>
   );
 
   return onPress ? (
-    <TouchableOpacity style={[styles.visualTile, style]} onPress={onPress} activeOpacity={0.82}>{content}</TouchableOpacity>
+    <TouchableOpacity style={[styles.visualTile, style]} onPress={onPress} activeOpacity={States.pressedOpacity}>{content}</TouchableOpacity>
   ) : (
     <View style={[styles.visualTile, style]}>{content}</View>
   );
@@ -47,8 +48,8 @@ export function PillButton({ label, icon, onPress, dark = false }: { label: stri
   const COLORS = useBeePalette();
   const styles = useBeeStyles(makeStyles);
   return (
-    <TouchableOpacity style={[styles.pillButton, dark && styles.pillButtonDark]} onPress={onPress} activeOpacity={0.8}>
-      {icon && <Ionicons name={icon} size={16} color={dark ? '#FFFFFF' : COLORS.ink} />}
+    <TouchableOpacity style={[styles.pillButton, dark && styles.pillButtonDark]} onPress={onPress} activeOpacity={States.pressedOpacity}>
+      {icon && <Ionicons name={icon} size={16} color={dark ? COLORS.primaryForeground : COLORS.accentForeground} />}
       <ThemedText style={[styles.pillButtonText, dark && styles.pillButtonTextDark]}>{label}</ThemedText>
     </TouchableOpacity>
   );
@@ -65,15 +66,15 @@ export function SectionTitle({ title, action, onAction }: { title: string; actio
 }
 
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  beeMark: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honey, overflow: 'hidden' },
-  beeStripe: { position: 'absolute', height: 4, borderRadius: 4, backgroundColor: COLORS.honeyDeep },
-  visualTile: { width: 94, minHeight: 104, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 10, backgroundColor: COLORS.card, borderRadius: Radii.lg, borderWidth: 1, borderColor: COLORS.surfaceMuted },
-  tileIcon: { width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  tileLabel: { color: COLORS.ink, fontSize: 14, lineHeight: 20, fontWeight: '700', textAlign: 'center' },
-  pillButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 17, borderRadius: Radii.pill, backgroundColor: COLORS.honey },
-  pillButtonDark: { backgroundColor: '#5B351A' },
-  pillButtonText: { color: '#2D241D', fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  pillButtonTextDark: { color: '#FFFFFF' },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 2 },
-  sectionTitle: { color: COLORS.ink, fontSize: 20, fontWeight: '700' , lineHeight: 28},
-  sectionAction: { color: COLORS.honeyDark, fontSize: 14, fontWeight: '700' , lineHeight: 20} });
+  beeMark: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.accent, overflow: 'hidden' },
+  beeStripe: { position: 'absolute', height: 4, borderRadius: 4, backgroundColor: COLORS.accentForeground },
+  visualTile: { width: 94, minHeight: 104, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, padding: Spacing.md, backgroundColor: COLORS.card, borderRadius: Radii.lg, borderWidth: 1, borderColor: COLORS.border },
+  tileIcon: { width: 54, height: 54, borderRadius: Radii.lg, alignItems: 'center', justifyContent: 'center' },
+  tileLabel: { color: COLORS.foreground, ...Typography.label, textAlign: 'center' },
+  pillButton: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, borderRadius: Radii.pill, backgroundColor: COLORS.accent },
+  pillButtonDark: { backgroundColor: COLORS.primary },
+  pillButtonText: { color: COLORS.accentForeground, ...Typography.label},
+  pillButtonTextDark: { color: COLORS.primaryForeground },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.sm, marginBottom: Spacing.half },
+  sectionTitle: { color: COLORS.foreground, ...Typography.section},
+  sectionAction: { color: COLORS.primary, ...Typography.label} });

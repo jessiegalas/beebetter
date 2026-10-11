@@ -1,0 +1,192 @@
+{
+  "light": {
+    "background": "#f8f7de",
+    "surface": "#f7ea87",
+    "primary": "#854d0d",
+    "primaryForeground": "#f8f7de",
+    "accent": "#d29d30",
+    "accentForeground": "#3a200c",
+    "foreground": "#3a200c",
+    "card": "#fffdf2",
+    "muted": "#69543c",
+    "surfaceMuted": "#eae5ce",
+    "border": "#c8b98e",
+    "input": "#8a7654",
+    "focus": "#854d0d",
+    "disabled": "#eae5ce",
+    "disabledForeground": "#69543c",
+    "success": "#28613f",
+    "successSurface": "#e2efdc",
+    "warning": "#854d0d",
+    "warningSurface": "#f7ea87",
+    "danger": "#a33128",
+    "dangerForeground": "#f8f7de",
+    "dangerSurface": "#fbe4dc",
+    "scrim": "rgba(58,32,12,0.55)",
+    "primaryPressed": "#6d3d09",
+    "dangerPressed": "#8b251f"
+  },
+  "dark": {
+    "background": "#21190f",
+    "surface": "#40351b",
+    "primary": "#f7ea87",
+    "primaryForeground": "#3a200c",
+    "accent": "#d29d30",
+    "accentForeground": "#3a200c",
+    "foreground": "#f8f7de",
+    "card": "#30261a",
+    "muted": "#d1c4a6",
+    "surfaceMuted": "#493d2a",
+    "border": "#6f6045",
+    "input": "#a59473",
+    "focus": "#f7ea87",
+    "disabled": "#493d2a",
+    "disabledForeground": "#d1c4a6",
+    "success": "#9cdbad",
+    "successSurface": "#263d2b",
+    "warning": "#f7ea87",
+    "warningSurface": "#40351b",
+    "danger": "#ffb4a8",
+    "dangerForeground": "#21190f",
+    "dangerSurface": "#48271f",
+    "scrim": "rgba(0,0,0,0.65)",
+    "primaryPressed": "#e1d373",
+    "dangerPressed": "#f09e91"
+  },
+  "roles": {
+    "background": "background",
+    "foreground": "foreground",
+    "surface": "surface",
+    "surface-foreground": "foreground",
+    "card": "card",
+    "card-foreground": "foreground",
+    "popover": "card",
+    "popover-foreground": "foreground",
+    "primary": "primary",
+    "primary-foreground": "primaryForeground",
+    "secondary": "surface",
+    "secondary-foreground": "foreground",
+    "muted": "surfaceMuted",
+    "muted-foreground": "muted",
+    "accent": "accent",
+    "accent-foreground": "accentForeground",
+    "destructive": "danger",
+    "destructive-foreground": "dangerForeground",
+    "success": "successSurface",
+    "success-foreground": "success",
+    "warning": "warningSurface",
+    "warning-foreground": "warning",
+    "border": "border",
+    "input": "input",
+    "ring": "focus",
+    "disabled": "disabled",
+    "disabled-foreground": "disabledForeground",
+    "primary-pressed": "primaryPressed",
+    "destructive-pressed": "dangerPressed"
+  },
+  "spacing": {
+    "half": 2,
+    "one": 4,
+    "two": 8,
+    "three": 16,
+    "four": 24,
+    "five": 32,
+    "six": 64,
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "gutter": 20,
+    "xl": 24,
+    "section": 32,
+    "page": 48
+  },
+  "radii": {
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "pill": 999
+  },
+  "borders": {
+    "default": 1,
+    "focus": 2
+  },
+  "typography": {
+    "page": {
+      "fontSize": 28,
+      "lineHeight": 34,
+      "fontWeight": "700"
+    },
+    "section": {
+      "fontSize": 20,
+      "lineHeight": 28,
+      "fontWeight": "700"
+    },
+    "item": {
+      "fontSize": 17,
+      "lineHeight": 24,
+      "fontWeight": "600"
+    },
+    "body": {
+      "fontSize": 16,
+      "lineHeight": 24,
+      "fontWeight": "400"
+    },
+    "label": {
+      "fontSize": 14,
+      "lineHeight": 20,
+      "fontWeight": "600"
+    },
+    "metadata": {
+      "fontSize": 14,
+      "lineHeight": 20,
+      "fontWeight": "400"
+    }
+  },
+  "controls": {
+    "minHeight": 48,
+    "iconSize": 20
+  },
+  "layout": {
+    "maxContentWidth": 720,
+    "maxSheetWidth": 640,
+    "wideBreakpoint": 600,
+    "webTabClearance": 112,
+    "largeTextScale": 1.5,
+    "webTabLargeTextClearance": 240
+  },
+  "states": {
+    "pressedOpacity": 0.8
+  },
+  "elevation": {
+    "shadowColor": "#3a200c",
+    "shadowOpacity": 0.07,
+    "shadowRadius": 12,
+    "shadowOffset": {
+      "width": 0,
+      "height": 4
+    },
+    "elevation": 2
+  },
+  "fonts": {
+    "ios": {
+      "sans": "Avenir Next",
+      "serif": "ui-serif",
+      "rounded": "Avenir Next",
+      "mono": "ui-monospace"
+    },
+    "default": {
+      "sans": "sans-serif",
+      "serif": "serif",
+      "rounded": "sans-serif",
+      "mono": "monospace"
+    },
+    "web": {
+      "sans": "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+      "serif": "Georgia, \"Times New Roman\", serif",
+      "rounded": "var(--font-display)",
+      "mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    }
+  }
+}

@@ -60,6 +60,7 @@
   },
   "scripts": {
     "start": "expo start",
+    "start:usb": "adb reverse tcp:8081 tcp:8081 && node --dns-result-order=ipv4first node_modules/expo/bin/cli start --dev-client --localhost --port 8081 --android",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
@@ -69,7 +70,9 @@
     "test:completion": "node scripts/test-quest-completion.cjs",
     "test:workspace": "node scripts/test-student-workspace.cjs",
     "test:auth": "node scripts/test-account-access.cjs",
-    "test:ui": "node scripts/test-mobile-ui.cjs"
+    "test:ui": "node scripts/test-mobile-ui.cjs",
+    "theme:sync": "node scripts/sync-design-tokens.cjs",
+    "theme:check": "node scripts/sync-design-tokens.cjs --check && node scripts/test-design-tokens.cjs"
   },
   "private": true
 }

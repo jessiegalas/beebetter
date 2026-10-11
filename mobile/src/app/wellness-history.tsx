@@ -107,7 +107,7 @@ function formatDate(value: string) { return new Date(`${value}T00:00:00`).toLoca
 function formatPeriod(start: string, end: string) { return start === end ? formatDate(end) : `${formatDate(start)} – ${formatDate(end)}`; }
 
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background }, safeArea: { flex: 1 },
+  container: { flex: 1, backgroundColor: 'transparent' }, safeArea: { flex: 1 },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 32 },
   tabs: { flexDirection: 'row', gap: 8, padding: 4, borderRadius: Radii.md, backgroundColor: COLORS.surfaceMuted },
   tab: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12 }, tabSelected: { backgroundColor: COLORS.card },

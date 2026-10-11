@@ -4,7 +4,7 @@ import { useTheme } from '@/hooks/use-theme';
 export type ThemedTextProps = TextProps & { type?: 'default' | 'title' | 'small' | 'smallBold' | 'subtitle' | 'link' | 'linkPrimary' | 'code' | 'item' | 'label'; themeColor?: ThemeColor };
 export function ThemedText({ style, type = 'default', themeColor, ...rest }: ThemedTextProps) {
   const theme = useTheme();
-  return <Text style={[{ color: theme[themeColor ?? 'text'], fontFamily: Fonts.sans }, styles[type], style]} {...rest} />;
+  return <Text accessibilityRole={type === 'title' ? 'header' : undefined} style={[{ color: theme[themeColor ?? 'text'], fontFamily: Fonts.sans }, styles[type], style]} {...rest} />;
 }
 const styles = StyleSheet.create({
   default: Typography.body, title: Typography.page, subtitle: Typography.section, item: Typography.item, label: Typography.label,

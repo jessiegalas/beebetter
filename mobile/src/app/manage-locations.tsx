@@ -428,7 +428,7 @@ export default function ManageLocationsScreen() {
 }
 
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: 'transparent' },
   safeArea: { flex: 1 },
   header: {
     flexDirection: 'row',

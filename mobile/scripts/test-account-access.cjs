@@ -344,11 +344,17 @@ test('all private routes are excluded for every non-active access state', () => 
   const layout = load('src/app/_layout.tsx', {
     '@/global.css': {}, '@rn-primitives/portal': { PortalHost: 'PortalHost' },
     '@/constants/features': features,
+    '@/constants/theme': { APP_COLOR_SCHEME: 'light', useBeePalette: () => ({ background: '#f8f7de' }) },
+    nativewind: { colorScheme: { set() {} } },
+    '@/hooks/use-app-appearance': { useAppAppearance: () => ({ scheme: 'light' }), useRestoreAppAppearance() {} },
+    'expo-status-bar': { StatusBar: 'StatusBar' },
+    '@/lib/theme': { NAV_THEME: { light: {}, dark: {} } },
     react, 'expo-router': { Stack: stack, ThemeProvider: pass },
     'expo-splash-screen': { preventAutoHideAsync: async () => {} },
-    'react-native': { useColorScheme: () => 'light', Platform: { OS: 'android' } },
+    'react-native': { View: 'View', useColorScheme: () => 'light', Platform: { OS: 'android' } },
     '@/components/quest-notification-response': { QuestNotificationResponse: () => null },
     '@/components/animated-icon': { AnimatedSplashOverlay: () => null },
+    '@/components/hexagon-background': { HexagonBackground: () => null },
     '@/context/user-data-context': { UserDataProvider: pass, useUserData: () => ({ access: currentAccess }) },
     '@/context/location-context': { LocationProvider: pass },
     '@/context/quest-priority-context': { QuestPriorityProvider: pass },
@@ -654,8 +660,8 @@ function screen(relative, context, options = []) {
     '@/components/student-onboarding': { StudentOnboarding: 'Onboarding' }, '@/components/student-information-fields': { StudentInformationFields: 'Fields' },
     '@/hooks/use-registration-form': load('src/hooks/use-registration-form.ts', { react: h.react, '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation }),
     '@/hooks/use-enrollment-options': { useEnrollmentOptions: () => enrollment }, '@/lib/student-validation': validation,
-    '@/constants/theme': { Fonts: { sans: 'sans-serif' }, BeeBetterColors: {}, Radii: {}, BeeBetterShadow: {}, useBeePalette: () => ({}), useBeeStyles: factory => factory({}) },
-    '@/components/mobile-ui': { Button: 'ActionButton', Field: 'Field' },
+    '@/constants/theme': { ...require('../src/constants/design-tokens.json'), Borders: { focus: 2 }, Controls: { minHeight: 48 }, Typography: require('../src/constants/design-tokens.json').typography, Fonts: { sans: 'sans-serif' }, Radii: {}, useBeePalette: () => require('../src/constants/design-tokens.json').light, useBeeStyles: factory => factory(require('../src/constants/design-tokens.json').light) },
+    '@/components/mobile-ui': { Button: 'ActionButton', Field: 'Field', IconButton: 'IconButton' },
     '@/components/bee-visuals': { BeeMark: 'BeeMark' },
   });
   h.mount(() => relative.endsWith('auth.tsx') ? mod.default() : mod.StudentOnboarding());
@@ -663,6 +669,23 @@ function screen(relative, context, options = []) {
   const text = node => !node ? '' : typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : text(node.props?.children);
   return { h, enrollment, find: predicate => nodes(h.value).find(predicate), button: label => nodes(h.value).find(x => x.type === 'ActionButton' && x.props.label === label) || nodes(h.value).find(x => x.type === 'TouchableOpacity' && text(x) === label) };
 }
+test('password visibility and focus preserve the entered value and do not submit Auth', async () => {
+  let calls = 0;
+  const s = screen('src/app/auth.tsx', { access: 'signed_out', signIn() { calls++; } });
+  const input = () => s.find(node => node.props?.accessibilityLabel === 'Password, required');
+  input().props.onChangeText('my password'); await flush();
+  assert.equal(input().props.secureTextEntry, true);
+  input().props.onFocus(); await flush();
+  const row = () => s.find(node => node.type === 'View' && node.props.children?.some?.(child => child?.type === 'TextInput'));
+  const flatten = styles => Object.assign({}, ...styles.filter(Boolean));
+  const width = flatten(row().props.style).borderWidth;
+  assert.equal(flatten(row().props.style).borderColor, require('../src/constants/design-tokens.json').light.focus);
+  s.find(node => node.type === 'IconButton' && node.props.label === 'Show password').props.onPress(); await flush();
+  assert.equal(input().props.value, 'my password'); assert.equal(input().props.secureTextEntry, false);
+  input().props.onBlur(); await flush(); assert.equal(flatten(row().props.style).borderWidth, width);
+  assert.equal(calls, 0); s.h.unmount();
+});
+
 test('Auth UI captures unconfirmed recipient even when email is edited', async () => {
   let recipient; const context = { access: 'signed_out', signIn: async () => ({ status: 'error', code: 'email_not_confirmed', message: 'Confirm email' }), resendConfirmation: async email => { recipient = email; return { status: 'completed' }; } };
   const s = screen('src/app/auth.tsx', context); const input = () => s.find(x => x.props?.accessibilityLabel === 'Email address, required');
@@ -821,7 +844,7 @@ test('catalogue field changes clear every dependent selection', async () => {
     react: h.react, 'react-native': { StyleSheet: { create: value => value }, View: 'View', TextInput: 'TextInput', TouchableOpacity: 'TouchableOpacity' },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, '@expo/vector-icons': { Ionicons: 'Icon' },
     '@/components/themed-text': { ThemedText: 'Text' }, '@/lib/student-validation': validation,
-    '@/constants/theme': { useBeePalette: () => ({}), useBeeStyles: fn => fn({}), Fonts: {} },
+    '@/constants/theme': { Controls: { minHeight: 48 }, Borders: { focus: 2 }, Radii: { md: 12 }, useBeePalette: () => ({}), useBeeStyles: fn => fn({}), Fonts: {} },
   });
   h.mount(() => mod.StudentInformationFields({ value: registrationDraft.student, onChange: value => { changed = value; }, options: [registrationOption], errors: {}, catalogueOnly: true }));
   const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)];
@@ -830,6 +853,24 @@ test('catalogue field changes clear every dependent selection', async () => {
   select('Year level').props.onChange('3rd Year'); assert.equal(changed.campus, ''); assert.equal(changed.section, '');
   select('Campus').props.onChange('Other Campus'); assert.equal(changed.section, ''); assert.equal(changed.course, 'BSCS'); h.unmount();
 });
+test('student fields retain stable borders and readable disabled states across focus', async () => {
+  const h=hooks(), tokens=require('../src/constants/design-tokens.json');let disabled=false;
+  const mod=load('src/components/student-information-fields.tsx',{
+    react:h.react,'react-native':{StyleSheet:{create:style=>style},View:'View',TextInput:'TextInput',TouchableOpacity:'TouchableOpacity'},
+    'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'},'@expo/vector-icons':{Ionicons:'Icon'},
+    '@/components/themed-text':{ThemedText:'Text'},'@/lib/student-validation':validation,
+    '@/constants/theme':{Controls:tokens.controls,Borders:tokens.borders,Radii:tokens.radii,Fonts:{},useBeePalette:()=>tokens.light,useBeeStyles:fn=>fn(tokens.light)},
+  });
+  h.mount(()=>mod.StudentInformationFields({value:registrationDraft.student,onChange(){},options:[registrationOption],errors:{},catalogueOnly:true,disabled}));
+  const nodes=value=>!value||typeof value!=='object'?[]:Array.isArray(value)?value.flatMap(nodes):[value,...nodes(value.props?.children)];
+  const input=()=>nodes(h.value).find(node=>node.type==='TextInput'&&node.props.accessibilityLabel==='Full name, required');
+  const style=()=>Object.assign({},...input().props.style.filter(Boolean));const borderWidth=style().borderWidth;
+  assert.equal(style().borderColor,tokens.light.input);input().props.onFocus();await flush();
+  assert.equal(style().borderWidth,borderWidth);assert.equal(style().borderColor,tokens.light.focus);
+  input().props.onBlur();await flush();assert.equal(style().borderWidth,borderWidth);
+  disabled=true;h.render();assert.equal(input().props.editable,false);assert.equal(style().backgroundColor,tokens.light.disabled);assert.equal(style().color,tokens.light.disabledForeground);h.unmount();
+});
+
 test('disabled enrollment hook makes no requests until signup opens and aborts when it closes', async () => {
   const h = hooks(); let enabled = false; const requests = [];
   const mod = load('src/hooks/use-enrollment-options.ts', { react: h.react,

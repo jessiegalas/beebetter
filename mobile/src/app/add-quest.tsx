@@ -169,7 +169,7 @@ function Button({ label, onPress, primary = false, disabled = false }: { label: 
   return <ActionButton label={label} onPress={onPress} intent={primary ? 'primary' : 'quiet'} disabled={disabled} />;
 }
 const makeStyles = (C: BeePalette) => StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.background },
+  screen: { flex: 1, backgroundColor: 'transparent' },
   header: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 12 },
   heading: { fontSize: 28, lineHeight: 34, fontWeight: '700', color: C.ink },
   flex: { flex: 1, minWidth: 0 },

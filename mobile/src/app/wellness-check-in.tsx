@@ -131,7 +131,7 @@ export default function WellnessCheckInScreen() {
 }
 
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background }, safeArea: { flex: 1 },
+  container: { flex: 1, backgroundColor: 'transparent' }, safeArea: { flex: 1 },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 32 },
   introCard: { flexDirection: 'row', gap: 13, padding: 20, borderRadius: 24, backgroundColor: COLORS.surfaceWarm },
   introIcon: { width: 45, height: 45, borderRadius: Radii.md, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },

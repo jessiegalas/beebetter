@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useUserData } from '@/hooks/use-user-data';
-import { Button, Field } from '@/components/mobile-ui';
+import { Button, Field, IconButton } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { BeeMark } from '@/components/bee-visuals';
 import { StudentInformationFields } from '@/components/student-information-fields';
 import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 import { useRegistrationForm } from '@/hooks/use-registration-form';
 import { StudentOnboarding } from '@/components/student-onboarding';
-import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
+import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Borders, Controls, Radii, Typography } from '@/constants/theme';
 import { emailError, passwordError, LIMITS } from '@/lib/student-validation';
 
 export default function AuthScreen() {
@@ -28,6 +27,7 @@ export default function AuthScreen() {
   const [resendUntil, setResendUntil] = useState(0);
   const [remaining, setRemaining] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
   const recovery = access === 'recovery_required';
@@ -98,18 +98,17 @@ export default function AuthScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={{ marginBottom: 24 }}><BeeMark size={48} /></View>
-        <ThemedText style={styles.title}>{recovery ? 'Choose a new password' : mode === 'forgot' ? 'Reset your password' : mode === 'sign-up' ? 'Create your account' : 'Welcome to BeeBetter'}</ThemedText>
+        <ThemedText type="title" style={styles.title}>{recovery ? 'Choose a new password' : mode === 'forgot' ? 'Reset your password' : mode === 'sign-up' ? 'Create your account' : 'Welcome to BeeBetter'}</ThemedText>
         <ThemedText style={styles.subtitle}>{recovery ? 'Update your password before continuing to your student account.' : mode === 'sign-up' ? 'Enter your student information for the current semester, then confirm your email to finish registration.' : mode === 'forgot' ? 'Enter your account email to receive a reset link.' : 'Sign in to access your quests, streak, and skill tree.'}</ThemedText>
         {!recovery && <View style={styles.modeRow}>{(['sign-in', 'sign-up'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value, disabled: busy }} disabled={busy} style={[styles.modeButton, mode === value && styles.modeButtonActive]} onPress={() => { if (submitting.current || busy) return; setMode(value); setFeedback(null); setPassword(''); }}><ThemedText style={styles.modeText}>{value === 'sign-in' ? 'Sign in' : 'Create account'}</ThemedText></TouchableOpacity>)}</View>}
         {!recovery && <>
-          <Field label="Email address *" style={styles.input} editable={!busy} value={email} onChangeText={value => setEmail(value.replace(/\s/g, ''))} onBlur={() => setEmailTouched(true)} maxLength={LIMITS.email} accessibilityLabel="Email address, required" autoComplete="email" placeholder="you@example.com" placeholderTextColor={COLORS.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
-          {emailTouched && emailValidation && <ThemedText accessibilityRole="alert" style={styles.feedback}>{emailValidation}</ThemedText>}
+          <Field label="Email address *" error={emailTouched ? emailValidation : undefined} style={styles.input} editable={!busy} value={email} onChangeText={value => setEmail(value.replace(/\s/g, ''))} onBlur={() => setEmailTouched(true)} maxLength={LIMITS.email} accessibilityLabel="Email address, required" autoComplete="email" placeholder="you@example.com" placeholderTextColor={COLORS.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
         </>}
         {(recovery || mode !== 'forgot') && <>
           <ThemedText style={styles.label}>{recovery ? 'New password *' : 'Password *'}</ThemedText>
-          <View style={styles.passwordRow}>
-            <TextInput style={styles.passwordInput} editable={!busy} value={password} onChangeText={setPassword} onBlur={() => setPasswordTouched(true)} maxLength={recovery || mode === 'sign-up' ? LIMITS.password : undefined} autoComplete={recovery || mode === 'sign-up' ? 'new-password' : 'current-password'} textContentType={recovery || mode === 'sign-up' ? 'newPassword' : 'password'} autoCorrect={false} accessibilityLabel={recovery ? 'New password, required' : 'Password, required'} placeholder={recovery || mode === 'sign-up' ? 'At least 15 characters' : 'Your password'} placeholderTextColor={COLORS.muted} secureTextEntry={!showPassword} autoCapitalize="none" />
-            <TouchableOpacity disabled={busy} style={[styles.passwordToggle, { minWidth: 48, minHeight: 48, justifyContent: 'center' }]} onPress={() => setShowPassword(value => !value)} accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={19} color={COLORS.muted} /></TouchableOpacity>
+          <View style={[styles.passwordRow, { backgroundColor: busy ? COLORS.disabled : COLORS.card, borderColor: (passwordTouched || !!password) && passwordValidation ? COLORS.danger : passwordFocused ? COLORS.focus : COLORS.input }]}>
+            <TextInput style={[styles.passwordInput, busy && { color: COLORS.disabledForeground }]} selectionColor={COLORS.primary} onFocus={() => setPasswordFocused(true)} editable={!busy} value={password} onChangeText={setPassword} onBlur={() => { setPasswordFocused(false); setPasswordTouched(true); }} maxLength={recovery || mode === 'sign-up' ? LIMITS.password : undefined} autoComplete={recovery || mode === 'sign-up' ? 'new-password' : 'current-password'} textContentType={recovery || mode === 'sign-up' ? 'newPassword' : 'password'} autoCorrect={false} accessibilityLabel={recovery ? 'New password, required' : 'Password, required'} placeholder={recovery || mode === 'sign-up' ? 'At least 15 characters' : 'Your password'} placeholderTextColor={COLORS.muted} secureTextEntry={!showPassword} autoCapitalize="none" />
+            <IconButton disabled={busy} onPress={() => setShowPassword(value => !value)} label={showPassword ? 'Hide password' : 'Show password'} icon={showPassword ? 'eye-off-outline' : 'eye-outline'} />
           </View>
           {(passwordTouched || !!password) && passwordValidation && <ThemedText accessibilityRole="alert" style={styles.feedback}>{passwordValidation}</ThemedText>}
         </>}
@@ -132,9 +131,9 @@ export default function AuthScreen() {
 }
 
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: 'transparent' },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 30, paddingBottom: 40 },
-  title: { color: COLORS.ink, fontSize: 28, fontWeight: '700' , lineHeight: 34},
+  title: { ...Typography.page, color: COLORS.foreground },
   subtitle: { color: COLORS.muted, fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 24 },
   modeRow: { flexDirection: 'row', backgroundColor: COLORS.surfaceMuted, borderRadius: Radii.md, padding: 4, marginBottom: 20 },
   modeButton: { flex: 1, alignItems: 'center', borderRadius: Radii.sm, minHeight: 48, paddingVertical: 11 },
@@ -151,9 +150,8 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
     marginBottom: 16, lineHeight: 24},
   feedback: { color: COLORS.danger, fontSize: 14, lineHeight: 20, marginBottom: 14 },
   successFeedback: { color: COLORS.success },
-  passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: Radii.md, marginBottom: 16, borderWidth: 1, borderColor: COLORS.surfaceMuted },
-  passwordInput: { fontFamily: Fonts.sans, flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 16, color: COLORS.ink , lineHeight: 24},
-  passwordToggle: { paddingHorizontal: 14, paddingVertical: 12 },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: Radii.md, marginBottom: 16, borderWidth: Borders.focus, borderColor: COLORS.input },
+  passwordInput: { ...Typography.body, fontFamily: Fonts.sans, flex: 1, minWidth: 0, minHeight: Controls.minHeight, paddingHorizontal: 14, paddingVertical: 13, color: COLORS.foreground },
   confirmationCard: { gap: 8, paddingVertical: 12, marginBottom: 14 },
   confirmationCopy: { flex: 1 },
   confirmationTitle: { color: COLORS.ink, fontSize: 14, fontWeight: '700' , lineHeight: 20},

@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions, type RefreshControlProps, type TextInputProps, type ViewStyle, type StyleProp } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions, type RefreshControlProps, type TextInputProps, type ViewStyle, type StyleProp } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from './themed-text';
-import { Fonts, MaxContentWidth, Radii, useBeePalette } from '@/constants/theme';
+import { Borders, Controls, Fonts, Layout, MaxContentWidth, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
+// StyleSheet-only controls bypass CSS interop so native pressed-style callbacks stay intact.
 type Icon = keyof typeof Ionicons.glyphMap;
 export function ScreenFrame({ children, tab = false, scroll = true, refreshControl }: {
     children: ReactNode;
@@ -11,9 +12,9 @@ export function ScreenFrame({ children, tab = false, scroll = true, refreshContr
     scroll?: boolean;
     refreshControl?: React.ReactElement<RefreshControlProps>;
 }) {
-    const c = useBeePalette(), { width } = useWindowDimensions();
-    const content = { width: '100%' as const, maxWidth: MaxContentWidth, alignSelf: 'center' as const, paddingHorizontal: width >= 600 ? 24 : 20, paddingTop: 20, paddingBottom: tab && Platform.OS === 'web' ? 112 : 32, gap: 32 };
-    return <SafeAreaView style={{ flex: 1, backgroundColor: c.background }} edges={tab ? ['top'] : ['top', 'bottom']}>
+    const { width } = useWindowDimensions();
+    const content = { width: '100%' as const, maxWidth: MaxContentWidth, alignSelf: 'center' as const, paddingHorizontal: width >= Layout.wideBreakpoint ? Spacing.xl : Spacing.gutter, paddingTop: Spacing.gutter, paddingBottom: Spacing.section, gap: Spacing.section };
+    return <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }} edges={tab ? ['top'] : ['top', 'bottom']}>
     {scroll ? <ScrollView contentContainerStyle={content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
         {children}
         </ScrollView> : <View style={[content, { flex: 1 }]}>
@@ -27,23 +28,32 @@ export function Surface({ children, featured = false, style }: {
     style?: StyleProp<ViewStyle>;
 }) {
     const c = useBeePalette();
-    return <View style={[{ backgroundColor: featured ? c.surfaceWarm : c.card, borderRadius: Radii.lg, padding: 20, gap: 16 }, style]}>
+    return <View style={[{ backgroundColor: featured ? c.surface : c.card, borderRadius: Radii.lg, padding: Spacing.gutter, gap: Spacing.lg }, style]}>
     {children}
     </View>;
 }
 export function Button({ label, onPress, intent = 'primary', icon, disabled = false, loading = false, style }: {
     label: string;
     onPress: () => void;
-    intent?: 'primary' | 'secondary' | 'quiet' | 'destructive';
+    intent?: 'primary' | 'secondary' | 'quiet' | 'destructive' | 'accent';
     icon?: Icon;
     disabled?: boolean;
     loading?: boolean;
     style?: StyleProp<ViewStyle>;
 }) {
     const c = useBeePalette(), [focused, setFocused] = useState(false), blocked = disabled || loading;
-    const color = intent === 'primary' ? '#2D241D' : intent === 'destructive' ? c.danger : c.ink;
-    return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: blocked, busy: loading }} disabled={blocked} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.button, { backgroundColor: intent === 'primary' ? c.honey : intent === 'quiet' ? 'transparent' : c.card, borderColor: focused ? c.honeyDark : 'transparent', opacity: blocked ? 0.5 : pressed ? 0.75 : 1 }, style]}>
-    {loading ? <ActivityIndicator color={color}/> : icon && <Ionicons name={icon} size={20} color={color} accessible={false}/>}
+    const color = disabled ? c.disabledForeground : intent === 'primary' ? c.primaryForeground : intent === 'accent' ? c.accentForeground : intent === 'destructive' ? c.dangerForeground : intent === 'quiet' ? c.primary : c.foreground;
+    return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: blocked, busy: loading }} disabled={blocked} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => {
+        let backgroundColor = 'transparent';
+        if (intent === 'accent') backgroundColor = c.accent;
+        if (intent === 'primary') backgroundColor = pressed ? c.primaryPressed : c.primary;
+        if (intent === 'secondary') backgroundColor = pressed ? c.surfaceMuted : c.card;
+        if (intent === 'quiet' && pressed) backgroundColor = c.surfaceMuted;
+        if (intent === 'destructive') backgroundColor = pressed ? c.dangerPressed : c.danger;
+        const focusColor = intent === 'primary' ? c.primaryForeground : intent === 'accent' ? c.accentForeground : intent === 'destructive' ? c.dangerForeground : c.focus;
+        return [s.button, { backgroundColor: disabled ? c.disabled : backgroundColor, borderColor: focused ? focusColor : intent === 'secondary' && !disabled ? c.input : 'transparent' }, intent === 'accent' && pressed && { opacity: States.pressedOpacity }, style];
+    }}>
+    {loading ? <ActivityIndicator color={color}/> : icon && <Ionicons name={icon} size={Controls.iconSize} color={color} accessible={false}/>}
     <ThemedText type="label" style={{ color, flexShrink: 1, textAlign: 'center' }}>
     {label}
     </ThemedText>
@@ -56,8 +66,8 @@ export function IconButton({ icon, label, onPress, disabled = false }: {
     disabled?: boolean;
 }) {
     const c = useBeePalette(), [focused, setFocused] = useState(false);
-    return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.iconButton, { backgroundColor: pressed ? c.surfaceMuted : 'transparent', borderColor: focused ? c.honeyDark : 'transparent', opacity: disabled ? .5 : 1 }]}>
-    <Ionicons name={icon} size={20} color={c.ink} accessible={false}/>
+    return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.iconButton, { backgroundColor: disabled || pressed ? c.disabled : 'transparent', borderColor: focused ? c.focus : 'transparent' }]}>
+    <Ionicons name={icon} size={Controls.iconSize} color={disabled ? c.disabledForeground : c.foreground} accessible={false}/>
     </Pressable>;
 }
 export function Field({ label, hint, error, style, ...props }: TextInputProps & {
@@ -66,6 +76,7 @@ export function Field({ label, hint, error, style, ...props }: TextInputProps & 
     error?: string;
 }) {
     const c = useBeePalette(), [focused, setFocused] = useState(false);
+    // Screens customize input sizing; this primitive owns state colors and stable borders.
     return <View style={s.field}>
     <ThemedText type="label">
     {label}
@@ -73,7 +84,7 @@ export function Field({ label, hint, error, style, ...props }: TextInputProps & 
         {hint && <ThemedText type="small" style={{ color: c.muted }}>
         {hint}
         </ThemedText>}
-    <TextInput {...props} accessibilityLabel={props.accessibilityLabel ?? label} placeholderTextColor={c.muted} onFocus={event => { setFocused(true); props.onFocus?.(event); }} onBlur={event => { setFocused(false); props.onBlur?.(event); }} style={[s.input, { backgroundColor: c.card, color: c.ink, borderColor: error ? c.danger : focused ? c.honeyDark : c.surfaceMuted }, style]}/>
+    <TextInput {...props} accessibilityLabel={props.accessibilityLabel ?? label} placeholderTextColor={c.muted} selectionColor={c.primary} onFocus={event => { setFocused(true); props.onFocus?.(event); }} onBlur={event => { setFocused(false); props.onBlur?.(event); }} style={[s.input, style, { backgroundColor: props.editable === false ? c.disabled : c.card, color: props.editable === false ? c.disabledForeground : c.foreground, borderWidth: Borders.focus, borderColor: error ? c.danger : focused ? c.focus : c.input }]}/>
         {error && <ThemedText type="small" accessibilityRole="alert" style={{ color: c.danger }}>
         {error}
         </ThemedText>}
@@ -84,15 +95,16 @@ export function ChoiceChip({ label, selected, onPress }: {
     selected: boolean;
     onPress: () => void;
 }) {
-    const c = useBeePalette();
-    return <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={({ pressed }) => [s.button, { backgroundColor: selected ? c.honeySoft : c.card, borderColor: selected ? c.honeyDark : 'transparent', opacity: pressed ? .75 : 1 }]}>
+    const c = useBeePalette(), [focused, setFocused] = useState(false);
+    return <Pressable cssInterop={false} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={({ pressed }) => [s.button, { backgroundColor: pressed ? c.surfaceMuted : selected ? c.surface : c.card, borderColor: focused ? c.focus : selected ? c.primary : c.input }]}>
     <ThemedText type="label">
     {label}
     </ThemedText>
     </Pressable>;
 }
 export function useReducedMotion() {
-    const [reduced, setReduced] = useState(false);
+    // Stay static until the system motion preference is known.
+    const [reduced, setReduced] = useState(true);
     useEffect(() => {
         let active = true;
         void AccessibilityInfo.isReduceMotionEnabled().then(value => { if (active)
@@ -111,8 +123,8 @@ export function Sheet({ title, visible, onClose, children }: {
 }) {
     const c = useBeePalette(), reduced = useReducedMotion();
     return <Modal transparent visible={visible} animationType={reduced ? 'none' : 'slide'} onRequestClose={onClose}>
-    <View style={s.scrim}>
-    <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={'Close ' + title}/>
+    <View style={[s.scrim, { backgroundColor: c.scrim }]}>
+    <Pressable cssInterop={false} style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={'Close ' + title}/>
     <SafeAreaView accessibilityViewIsModal style={[s.sheet, { backgroundColor: c.background }]} edges={['bottom']}>
     <View style={s.heading}>
     <ThemedText type="subtitle" style={{ flex: 1 }}>
@@ -120,7 +132,7 @@ export function Sheet({ title, visible, onClose, children }: {
     </ThemedText>
     <IconButton icon="close" label={'Close ' + title} onPress={onClose}/>
     </View>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 16 }}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: Spacing.gutter, gap: Spacing.lg }}>
     {children}
     </ScrollView>
     </SafeAreaView>
@@ -133,10 +145,12 @@ export function Disclosure({ title, summary, children, defaultOpen = false }: {
     children: ReactNode;
     defaultOpen?: boolean;
 }) {
-    const c = useBeePalette(), [open, setOpen] = useState(defaultOpen);
+    const c = useBeePalette(), [open, setOpen] = useState(defaultOpen), [focused, setFocused] = useState(false);
+    const { width, fontScale } = useWindowDimensions();
+    const expandedLayout = width < Layout.wideBreakpoint && fontScale >= Layout.largeTextScale;
     return <View>
-    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} style={({ pressed }) => [s.heading, { paddingHorizontal: 0, opacity: pressed ? .7 : 1 }]}>
-    <View style={{ flex: 1, gap: 4 }}>
+    <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.disclosure, expandedLayout && { flexDirection: 'column', alignItems: 'flex-end' }, { borderColor: focused ? c.focus : 'transparent', opacity: pressed ? States.pressedOpacity : 1 }]}>
+    <View style={{ flex: expandedLayout ? undefined : 1, alignSelf: expandedLayout ? 'stretch' : undefined, minWidth: 0, gap: Spacing.xs }}>
     <ThemedText type="subtitle">
     {title}
     </ThemedText>
@@ -144,11 +158,40 @@ export function Disclosure({ title, summary, children, defaultOpen = false }: {
         {summary}
         </ThemedText>}
     </View>
-    <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={20} color={c.muted} accessible={false}/>
+    <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={Controls.iconSize} color={c.muted} accessible={false}/>
     </Pressable>
-        {open && <View style={{ gap: 16, paddingTop: 16 }}>
+        {open && <View style={{ gap: Spacing.lg, paddingTop: Spacing.lg }}>
         {children}
         </View>}
     </View>;
 }
-const s = StyleSheet.create({ button: { minHeight: 48, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderRadius: Radii.md, borderWidth: 2 }, iconButton: { minWidth: 48, minHeight: 48, borderRadius: Radii.md, borderWidth: 2, alignItems: 'center', justifyContent: 'center' }, field: { gap: 8 }, input: { fontFamily: Fonts.sans, minHeight: 48, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, lineHeight: 24, borderRadius: Radii.md, borderWidth: 1 }, scrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.5)' }, sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', maxHeight: '88%', borderTopLeftRadius: Radii.xl, borderTopRightRadius: Radii.xl }, heading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20, paddingTop: 12 } });
+/** Static badges always pair color with a readable label. */
+export function Badge({ label, intent = 'accent', icon }: { label: string; intent?: 'accent' | 'neutral' | 'success' | 'warning' | 'danger'; icon?: Icon }) {
+    const c = useBeePalette();
+    const backgroundColor = intent === 'success' ? c.successSurface : intent === 'warning' ? c.warningSurface : intent === 'danger' ? c.dangerSurface : intent === 'neutral' ? c.surfaceMuted : c.surface;
+    const color = intent === 'success' ? c.success : intent === 'warning' ? c.warning : intent === 'danger' ? c.danger : c.foreground;
+    return <View style={[s.badge, { backgroundColor }]}>
+        {icon && <Ionicons name={icon} size={16} color={color} accessible={false} />}
+        <ThemedText type="label" style={{ color }}>{label}</ThemedText>
+    </View>;
+}
+export function StatusMessage({ message, loading = false, error = false, children }: { message: string; loading?: boolean; error?: boolean; children?: ReactNode }) {
+    const c = useBeePalette();
+    return <View style={s.status} accessibilityLiveRegion="polite">
+        {loading && <ActivityIndicator color={c.primary} />}
+        <ThemedText accessibilityRole={error ? 'alert' : undefined} style={{ color: error ? c.danger : c.muted, textAlign: 'center' }}>{message}</ThemedText>
+        {children}
+    </View>;
+}
+const s = StyleSheet.create({
+    button: { minHeight: Controls.minHeight, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radii.md, borderWidth: Borders.focus },
+    iconButton: { minWidth: Controls.minHeight, minHeight: Controls.minHeight, borderRadius: Radii.md, borderWidth: Borders.focus, alignItems: 'center', justifyContent: 'center' },
+    field: { gap: Spacing.sm },
+    input: { ...Typography.body, fontFamily: Fonts.sans, minHeight: Controls.minHeight, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radii.md, borderWidth: Borders.focus },
+    scrim: { flex: 1, justifyContent: 'flex-end' },
+    sheet: { width: '100%', maxWidth: Layout.maxSheetWidth, alignSelf: 'center', maxHeight: '88%', borderTopLeftRadius: Radii.xl, borderTopRightRadius: Radii.xl },
+    heading: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md, paddingHorizontal: Spacing.gutter, paddingTop: Spacing.md },
+    disclosure: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm, borderWidth: Borders.focus, borderRadius: Radii.sm },
+    badge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: Spacing.xs, borderRadius: Radii.pill, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },
+    status: { paddingVertical: Spacing.section, alignItems: 'center', gap: Spacing.lg },
+});

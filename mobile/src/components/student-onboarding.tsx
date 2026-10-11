@@ -50,7 +50,7 @@ export function StudentOnboarding() {
   </SafeAreaView>;
 }
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: 'transparent' },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 24, gap: 20 },
   title: { color: COLORS.ink, fontSize: 28, fontWeight: '700' , lineHeight: 34},
   copy: { color: COLORS.muted, fontSize: 14, lineHeight: 20 },

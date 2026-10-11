@@ -124,7 +124,7 @@ export default function NotificationsScreen() {
   );
 }
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background }, safeArea: { flex: 1 },
+  container: { flex: 1, backgroundColor: 'transparent' }, safeArea: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 20, paddingVertical: 16 },
   title: { fontSize: 28, fontWeight: '700', color: COLORS.ink , lineHeight: 34}, subtitle: { fontSize: 14, color: COLORS.muted, marginTop: 4 , lineHeight: 20},
   close: { minWidth: 44, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.md, backgroundColor: COLORS.card },
