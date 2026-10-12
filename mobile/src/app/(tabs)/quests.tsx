@@ -179,11 +179,13 @@ function QuestList() {
         <View style={styles.viewToggle}>
         {(['context', 'all'] as const).map(value => <Button key={value} label={value === 'context' ? 'Recommended' : 'All quests'} intent="secondary" style={[styles.viewButton, view === value && styles.selectedView]} onPress={() => setView(value)}/>)}
         </View>
-        <View style={styles.listHeading}>
-        <ThemedText type="small" style={{ color: COLORS.muted }}>
-        {view === 'context' ? 'Suggestions for your day' : visibleQuests.length + ' quests'}
-        </ThemedText>
-        {view === 'all' && <Button intent="quiet" icon="options-outline" label={filterCount ? 'Filters (' + filterCount + ')' : 'Filters'} onPress={openFilters}/>}
+        <View style={[styles.listHeading, styles.listToolbar]}>
+          <View style={styles.toolbarCount}>
+            <ThemedText type="small" style={{ color: COLORS.muted }}>
+            {view === 'context' ? 'Suggestions for your day' : visibleQuests.length + ' quests'}
+            </ThemedText>
+          </View>
+          {view === 'all' && <View style={styles.toolbarFilter}><Button intent="quiet" icon="options-outline" label={filterCount ? 'Filters (' + filterCount + ')' : 'Filters'} onPress={openFilters}/></View>}
         </View>
         {questsHasMore && <ThemedText type="small">More quests are loading. Suggestions may reorder.</ThemedText>}{loadError && <View accessibilityLiveRegion="polite">
             <ThemedText type="small" style={{ color: COLORS.danger }}>
@@ -398,6 +400,9 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
     filterText: { color: COLORS.muted, fontSize: 14, fontWeight: '700', lineHeight: 20 },
     filterTextActive: { color: COLORS.ink },
     listHeading: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
+    listToolbar: { minHeight: 48 },
+    toolbarCount: { minHeight: 48, justifyContent: 'center' },
+    toolbarFilter: { minHeight: 48, justifyContent: 'center' },
     sectionTitle: { color: COLORS.ink, fontSize: 20, fontWeight: '700', lineHeight: 28 },
     deleteIconButton: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
     stateCard: { alignItems: 'center', gap: 10, padding: 20, backgroundColor: COLORS.card, borderRadius: 24 },
