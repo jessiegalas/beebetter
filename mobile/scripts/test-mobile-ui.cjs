@@ -6,6 +6,7 @@ function deferred() { let resolve, reject; const promise = new Promise((a, b) =>
 const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children), ...nodes(value.props?.ListHeaderComponent)];
 const find = (tree, predicate) => nodes(tree).find(predicate);
 const button = (tree, label) => find(tree, n => n.type === 'Button' && n.props.label === label);
+const viewTab = (tree, label) => find(tree, n => typeof n.type === 'function' && n.props.label === label && 'selected' in n.props);
 const text = n => typeof n === 'string' || typeof n === 'number' ? String(n) : Array.isArray(n) ? n.map(text).join('') : text(n?.props?.children ?? '');
 const tokens = require('../src/constants/design-tokens.json');
 const c = { ...tokens.light, ink: tokens.light.foreground, honey: tokens.light.accent, honeyDark: tokens.light.primary, honeyDeep: tokens.light.foreground, honeySoft: tokens.light.surface, surfaceWarm: tokens.light.surface };
@@ -34,14 +35,59 @@ function questScreen(overrides = {}) {
  return {h,data,list,row,detail,routes,events,alerts,router,renderCard,accountKey:()=>mod.default().props.key,setCandidates(q){candidates=q;h.render();}};
 }
 const cases=[];const test=(name,fn)=>cases.push({name,fn});
-test('only active unlocked proof-free rows offer quick completion',()=>{const s=questScreen();button(s.h.value,'All quests').props.onPress();s.h.render();for(const q of quests){const element=s.row(q.id),card=s.renderCard(element);assert.equal(!!button(card.value,'Complete'),q.id==='q1');assert.equal(!!find(card.value,n=>n.props?.label==='Edit quest'),false);card.unmount();}s.h.unmount();});
+test('only active unlocked proof-free rows offer quick completion',()=>{const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();s.h.render();for(const q of quests){const element=s.row(q.id),card=s.renderCard(element);assert.equal(!!button(card.value,'Complete'),q.id==='q1');assert.equal(!!find(card.value,n=>n.props?.label==='Edit quest'),false);card.unmount();}s.h.unmount();});
 test('quest IDs, detail route, and recommendation selection stay stable',()=>{const s=questScreen();assert.equal(s.list().props.keyExtractor({quest:quests[0]}),'q1');s.row('q1').props.onOpen();assert.equal(s.detail().props.quest.id,'q1');assert.equal(s.events.filter(e=>e.eventType==='selection').length,1);s.h.unmount();});
 test('completion deduplicates while pending and displays the reward after success',async()=>{const wait=deferred();let calls=0;const s=questScreen({completeQuest:()=>{calls++;return wait.promise}});const action=s.row('q1').props.onComplete;action();action();await flush();assert.equal(calls,1);assert.equal(s.events.filter(e=>e.eventType==='selection').length,1);assert.equal(s.row('q1').props.completing,true);wait.resolve({success:true});await flush();assert.ok(find(s.h.value,n=>n.type==='QuestReward'));s.h.unmount();});
 test('failed completion retains proof and permits a retry',async()=>{let calls=0;const s=questScreen({completeQuest:async()=>{calls++;throw Error('offline')}});const proof={uri:'file:///synthetic',name:'proof.jpg',mimeType:'image/jpeg'};s.row('q2').props.onProofChange(proof);await flush();s.row('q2').props.onComplete(proof);await flush();assert.equal(s.row('q2').props.proof.name,'proof.jpg');assert.equal(s.row('q2').props.completing,false);s.row('q2').props.onComplete(proof);await flush();assert.equal(calls,2);s.h.unmount();});
 test('proof survives row virtualization, closing details, and filtering',async()=>{const s=questScreen();s.row('q2').props.onProofChange({name:'proof.jpg',uri:'file:///synthetic'});await flush();s.row('q2').props.onOpen();assert.equal(s.detail().props.proof.name,'proof.jpg');s.router.setParams({questId:''});s.setCandidates([quests[0]]);s.setCandidates(quests);s.router.setParams({questId:'q2'});assert.equal(s.detail().props.proof.name,'proof.jpg');s.h.unmount();});
 test('account-keyed quest lifetime clears drafts and ignores late completions',async()=>{const wait=deferred();const s=questScreen({completeQuest:()=>wait.promise});s.row('q2').props.onProofChange({name:'old.jpg'});await flush();s.row('q1').props.onComplete();s.h.unmount();const other=questScreen({user:{id:'b'}});assert.equal(s.accountKey(),'a');assert.equal(other.accountKey(),'b');assert.equal(other.row('q2').props.proof,undefined);wait.resolve({success:false,error:'old account'});await flush();assert.equal(s.alerts.length,0);assert.equal(find(other.h.value,n=>n.type==='QuestReward'),undefined);other.h.unmount();});
-test('filter dismissal discards edits while apply changes the visible list',async()=>{const s=questScreen();button(s.h.value,'All quests').props.onPress();await flush();button(s.h.value,'Filters').props.onPress();await flush();const group=()=>find(s.h.value,n=>typeof n.type==='function'&&n.props.label==='Category');group().props.onChange('Health');await flush();find(s.h.value,n=>n.props?.accessibilityLabel==='Close filters without applying').props.onPress();await flush();assert.equal(s.list().props.data.length,5);button(s.h.value,'Filters').props.onPress();await flush();assert.equal(group().props.value,'');group().props.onChange('Health');await flush();find(s.h.value,n=>n.type==='TouchableOpacity'&&text(n)==='Apply Filters').props.onPress();await flush();assert.equal(s.list().props.data.length,1);assert.equal(s.list().props.data[0].quest.id,'q2');s.h.unmount();});
+test('filter dismissal discards edits while apply changes the visible list',async()=>{const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();await flush();button(s.h.value,'Filters').props.onPress();await flush();const group=()=>find(s.h.value,n=>typeof n.type==='function'&&n.props.label==='Category');group().props.onChange('Health');await flush();find(s.h.value,n=>n.props?.accessibilityLabel==='Close filters without applying').props.onPress();await flush();assert.equal(s.list().props.data.length,5);button(s.h.value,'Filters').props.onPress();await flush();assert.equal(group().props.value,'');group().props.onChange('Health');await flush();find(s.h.value,n=>n.type==='TouchableOpacity'&&text(n)==='Apply Filters').props.onPress();await flush();assert.equal(s.list().props.data.length,1);assert.equal(s.list().props.data[0].quest.id,'q2');s.h.unmount();});
 test('scoped quest failure retains cached rows and exposes its retry callback',async()=>{const s=questScreen({workspaceErrors:{quests:'Could not refresh'},isLoading:true});assert.ok(s.list().props.data.length);button(s.h.value,'Retry quests').props.onPress();await flush();assert.deepEqual(s.routes[0],['retry','quests']);s.h.unmount();});
+test('header-free quests show counts and preserve creation and All Quests destinations', async () => {
+ const s=questScreen();s.setCandidates([]);
+ const header=s.h.value;
+ assert.equal(button(header,'New quest'),undefined);
+ assert.equal(text(header).includes('Suggestions for your day'),false);
+ assert.equal(button(header,'Filters').props.disabled,true);
+ assert.equal(find(header,n=>n.props?.label==='Open notifications'),undefined);
+ assert.equal(find(header,n=>n.type==='Text'&&text(n)==='Quests'),undefined);
+ assert.ok(find(header,n=>n.type==='Text'&&text(n)==='0 quests'));
+ assert.equal(viewTab(header,'Recommended').props.selected,true);
+ let empty=s.list().props.ListEmptyComponent;
+ assert.equal(empty.props.subtitle,'Create a small, specific quest to get started.');
+ assert.equal(empty.props.actionLabel,'New quest');empty.props.onPress();assert.equal(s.routes[0],'/add-quest');
+ empty.props.onBrowse();await flush();
+ assert.equal(viewTab(s.h.value,'All Quests').props.selected,true);
+ assert.equal(s.list().props.ListEmptyComponent.props.onBrowse,undefined);
+ assert.equal(button(s.h.value,'Filters').props.disabled,false);
+ assert.ok(find(s.h.value,n=>n.type==='Text'&&text(n)==='0 quests'));
+ s.setCandidates([quests[0]]);assert.ok(find(s.h.value,n=>n.type==='Text'&&text(n)==='1 quest'));s.h.unmount();
+ const signedOut=questScreen({user:null});signedOut.setCandidates([]);
+ signedOut.list().props.ListEmptyComponent.props.onPress();assert.equal(signedOut.routes[0],'/auth');signedOut.h.unmount();
+});
+test('filtered empty quests reset filters without creating a quest', async () => {
+ const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();await flush();
+ button(s.h.value,'Filters').props.onPress();await flush();
+ find(s.h.value,n=>typeof n.type==='function'&&n.props.label==='Category').props.onChange('Missing category');await flush();
+ find(s.h.value,n=>n.type==='TouchableOpacity'&&text(n)==='Apply Filters').props.onPress();await flush();
+ assert.equal(s.list().props.data.length,0);
+ const empty=s.list().props.ListEmptyComponent;assert.equal(empty.props.actionLabel,'Reset filters');
+ empty.props.onPress();await flush();assert.equal(s.list().props.data.length,5);assert.equal(s.routes.length,0);s.h.unmount();
+});
+test('All Quests retains dismissal spacing with an inactive dismissal control', async () => {
+ const s=questScreen();const recommended=s.renderCard(s.row('q1'));
+ assert.equal(button(recommended.value,'Not now').props.disabled,false);recommended.unmount();
+ viewTab(s.h.value,'All Quests').props.onPress();await flush();
+ const all=s.renderCard(s.row('q1'));const dismiss=button(all.value,'Not now');
+ assert.equal(dismiss.props.disabled,true);const before=s.events.length;dismiss.props.onPress();
+ assert.equal(s.events.length,before);all.unmount();s.h.unmount();
+});
+test('quest loading and failures keep the creation empty state hidden', () => {
+ const loading=questScreen({isLoading:true});loading.setCandidates([]);
+ assert.equal(loading.list().props.ListEmptyComponent.type,'View');loading.h.unmount();
+ const failed=questScreen({workspaceErrors:{quests:'Offline'}});failed.setCandidates([]);
+ assert.equal(failed.list().props.ListEmptyComponent,null);assert.ok(button(failed.h.value,'Retry quests'));failed.h.unmount();
+});
 test('disclosure exposes state and reveals its existing contents',async()=>{const h=hooks();const mod=load('src/components/mobile-ui.tsx',basics(h));h.mount(()=>mod.Disclosure({title:'History',children:'Saved history'}));let trigger=find(h.value,n=>n.type==='Pressable');assert.equal(trigger.props.accessibilityState.expanded,false);trigger.props.onPress();await flush();trigger=find(h.value,n=>n.type==='Pressable');assert.equal(trigger.props.accessibilityState.expanded,true);assert.ok(text(h.value).includes('Saved history'));h.unmount();});
 test('shared buttons expose loading and keyboard focus feedback',async()=>{const h=hooks();const mod=load('src/components/mobile-ui.tsx',basics(h));h.mount(()=>mod.Button({label:'Save',onPress(){},loading:true}));assert.equal(h.value.props.disabled,true);assert.equal(h.value.props.accessibilityState.busy,true);h.value.props.onFocus();await flush();const styles=h.value.props.style({pressed:false});assert.equal(styles[1].borderColor,c.primaryForeground);assert.equal(styles[0].minHeight,48);h.unmount();});
 test('button intents stay distinct in both themes through pressed and disabled states', () => {
@@ -125,10 +171,14 @@ test('navigation keeps four routes with Home and Quests visible and a separate c
  assert.equal(find(h.value,n=>n.props?.accessibilityLabel==='Create quest').props.style({pressed:false})[0].minHeight,68);
  assert.equal(find(h.value,n=>n.props?.edges).props.edges[0],'bottom');h.unmount();
 });
-test('creation preserves its draft after failure and deduplicates save taps',async()=>{
- const h=hooks(), wait=deferred();let calls=0,backs=0;const data={user:{id:'a'},quests:[],isLoading:false,refresh(){},addQuest:()=>{calls++;return wait.promise}};
- const mod=load('src/app/add-quest.tsx',{...basics(h),'react-native':{...native,KeyboardAvoidingView:'KeyboardAvoidingView'},'expo-router':{router:{back:()=>backs++,push(){}},useLocalSearchParams:()=>({})},'@/components/quest-time-input':{QuestTimeInput:'TimeInput'},'@/hooks/use-user-data':{useUserData:()=>data},'@/hooks/use-quest-categories':{useQuestCategories:()=>({categories:[{id:'academic',name:'Academics'}],loading:false,error:null,refresh(){},createCategory(){}})},'@/context/location-context':{useLocationContext:()=>({activeLocations:[],isLoadingLocations:false})},'@/lib/quest-suggestions':{getQuestIdeas:()=>[]},'@/lib/quest-time':load('src/lib/quest-time.ts')});
- h.mount(()=>mod.default().type({}));find(h.value,n=>n.props?.accessibilityLabel==='Quest name').props.onChangeText('Review my notes');await flush();find(h.value,n=>typeof n.type==='function'&&n.props.label==='Academics').props.onPress();await flush();const save=find(h.value,n=>typeof n.type==='function'&&n.props.label==='Create Quest');save.props.onPress();save.props.onPress();await flush();assert.equal(calls,1);wait.resolve({success:false,error:'Network unavailable'});await flush();assert.equal(backs,0);assert.equal(find(h.value,n=>n.props?.accessibilityLabel==='Quest name').props.value,'Review my notes');assert.ok(text(h.value).includes('Network unavailable'));h.unmount();
+test('two-step creation preserves its draft after failure and deduplicates save taps',async()=>{
+ const h=hooks(), wait=deferred();let calls=0,backs=0,draft;const data={user:{id:'a'},quests:[],isLoading:false,refresh(){},addQuest:value=>{calls++;draft=value;return wait.promise}};
+ const mod=load('src/app/add-quest.tsx',{...basics(h),'@/constants/theme':{...theme,useAppColorScheme:()=> 'light'},'@/components/quest-wizard':Object.fromEntries(['QuestAccordion','QuestCard','QuestChoice','QuestFieldLabel','QuestIcon','QuestNote','QuestSelect','QuestText','QuestWizardFooter','QuestWizardHeader'].map(name=>[name,name])),'react-native':{...native,Keyboard:{dismiss(){}},BackHandler:{addEventListener:()=>({remove(){}})},KeyboardAvoidingView:'KeyboardAvoidingView'},'expo-router':{router:{back:()=>backs++,push(){}},useLocalSearchParams:()=>({}),useFocusEffect:fn=>h.react.useEffect(fn,[fn])},'@/components/quest-time-input':{QuestTimeInput:'TimeInput'},'@/hooks/use-user-data':{useUserData:()=>data},'@/hooks/use-quest-categories':{useQuestCategories:()=>({categories:[{id:'academic',name:'Academics'}],loading:false,error:null,refresh(){},createCategory(){}})},'@/context/location-context':{useLocationContext:()=>({activeLocations:[],isLoadingLocations:false})},'@/lib/quest-suggestions':{getQuestIdeas:()=>[]},'@/lib/quest-time':load('src/lib/quest-time.ts')});
+ const footer=()=>find(h.value,n=>n.type==='QuestWizardFooter');const header=()=>find(h.value,n=>n.type==='QuestWizardHeader');
+ h.mount(()=>mod.default().type({}));assert.equal(header().props.step,1);footer().props.onPress();await flush();assert.match(footer().props.feedback,/name/);assert.equal(calls,0);
+ find(h.value,n=>n.props?.accessibilityLabel==='Quest name').props.onChangeText('Review my notes');await flush();find(h.value,n=>typeof n.type==='function'&&n.props.label==='Academics').props.onPress();await flush();footer().props.onPress();await flush();assert.equal(header().props.step,2);
+ find(h.value,n=>n.type==='QuestChoice'&&n.props.label==='Daily').props.onPress();await flush();header().props.onBack();await flush();assert.equal(find(h.value,n=>n.props?.accessibilityLabel==='Quest name').props.value,'Review my notes');footer().props.onPress();await flush();
+ const save=footer().props.onPress;save();save();await flush();assert.equal(calls,1);assert.equal('recurrence' in draft,false);wait.resolve({success:false,error:'Network unavailable'});await flush();assert.equal(backs,0);assert.equal(footer().props.feedback,'Network unavailable');header().props.onBack();await flush();assert.equal(find(h.value,n=>n.props?.accessibilityLabel==='Quest name').props.value,'Review my notes');h.unmount();
 });
 test('new sheets honor reduced motion and clean up the listener',async()=>{
  const h=hooks();let removed=false;const mod=load('src/components/mobile-ui.tsx',{...basics(h),'react-native':{...native,AccessibilityInfo:{isReduceMotionEnabled:async()=>true,addEventListener:()=>({remove(){removed=true}})}}});h.mount(()=>mod.Sheet({title:'Wellness',visible:true,onClose(){},children:'Private choices'}));await flush();assert.equal(h.value.props.animationType,'none');h.unmount();assert.equal(removed,true);
@@ -201,7 +251,7 @@ test('Home header, shortcuts and recommendation use existing account and quest d
  h.mount(()=>mod.default());
  const content=text(h.value);assert.ok(content.includes('Hi, Brightsteel!'));assert.ok(content.indexOf('Actual quest description')<content.indexOf('Your progress'));assert.ok(content.includes('Library'));assert.ok(content.includes('+25 XP'));assert.equal(text(find(h.value,n=>n.props?.accessibilityLabel==='Current streak: 7 days')),'7');assert.ok(content.includes('19'));
  const greeting=find(h.value,n=>n.type==='Text'&&text(n)==='Hi, Brightsteel!');assert.equal(greeting.props.numberOfLines,1);
- assert.equal(find(h.value,n=>n.type==='Avatar').props.uri,data.user.user_metadata.avatar_url);
+ assert.equal(find(h.value,n=>n.type==='Avatar'),undefined);assert.equal(find(h.value,n=>n.type==='HomeMenu').props.avatarUri,data.user.user_metadata.avatar_url);
  assert.equal(find(h.value,n=>n.type==='XpProgress').props.progress,data.levelProgress);
  // A changed recommendation category updates the image without a separate state.
  for(const [category,asset] of [['Academics',1],['Health',2],['Social',3],['Habits',4],[' health ',2],['My custom category',1],['__proto__',1],[null,1]]) {
@@ -214,7 +264,7 @@ test('Home header, shortcuts and recommendation use existing account and quest d
  find(h.value,n=>n.props?.label==='Open menu').props.onPress();await flush();assert.equal(find(h.value,n=>n.type==='HomeMenu').props.visible,true);
  for(const label of ['Profile','Save Places','Skill Tree'])find(h.value,n=>typeof n.type==='function'&&n.props.label===label).props.onPress();
  assert.deepEqual(routes,['/notifications','/skill-tree','/profile','/manage-locations','/skill-tree']);button(h.value,'View quest').props.onPress();assert.equal(routes.at(-1).params.questId,quest.id);
- data.user.user_metadata={};data.profile.display_name='';h.render();assert.ok(text(h.value).includes('Hi, fallback!'));assert.equal(find(h.value,n=>n.type==='Avatar').props.uri,undefined);h.unmount();
+ data.user.user_metadata={};data.profile.display_name='';h.render();assert.ok(text(h.value).includes('Hi, fallback!'));assert.equal(find(h.value,n=>n.type==='Avatar'),undefined);assert.equal(find(h.value,n=>n.type==='HomeMenu').props.avatarUri,undefined);h.unmount();
 });
 test('side panel preserves destinations and provider logout, with requested placeholder buttons', () => {
  const h=hooks(),routes=[],alerts=[];let closed=0,signouts=0;
@@ -222,18 +272,25 @@ test('side panel preserves destinations and provider logout, with requested plac
  const mod=load('src/components/home-menu.tsx',{...basics(h),'./mobile-ui':{...presentation,useReducedMotion:()=>true},'./themed-text':{ThemedText:'Text'},'./user-avatar':{UserAvatar:'Avatar'},'react-native':{...native,Alert:{alert:(...args)=>alerts.push(args)}},'expo-router':{router:{push:r=>routes.push(r)}},'@/hooks/use-user-data':{useUserData:()=>data}});
  h.mount(()=>mod.HomeMenu({visible:true,onClose:()=>closed++,displayName:'Actual Student'}));
  assert.equal(h.value.props.animationType,'none');assert.equal(find(h.value,n=>n.props?.accessibilityViewIsModal).props.accessibilityViewIsModal,true);
- for(const label of ['Profile','Save Places','Skill Tree','Notifications','Settings'])find(h.value,n=>typeof n.type==='function'&&n.props.label===label).props.onPress();
+ assert.equal(find(h.value,n=>typeof n.type==='function'&&n.props.label==='Profile'),undefined);
+ find(h.value,n=>n.props?.accessibilityLabel==='Open profile for Actual Student, level 3').props.onPress();
+ for(const label of ['Save Places','Skill Tree','Notifications','Settings'])find(h.value,n=>typeof n.type==='function'&&n.props.label===label).props.onPress();
  assert.deepEqual(routes,['/profile','/manage-locations','/skill-tree','/notifications','/settings']);assert.equal(closed,5);
  for(const label of ['Help & Support']){const item=find(h.value,n=>typeof n.type==='function'&&n.props.label===label);assert.equal(item.props.disabled,true);assert.equal(item.props.onPress,undefined);}
  find(h.value,n=>typeof n.type==='function'&&n.props.label==='Log Out').props.onPress();assert.equal(signouts,0);alerts[0][2].find(b=>b.style==='destructive').onPress();assert.equal(signouts,1);
  data.isSigningOut=true;h.render();find(h.value,n=>typeof n.type==='function'&&n.props.label==='Log Out').props.onPress();assert.equal(alerts.length,1);h.unmount();
 });
-test('avatar displays an existing image, falls back on error and accepts a new image', async () => {
- const h=hooks();let uri='https://example.test/first.png';
- const mod=load('src/components/user-avatar.tsx',{...basics(h),'react-native':{...native,Image:'Image'},'react-native-svg':{__esModule:true,default:'Svg',Circle:'Circle',Path:'Path'}});
- h.mount(()=>mod.UserAvatar({uri}));assert.equal(find(h.value,n=>n.type==='Image').props.source.uri,uri);
- find(h.value,n=>n.type==='Image').props.onError();await flush();assert.equal(find(h.value,n=>n.type==='Image'),undefined);assert.ok(find(h.value,n=>n.type==='Circle'));
- uri='https://example.test/new.png';h.render();assert.equal(find(h.value,n=>n.type==='Image').props.source.uri,uri);uri=undefined;h.render();assert.ok(find(h.value,n=>n.type==='Path'));h.unmount();
+test('avatar uses Reusables images and initials for missing photos', () => {
+ const h=hooks();let props={uri:'https://example.test/avatar.png',name:'Actual Student'};
+ const mod=load('src/components/user-avatar.tsx',{...basics(h),'@/components/ui/avatar':{Avatar:'Avatar',AvatarImage:'AvatarImage',AvatarFallback:'AvatarFallback'},'@/components/ui/text':{Text:'Text'}});
+ h.mount(()=>mod.UserAvatar(props));
+ assert.equal(find(h.value,n=>n.type==='AvatarImage').props.source.uri,'https://example.test/avatar.png');
+ assert.equal(find(h.value,n=>n.type==='Avatar').props.alt,"Actual Student's avatar");
+ assert.equal(text(find(h.value,n=>n.type==='AvatarFallback')),'AS');
+ props={name:'  Actual   Student '};h.render();
+ assert.equal(find(h.value,n=>n.type==='AvatarImage'),undefined);
+ assert.equal(text(find(h.value,n=>n.type==='AvatarFallback')),'AS');
+ props={name:' '};h.render();assert.equal(text(find(h.value,n=>n.type==='AvatarFallback')),'E');h.unmount();
 });
 test('appearance restores a saved preference, protects startup taps and serializes rapid writes', async () => {
  const h=hooks(),read=deferred(),firstWrite=deferred(),saved=[];let scheme='light';

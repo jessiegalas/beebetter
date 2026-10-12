@@ -1,0 +1,28 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - tablist [ref=e6]:
+        - tab "Recommended" [ref=e7] [cursor=pointer]
+        - tab "All Quests" [ref=e9] [cursor=pointer]
+      - generic [ref=e11]:
+        - generic [ref=e12]: 0 quests
+        - generic [aria-hidden]:
+          - button [disabled]:
+            - generic [ref=e13]: 
+            - generic [ref=e14]: Filters
+    - generic [ref=e18]:
+      - generic [ref=e19]: 
+      - heading "No quests in this view" [level=1] [ref=e21]
+      - generic [ref=e22]: Create a small, specific quest to get started.
+      - button "New quest" [ref=e23] [cursor=pointer]:
+        - generic [ref=e24]: 
+      - generic [ref=e26]:
+        - generic [ref=e27]: or browse
+        - button "Browse All Quests" [ref=e28] [cursor=pointer]:
+          - generic [ref=e29]: All Quests
+  - generic [ref=e31]:
+    - tab "Home" [ref=e32] [cursor=pointer]:
+      - generic [ref=e33]: 
+    - button "Create quest" [ref=e36] [cursor=pointer]
+    - tab "Quests" [ref=e40] [cursor=pointer]:
+      - generic [ref=e41]: 

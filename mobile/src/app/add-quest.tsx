@@ -1,12 +1,13 @@
-import { useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, BackHandler, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, TextInput, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
-import { Button as ActionButton, ChoiceChip, Field } from '@/components/mobile-ui';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Button as ActionButton } from '@/components/mobile-ui';
+import { QuestAccordion, QuestCard, QuestChoice, QuestFieldLabel, QuestIcon, QuestNote, QuestSelect, QuestText, QuestWizardFooter, QuestWizardHeader } from '@/components/quest-wizard';
 import { ThemedText } from '@/components/themed-text';
 import { QuestTimeInput } from '@/components/quest-time-input';
-import { Fonts, useBeePalette, useBeeStyles, type BeePalette, MaxContentWidth } from '@/constants/theme';
+import { Fonts, useAppColorScheme, useBeePalette, useBeeStyles, type BeePalette, MaxContentWidth } from '@/constants/theme';
 import { useUserData, type Quest } from '@/hooks/use-user-data';
 import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useLocationContext } from '@/context/location-context';
@@ -54,6 +55,41 @@ function QuestForm({ quest }: { quest?: Quest }) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [expanded, setExpanded] = useState({ timing: true, location: false, deadline: false, proof: false, after: false });
+  const [recurrence, setRecurrence] = useState('Once');
+  const [customDays, setCustomDays] = useState<string[]>([]);
+  const { width } = useWindowDimensions();
+  const dark = useAppColorScheme() === 'dark';
+  const toggle = (key: keyof typeof expanded) => setExpanded(previous => ({ ...previous, [key]: !previous[key] }));
+  const changeStep = (next: 1 | 2) => {
+    Keyboard.dismiss();
+    setFeedback(null);
+    setStep(next);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  };
+  useFocusEffect(useCallback(() => {
+    const listener = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (step !== 2) return false;
+      Keyboard.dismiss();
+      setStep(1);
+      setFeedback(null);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+      return true;
+    });
+    return () => listener.remove();
+  }, [step]));
+  const validateDetails = () => {
+    if (!title.trim()) throw new Error('Give your quest a name.');
+    if (title.length > 50) throw new Error('Keep your quest name within 50 characters.');
+    if (description.length > 200) throw new Error('Keep your description within 200 characters.');
+    if (!category || !categories.some(c => c.name === category)) throw new Error('Choose an available category.');
+  };
+  const continueToSettings = () => {
+    try { validateDetails(); changeStep(2); }
+    catch (failure) { setFeedback(failure instanceof Error ? failure.message : 'Check your quest details.'); }
+  };
   const prerequisiteOptions = quests.filter(item => {
     const seen = new Set<string>(); let current: Quest | undefined = item;
     while (current) { if (current.id === quest?.id || seen.has(current.id)) return false; seen.add(current.id); current = quests.find(q => q.id === current?.prerequisite_quest_id); }
@@ -64,8 +100,7 @@ function QuestForm({ quest }: { quest?: Quest }) {
     setFeedback(null);
     try {
       if (!user) throw new Error('Sign in to save your quest.');
-      if (!title.trim()) throw new Error('Give your quest a name.');
-      if (!category || !categories.some(c => c.name === category)) throw new Error('Choose an available category.');
+      validateDetails();
       const scheduled_at = scheduleMode === 'scheduled' ? parseLocalDateTime(scheduled) : null;
       const preferred_time = scheduleMode === 'preferred' ? parsePreferredTime(preferred) : null;
       const deadline_at = hasDeadline ? parseLocalDateTime(deadline) : null;
@@ -88,61 +123,84 @@ function QuestForm({ quest }: { quest?: Quest }) {
     catch (failure) { setCategoryError(failure instanceof Error ? failure.message : 'Could not create category.'); }
     finally { setCreatingCategory(false); }
   };
-  return <SafeAreaView style={s.screen}>
-    <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={s.header}><View style={s.flex}><ThemedText style={s.heading}>{quest ? 'Edit quest' : 'New quest'}</ThemedText></View><TouchableOpacity style={s.iconButton} accessibilityRole="button" accessibilityLabel="Close quest form" onPress={() => router.back()}><Ionicons name="close" size={22} color={C.ink} /></TouchableOpacity></View>
-      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-        {!quest && <View style={s.row}><Choice label="Quick start" selected={mode === 'templates'} onPress={() => setMode('templates')} /><Choice label="Custom" selected={mode === 'custom'} onPress={() => setMode('custom')} /></View>}
-        {mode === 'templates' ? <>
-          <ThemedText style={s.hint}>Choose an idea, then make it your own.</ThemedText>
-          {getQuestIdeas().map(idea => <TouchableOpacity key={idea.id} style={s.option} accessibilityRole="button" onPress={() => { setTitle(idea.title); setDescription(idea.description ?? ''); setCategory(categories.find(c => c.name === idea.category)?.name ?? ''); setXp(idea.xp); setMode('custom'); }}><Ionicons name={idea.icon} size={20} color={C.honeyDark} /><ThemedText style={[s.label, s.flex]}>{idea.title}</ThemedText><ThemedText style={s.hint}>+{idea.xp} XP</ThemedText></TouchableOpacity>)}
-        </> : <>
-          <ThemedText style={s.sectionTitle}>Quest details</ThemedText>
-<Field label="Quest name" accessibilityLabel="Quest name" style={s.input} placeholder="e.g. Review my notes" placeholderTextColor={C.muted} value={title} onChangeText={setTitle} maxLength={100} />
-<Field label="Description (optional)" accessibilityLabel="Description, optional" style={[s.input, s.textArea]} placeholder="What would you like to accomplish?" placeholderTextColor={C.muted} value={description} onChangeText={setDescription} multiline textAlignVertical="top" />
-          <ThemedText style={s.label}>Category</ThemedText>
-          <TouchableOpacity style={s.option} accessibilityRole="button" accessibilityLabel="Choose category" onPress={() => setCategoryOpen(true)}><ThemedText style={[s.label, s.flex]}>{category || 'Choose a category'}</ThemedText><Ionicons name="chevron-down" size={18} color={C.muted} /></TouchableOpacity>
-          <Button label="Create new category" onPress={() => setCategoryOpen(true)} />
-          {!!error && <View><ThemedText style={s.error}>{error}</ThemedText><Button label="Reload categories" onPress={() => void refresh()} /></View>}
-          <View style={s.divider} />
-          <ThemedText style={s.sectionTitle}>Optional settings</ThemedText>
-          <ThemedText style={s.hint}>Customize how and when your quest fits into your day.</ThemedText>
-          <View style={s.sections}>
-            <Section title="Timing & schedule" icon="time-outline" summary={scheduleMode === 'anytime' ? 'Anytime' : scheduleMode === 'scheduled' ? scheduled || 'Choose a date and time' : preferred ? 'Preferred at ' + preferred : 'Choose a preferred time'}>
-              <View style={s.row}>{(['anytime', 'scheduled', 'preferred'] as const).map(value => <Choice key={value} label={value === 'anytime' ? 'Anytime' : value === 'scheduled' ? 'Scheduled' : 'Preferred time'} selected={scheduleMode === value} onPress={() => setScheduleMode(value)} />)}</View>
-              {scheduleMode === 'scheduled' && <QuestTimeInput label="Scheduled date & time" value={scheduled} onChange={setScheduled} />}
-              {scheduleMode === 'preferred' && <><QuestTimeInput label="Preferred time of day" timeOnly value={preferred} onChange={setPreferred} /><ThemedText style={s.hint}>A preferred time does not repeat a completed quest.</ThemedText></>}
-            </Section>
-            <Section title="Location & geofencing" icon="location-outline" summary={location ? activeLocations.find(p => p.id === location)?.name ?? 'Saved area unavailable' : 'No location attached'}>
-              <Choice label="No location requirement" selected={!location} onPress={() => setLocation(null)} />
-              {activeLocations.map(place => <Choice key={place.id} label={place.name} selected={location === place.id} onPress={() => setLocation(place.id)} />)}
-              {isLoadingLocations && <ActivityIndicator color={C.honeyDark} />}
-              {!isLoadingLocations && !activeLocations.length && <ThemedText style={s.hint}>No active saved areas yet. Add one in location management.</ThemedText>}
-              {!!location && !activeLocations.some(p => p.id === location) && <ThemedText style={s.hint}>The attached area is inactive or unavailable. Keep it, choose another, or remove the preference.</ThemedText>}
-              <Button label="Manage saved areas" onPress={() => router.push('/manage-locations')} />
-            </Section>
-            <Section title="Deadline & importance" icon="flag-outline" summary={(hasDeadline ? deadline || 'Deadline needed' : 'No deadline') + ' / ' + importance + ' importance'}>
-              <View style={s.between}><ThemedText style={s.label}>Set a deadline</ThemedText><Switch accessibilityLabel="Set a deadline" value={hasDeadline} onValueChange={setHasDeadline} trackColor={{ true: C.honey }} /></View>
-              {hasDeadline && <QuestTimeInput label="Deadline" value={deadline} onChange={setDeadline} />}
-              <ThemedText style={s.label}>Importance</ThemedText>
-              <View style={s.row}>{(['low', 'normal', 'high'] as const).map(value => <Choice key={value} label={value[0].toUpperCase() + value.slice(1)} selected={importance === value} onPress={() => setImportance(value)} />)}</View>
-            </Section>
-            <Section title="Proof of completion" icon="camera-outline" summary={proof ? 'Proof required when completing' : 'No proof required'}>
-              <View style={s.between}><ThemedText style={[s.label, s.flex]}>Require proof</ThemedText><Switch accessibilityLabel="Require proof of completion" value={proof} onValueChange={setProof} trackColor={{ true: C.honey }} /></View>
-              <ThemedText style={s.hint}>Attach an image, video, or file when completing this quest.</ThemedText>
-            </Section>
-            <Section title="Do after" icon="git-branch-outline" summary={prerequisite ? quests.find(q => q.id === prerequisite)?.title ?? 'Saved prerequisite unavailable' : 'No prerequisite'}>
-              <Choice label="No prerequisite" selected={!prerequisite} onPress={() => setPrerequisite(null)} />
-              {prerequisiteOptions.map(q => <Choice key={q.id} label={q.title} selected={prerequisite === q.id} onPress={() => setPrerequisite(q.id)} />)}
-            </Section>
+  return <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-[#faf3df] dark:bg-[#241e17]">
+    <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <View className="w-full max-w-[480px] flex-1 self-center">
+        <ScrollView ref={scrollRef} className="flex-1" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerClassName="pb-8 pt-2">
+          <QuestWizardHeader step={step} editing={!!quest} onBack={() => step === 2 ? changeStep(1) : router.back()} onClose={() => router.back()} />
+          <View className="px-4">
+            {step === 1 ? <QuestCard className="p-5">
+              {!quest && <View className="mb-4 flex-row rounded-[20px] border border-[#e5cda0] bg-[#fffaf0] p-1 dark:border-[#76603d] dark:bg-[#403523]">
+                {(['templates', 'custom'] as const).map(value => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: mode === value }} onPress={() => setMode(value)} className={`min-h-12 flex-1 flex-row items-center justify-center gap-2 rounded-[16px] px-2 py-2 active:opacity-60 ${mode === value ? 'border border-[#9f6010] bg-[#ffdf88] dark:bg-[#71541f]' : ''}`}>
+                  <Ionicons name={value === 'custom' ? 'settings-outline' : 'flash-outline'} size={20} color={dark ? '#f8edda' : '#754315'} /><QuestText className="text-[16px] font-semibold">{value === 'custom' ? 'Custom' : 'Quick Start'}</QuestText>
+                </Pressable>)}
+              </View>}
+              <QuestText className="mb-6 text-[14px] leading-5 text-[#6d5d4d] dark:text-[#c6b9a7]">{mode === 'templates' ? 'Choose an idea, then make it your own.' : 'Get creative! Set your own details and make it your own.'}</QuestText>
+              {mode === 'templates' ? <View className="gap-3">
+                {getQuestIdeas().map(idea => <Pressable key={idea.id} accessibilityRole="button" accessibilityLabel={`${idea.title}, ${idea.xp} XP`} className="min-h-14 flex-row items-center gap-3 rounded-2xl border border-[#e9dcc4] p-3 active:opacity-60 dark:border-[#64513b]" onPress={() => { setTitle(idea.title); setDescription(idea.description ?? ''); setCategory(categories.find(c => c.name === idea.category)?.name ?? ''); setXp(idea.xp); setMode('custom'); }}>
+                  <QuestIcon icon={idea.icon} small /><QuestText className="flex-1 font-semibold">{idea.title}</QuestText><QuestText className="text-[12px]">+{idea.xp} XP</QuestText>
+                </Pressable>)}
+              </View> : <View className="gap-5 border-t border-[#f1e7d4] pt-2 dark:border-[#64513b]">
+                <View>
+                  <QuestFieldLabel label="Quest name" icon="create-outline" />
+                  <TextInput accessibilityLabel="Quest name" className="min-h-[50px] rounded-[12px] border border-[#cebea1] bg-[#fffefa] px-3 py-3 text-[15px] leading-[22px] text-[#432914] dark:border-[#76634b] dark:bg-[#342c22] dark:text-[#f8edda]" style={{ fontFamily: Fonts.rounded }} placeholder="e.g. Review my notes" placeholderTextColor={dark ? '#b6a995' : '#8e8071'} value={title} onChangeText={setTitle} maxLength={Math.max(50, title.length)} returnKeyType="next" />
+                  <QuestText className={`mt-1 text-right text-[11px] leading-[14px] ${title.length > 50 ? 'text-[#ae3428]' : 'text-[#796b5c] dark:text-[#c6b9a7]'}`}>{title.length}/50</QuestText>
+                </View>
+                <View>
+                  <QuestFieldLabel label="Description (optional)" icon="list-outline" />
+                  <View className="rounded-[12px] border border-[#cebea1] bg-[#fffefa] dark:border-[#76634b] dark:bg-[#342c22]">
+                    <TextInput accessibilityLabel="Description, optional" className="min-h-[96px] px-3 pb-2 pt-3 text-[15px] leading-[22px] text-[#432914] dark:text-[#f8edda]" style={{ fontFamily: Fonts.rounded }} placeholder="What would you like to accomplish?" placeholderTextColor={dark ? '#b6a995' : '#8e8071'} value={description} onChangeText={setDescription} maxLength={Math.max(200, description.length)} multiline textAlignVertical="top" />
+                    <QuestText className={`px-2 pb-2 text-right text-[11px] leading-[14px] ${description.length > 200 ? 'text-[#ae3428]' : 'text-[#796b5c] dark:text-[#c6b9a7]'}`}>{description.length}/200</QuestText>
+                  </View>
+                </View>
+                <View>
+                  <QuestFieldLabel label="Category" icon="pricetag-outline" />
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Choose category: ${category || 'None selected'}`} onPress={() => setCategoryOpen(true)} className="min-h-[58px] flex-row items-center gap-3 rounded-[20px] border border-[#e5cea5] px-3 py-2 active:opacity-60 dark:border-[#76603d]">
+                    <QuestIcon icon="accessibility-outline" tone="purple" small /><QuestText className="flex-1">{category || 'Choose a category'}</QuestText><Ionicons name="chevron-down" size={20} color={dark ? '#f8edda' : '#54351e'} />
+                  </Pressable>
+                  {loading && <ActivityIndicator className="mt-2" color={C.honeyDark} />}
+                  {!!error && <View className="mt-2"><QuestText className="text-[13px] text-[#ae3428] dark:text-[#ffb4a9]">{error}</QuestText><Button label="Reload categories" onPress={() => void refresh()} /></View>}
+                </View>
+              </View>}
+            </QuestCard> : <View className="gap-3">
+              <QuestAccordion title="Timing & schedule" subtitle="When can this quest be done?" icon="time-outline" tone="amber" open={expanded.timing} onToggle={() => toggle('timing')}>
+                <View className="gap-3 rounded-2xl border border-[#f0e5cf] p-3 dark:border-[#64513b]">
+                  <QuestSelect label="Timing" selectedValue={scheduleMode} value={scheduleMode === 'anytime' ? 'Anytime' : scheduleMode === 'scheduled' ? 'Scheduled' : 'Preferred time'} options={[{ label: 'Anytime', value: 'anytime' }, { label: 'Scheduled', value: 'scheduled' }, { label: 'Preferred time', value: 'preferred' }]} onChange={value => setScheduleMode(value as typeof scheduleMode)} />
+                  {scheduleMode === 'scheduled' && <QuestTimeInput label="Scheduled date & time" value={scheduled} onChange={setScheduled} />}
+                  {scheduleMode === 'preferred' && <QuestTimeInput label="Preferred time of day" timeOnly value={preferred} onChange={setPreferred} />}
+                  <View className={`gap-1.5 ${width < 360 ? 'flex-row flex-wrap' : 'flex-row'}`}>
+                    {['Once', 'Daily', 'Weekly', 'Custom'].map(value => <QuestChoice key={value} label={value} compact={width >= 360} selected={recurrence === value} onPress={() => setRecurrence(value)} />)}
+                  </View>
+                  {recurrence === 'Custom' && <View className="gap-2"><QuestText className="text-[12px]">Choose days (preview)</QuestText><View className="flex-row flex-wrap gap-2">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <QuestChoice key={day} label={day} selected={customDays.includes(day)} onPress={() => setCustomDays(days => days.includes(day) ? days.filter(item => item !== day) : [...days, day])} />)}</View></View>}
+                  <QuestNote>{recurrence === 'Once' ? (scheduleMode === 'anytime' ? 'Your quest will be available anytime, once.' : 'Your quest will use the timing selected above.') : `${recurrence === 'Daily' ? 'Daily' : recurrence === 'Weekly' ? 'Weekly' : 'Custom'} repeat preview. Repeat settings are preview only. ${quest ? 'Save changes keeps' : 'Create Quest saves'} one quest.`}</QuestNote>
+                </View>
+              </QuestAccordion>
+              <QuestAccordion title="Location & geofencing" subtitle="Where can this quest be done?" icon="location-outline" tone="green" open={expanded.location} onToggle={() => toggle('location')}>
+                <QuestSelect label="Location" selectedValue={location ?? ''} value={location ? activeLocations.find(p => p.id === location)?.name ?? 'Saved area unavailable' : 'No location attached'} options={[{ label: 'No location attached', value: '' }, ...activeLocations.map(place => ({ label: place.name, value: place.id }))]} onChange={value => setLocation(value || null)}>
+                  {isLoadingLocations && <ActivityIndicator color={C.honeyDark} />}
+                  {!isLoadingLocations && !activeLocations.length && <QuestText>No active saved areas yet.</QuestText>}
+                </QuestSelect>
+                <QuestNote icon="location-outline">You can restrict this quest to a specific location, or keep it open anywhere.</QuestNote>
+                {!!location && !activeLocations.some(p => p.id === location) && <QuestText className="text-[12px]">The attached area is inactive or unavailable. Keep it, choose another, or remove the preference.</QuestText>}
+                <Button label="Manage saved areas" onPress={() => router.push('/manage-locations')} />
+              </QuestAccordion>
+              <QuestAccordion title="Deadline & importance" subtitle="Set a due date and priority level." icon="flag-outline" tone="red" open={expanded.deadline} onToggle={() => toggle('deadline')}>
+                <QuestSelect label="Deadline" selectedValue={hasDeadline ? 'set' : 'none'} icon="calendar-outline" value={hasDeadline ? deadline || 'Choose a deadline' : 'No deadline'} options={[{ label: 'No deadline', value: 'none' }, { label: 'Set a deadline', value: 'set' }]} onChange={value => setHasDeadline(value === 'set')} />
+                {hasDeadline && <QuestTimeInput label="Deadline" value={deadline} onChange={setDeadline} />}
+                <QuestSelect label="Importance" selectedValue={importance} icon="bar-chart-outline" value={`${importance[0].toUpperCase() + importance.slice(1)} importance`} options={(['low', 'normal', 'high'] as const).map(value => ({ label: `${value[0].toUpperCase() + value.slice(1)} importance`, value }))} onChange={value => setImportance(value as typeof importance)} />
+              </QuestAccordion>
+              <QuestAccordion title="Proof of completion" subtitle="How will you confirm it’s done?" icon="camera-outline" tone="purple" open={expanded.proof} onToggle={() => toggle('proof')}>
+                <View className="flex-row items-center justify-between gap-3"><QuestText className="flex-1 font-semibold">Require proof</QuestText><Switch accessibilityLabel="Require proof of completion" value={proof} onValueChange={setProof} trackColor={{ true: C.honey }} /></View>
+                <QuestNote>Attach an image, video, or file when completing this quest.</QuestNote>
+              </QuestAccordion>
+              <QuestAccordion title="Do after" subtitle="What happens next?" icon="git-branch-outline" tone="blue" open={expanded.after} onToggle={() => toggle('after')}>
+                <QuestSelect label="Prerequisite quest" selectedValue={prerequisite ?? ''} value={prerequisite ? quests.find(q => q.id === prerequisite)?.title ?? 'Saved prerequisite unavailable' : 'No prerequisite'} options={[{ label: 'No prerequisite', value: '' }, ...prerequisiteOptions.map(q => ({ label: q.title, value: q.id }))]} onChange={value => setPrerequisite(value || null)} />
+              </QuestAccordion>
+            </View>}
           </View>
-        </>}
-      </ScrollView>
-      {mode === 'custom' && <View style={s.footer}>
-        {!!feedback && <ThemedText style={s.error} accessibilityLiveRegion="polite">{feedback}</ThemedText>}
-        <ThemedText style={s.hint}>{xp} XP on completion</ThemedText>
-        <Button primary label={saving ? 'Saving...' : quest ? 'Save changes' : 'Create Quest'} disabled={saving || creatingCategory || loading || !title.trim() || !category} onPress={() => void save()} />
-      </View>}
+        </ScrollView>
+        <QuestWizardFooter xp={xp} label={saving ? 'Saving…' : step === 1 ? 'Continue' : quest ? 'Save changes' : 'Create Quest'} busy={saving} disabled={saving || creatingCategory || loading || (step === 1 && mode === 'templates')} feedback={feedback} onPress={() => step === 1 ? continueToSettings() : void save()} />
+      </View>
       <Modal visible={categoryOpen} animationType="slide" transparent onRequestClose={() => setCategoryOpen(false)}>
         <View style={s.backdrop}><SafeAreaView style={s.modal} edges={['bottom']} accessibilityViewIsModal>
           <View style={s.between}><ThemedText style={s.sectionTitle}>Choose a category</ThemedText><Button label="Close" onPress={() => setCategoryOpen(false)} /></View>
@@ -158,38 +216,20 @@ function QuestForm({ quest }: { quest?: Quest }) {
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
-function Section({ title, summary, icon, children }: { title: string; summary: string; icon: keyof typeof Ionicons.glyphMap; children: ReactNode }) {
-  const C = useBeePalette();
-  const s = useBeeStyles(makeStyles);
-  const [open, setOpen] = useState(false);
-  return <View style={s.section}><TouchableOpacity style={s.sectionHeader} accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)}><Ionicons name={icon} size={19} color={C.honeyDark} /><View style={s.flex}><ThemedText style={s.label}>{title}</ThemedText><ThemedText style={s.hint} numberOfLines={2}>{summary}</ThemedText></View><Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={17} color={C.muted} /></TouchableOpacity>{open && <View style={s.sectionBody}>{children}</View>}</View>;
-}
-function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <ChoiceChip label={label} selected={selected} onPress={onPress} />; }
+function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <QuestChoice label={label} selected={selected} onPress={onPress} />; }
 function Button({ label, onPress, primary = false, disabled = false }: { label: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
   return <ActionButton label={label} onPress={onPress} intent={primary ? 'primary' : 'quiet'} disabled={disabled} />;
 }
 const makeStyles = (C: BeePalette) => StyleSheet.create({
-  screen: { flex: 1, backgroundColor: 'transparent' },
-  header: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 12 },
-  heading: { fontSize: 28, lineHeight: 34, fontWeight: '700', color: C.ink },
-  flex: { flex: 1, minWidth: 0 },
-  hint: { fontSize: 14, lineHeight: 20, color: C.muted },
-  label: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: C.ink },
+  screen: { flex: 1, backgroundColor: C.background },
+  content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', padding: 20, gap: 20 },
   sectionTitle: { fontSize: 20, lineHeight: 28, fontWeight: '700', color: C.ink },
-  iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: C.honeySoft },
-  content: { width: '100%', maxWidth: 720, alignSelf: 'center', padding: 20, paddingTop: 4, gap: 32 },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  label: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: C.ink },
+  hint: { fontSize: 14, lineHeight: 20, color: C.muted },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  input: { fontFamily: Fonts.sans, minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.card, fontSize: 16, color: C.ink , lineHeight: 24},
-  textArea: { minHeight: 76 },
-  option: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.card },
-  divider: { height: 1, backgroundColor: C.surfaceMuted, marginVertical: 8 },
-  sections: { borderWidth: 1, borderColor: C.surfaceMuted, borderRadius: 14, overflow: 'hidden' },
-  section: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: C.surfaceMuted, backgroundColor: C.card },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, minHeight: 64 },
-  sectionBody: { padding: 14, paddingTop: 0, gap: 12 },
-  footer: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', paddingHorizontal: 20, paddingVertical: 10, gap: 6, borderTopWidth: 1, borderColor: C.surfaceMuted, backgroundColor: C.background },
+  input: { fontFamily: Fonts.rounded, minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.border, backgroundColor: C.card, fontSize: 16, color: C.ink, lineHeight: 24 },
   error: { fontSize: 14, lineHeight: 20, color: C.danger },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(45,36,29,0.35)' },
   modal: { maxHeight: '85%', width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', backgroundColor: C.background, padding: 20, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  modalContent: { gap: 10, paddingBottom: 20 } });
+  modalContent: { gap: 10, paddingBottom: 20 },
+});

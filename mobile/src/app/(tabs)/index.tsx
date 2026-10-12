@@ -7,7 +7,6 @@ import { XpProgress } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { Button, IconButton, ScreenFrame, Sheet, StatusMessage, Surface } from '@/components/mobile-ui';
 import { HomeMenu } from '@/components/home-menu';
-import { UserAvatar } from '@/components/user-avatar';
 import { Borders, Controls, Layout, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
 import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
 import { useQuestPriority } from '@/context/quest-priority-context';
@@ -42,7 +41,6 @@ export default function HomeScreen() {
       <View style={s.header}>
         <IconButton icon="menu-outline" label="Open menu" onPress={() => setMenuOpen(true)} />
         <View style={s.identity}>
-          <UserAvatar uri={avatarUri} />
           <View style={s.copy}>
             <ThemedText type="subtitle" numberOfLines={1} ellipsizeMode="tail">Hi, {displayName}!</ThemedText>
             <ThemedText type="small" numberOfLines={1} style={{ color: c.muted }}>

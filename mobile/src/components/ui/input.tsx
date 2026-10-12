@@ -1,32 +1,29 @@
-import { useState } from 'react';
-import { Borders, Fonts, useBeePalette } from '@/constants/theme';
 import { cn } from '@/lib/utils';
 import { Platform, TextInput } from 'react-native';
 
-function Input({ className, style, onFocus, onBlur, ...props }: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInput>) {
-  const palette = useBeePalette();
-  const [focused, setFocused] = useState(false);
+function Input({ className, ...props }: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInput>) {
   return (
     <TextInput
       className={cn(
-        'border-input bg-card text-foreground flex min-h-control w-full min-w-0 flex-row items-center rounded-md border px-lg py-md text-body',
-        props.editable === false && 'bg-disabled text-disabled-foreground',
+        'dark:bg-input/30 border-input bg-background text-foreground flex h-10 w-full min-w-0 flex-row items-center rounded-md border px-3 py-1 text-base leading-5 shadow-sm shadow-black/5 sm:h-9',
+        props.editable === false &&
+        cn(
+          'opacity-50',
+          Platform.select({ web: 'disabled:pointer-events-none disabled:cursor-not-allowed' })
+        ),
         Platform.select({
           web: cn(
-            'placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground outline-none',
-            'focus-visible:ring-ring focus-visible:ring-[2px]',
-            'aria-invalid:border-destructive'
+            'placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground outline-none transition-[color,box-shadow] md:text-sm',
+            'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
+            'aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive'
           ),
+          native: 'placeholder:text-muted-foreground/50',
         }),
         className
       )}
-      placeholderTextColor={palette.muted}
-      selectionColor={palette.primary}
-      onFocus={event => { setFocused(true); onFocus?.(event); }}
-      onBlur={event => { setFocused(false); onBlur?.(event); }}
-      style={[{ fontFamily: Fonts.sans, borderWidth: Borders.focus }, focused && { borderColor: palette.focus }, style]}
       {...props}
     />
   );
 }
+
 export { Input };
