@@ -7,6 +7,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { XpBadge, QuestReward } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
+import { AllQuestRow, RecommendedQuestCard, QuestListHeader, QuestListTab } from '@/components/quest-list';
+import { QuestChoice, QuestText } from '@/components/quest-wizard';
 import { Button, IconButton, Surface } from '@/components/mobile-ui';
 import { useBeePalette, useBeeStyles, type BeePalette, Borders, Controls, Layout, Radii, Spacing, States, Typography } from '@/constants/theme';
 import { useUserData, Quest, QuestStatus, ProofFile } from '@/hooks/use-user-data';
@@ -25,7 +27,8 @@ function QuestList() {
     const COLORS = useBeePalette();
     const styles = useBeeStyles(makeStyles);
     const { user, levelProgress, questsHasMore, isLoading, isRefreshing, workspaceErrors, retryWorkspace, refresh, completeQuest, deleteQuest } = useUserData();
-    const { width, fontScale } = useWindowDimensions();
+    const { width, height, fontScale } = useWindowDimensions();
+    const compactHeader = height < 500;
     const expandedTabs = fontScale >= Layout.largeTextScale && width < Layout.wideBreakpoint;
     const loadError = workspaceErrors.quests;
     const { categories } = useQuestCategories();
@@ -49,6 +52,13 @@ function QuestList() {
     const [view, setView] = useState<'context' | 'all'>('context');
     const recommendationSession = useRef(createRecommendationSession());
     const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+    const [expandedReasons, setExpandedReasons] = useState<Set<string>>(new Set());
+    const setReasonsExpanded = (id: string, expanded: boolean) => setExpandedReasons(current => {
+        if (current.has(id) === expanded) return current;
+        const next = new Set(current);
+        if (expanded) next.add(id); else next.delete(id);
+        return next;
+    });
     const [appliedFilters, setAppliedFilters] = useState<QuestFilters>(DEFAULT_FILTERS);
     const [draftFilters, setDraftFilters] = useState<QuestFilters>(DEFAULT_FILTERS);
     const [filtersOpen, setFiltersOpen] = useState(false);
@@ -124,9 +134,9 @@ function QuestList() {
     </Modal>
       <Modal visible={filtersOpen} transparent animationType="slide" onRequestClose={() => setFiltersOpen(false)}>
         <View style={styles.sheetBackdrop}>
-          <SafeAreaView style={styles.filterSheet} edges={['bottom']} accessibilityViewIsModal>
+          <SafeAreaView className="rounded-t-[28px] border border-[#eee1c8] bg-[#fffdf7] dark:border-[#64513b] dark:bg-[#30291f]" style={styles.filterSheet} edges={['bottom']} accessibilityViewIsModal>
             <View style={styles.listHeading}>
-              <ThemedText style={styles.sectionTitle}>Filter All Quests</ThemedText>
+              <QuestText className="flex-1 text-[20px] font-bold leading-[28px]">Filter All Quests</QuestText>
               <TouchableOpacity style={styles.deleteIconButton} accessibilityRole="button" accessibilityLabel="Close filters without applying" onPress={() => setFiltersOpen(false)}>
     <Ionicons name="close" size={24} color={COLORS.ink}/>
     </TouchableOpacity>
@@ -143,18 +153,14 @@ function QuestList() {
         ]} onChange={value => setDraftFilters({ ...draftFilters, time: value as QuestFilters['time'] })}/>
               <ThemedText style={styles.contextHint}>Today includes scheduled dates, deadlines and daily preferred times. Overdue includes active quests and quests needing revision.</ThemedText>
               <View style={styles.listHeading}>
-                <ThemedText style={styles.sectionTitle}>Nearby quests only</ThemedText>
+                <QuestText className="flex-1 font-semibold">Nearby quests only</QuestText>
                 <Switch accessibilityLabel="Nearby quests only" value={draftFilters.nearby} onValueChange={nearby => setDraftFilters({ ...draftFilters, nearby })} trackColor={{ false: COLORS.surfaceMuted, true: COLORS.honey }}/>
               </View>
               {!locationAvailable && <ThemedText style={styles.contextHint}>Location unavailable. Nearby results appear only when a recent location or saved-place event confirms proximity.</ThemedText>}
             </ScrollView>
             <View style={styles.sheetActions}>
-              <TouchableOpacity style={styles.filterPill} accessibilityRole="button" onPress={() => { setDraftFilters({ ...DEFAULT_FILTERS }); setAppliedFilters({ ...DEFAULT_FILTERS }); }}>
-    <ThemedText style={styles.filterText}>Reset Filters</ThemedText>
-    </TouchableOpacity>
-              <TouchableOpacity style={[styles.filterPill, styles.filterPillActive]} accessibilityRole="button" onPress={() => { setAppliedFilters({ ...draftFilters }); setFiltersOpen(false); }}>
-    <ThemedText style={styles.filterTextActive}>Apply Filters</ThemedText>
-    </TouchableOpacity>
+              <QuestChoice label="Reset Filters" selected={false} onPress={() => { setDraftFilters({ ...DEFAULT_FILTERS }); setAppliedFilters({ ...DEFAULT_FILTERS }); }} />
+              <QuestChoice label="Apply Filters" selected onPress={() => { setAppliedFilters({ ...draftFilters }); setFiltersOpen(false); }} />
             </View>
           </SafeAreaView>
         </View>
@@ -173,13 +179,14 @@ function QuestList() {
     </SafeAreaView>
       </Modal>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.listControls}>
+        <View style={[styles.listControls, compactHeader && styles.compactListControls]}>
+          <QuestListHeader compact={compactHeader} onSettings={() => router.push('/settings')} />
           <View style={[styles.viewToggle, expandedTabs && styles.expandedViews]} accessibilityRole="tablist">
-            {(['context', 'all'] as const).map(value => <QuestViewTab key={value} label={value === 'context' ? 'Recommended' : 'All Quests'} selected={view === value} onPress={() => setView(value)}/>)}
+            {(['context', 'all'] as const).map(value => <QuestListTab compact={compactHeader} key={value} label={value === 'context' ? 'Recommended' : 'All Quests'} selected={view === value} onPress={() => setView(value)}/>)}
           </View>
           <View style={styles.listToolbar}>
             <View style={styles.toolbarCount}>
-              <ThemedText type="small" style={{ color: COLORS.muted }}>{visibleQuests.length + (visibleQuests.length === 1 ? ' quest' : ' quests')}</ThemedText>
+              <QuestText className="text-[14px] text-[#796e64] dark:text-[#c6b9a7]">{visibleQuests.length + (visibleQuests.length === 1 ? ' quest' : ' quests')}</QuestText>
             </View>
             <View aria-hidden={view !== 'all'} pointerEvents={view === 'all' ? 'auto' : 'none'} accessibilityElementsHidden={view !== 'all'} importantForAccessibility={view === 'all' ? 'auto' : 'no-hide-descendants'} style={[styles.toolbarFilter, view !== 'all' && styles.hiddenControl]}>
               <Button intent="quiet" icon="options-outline" label={filterCount ? 'Filters (' + filterCount + ')' : 'Filters'} disabled={view !== 'all'} onPress={openFilters}/>
@@ -191,27 +198,23 @@ function QuestList() {
             <Button intent="quiet" label="Retry quests" onPress={() => void retryWorkspace('quests')}/>
           </View>}
         </View>
-        <FlatList style={styles.list} data={visibleRanked} keyExtractor={item => item.quest.id} extraData={completingId} contentContainerStyle={[styles.content, styles.listContent, visibleQuests.length === 0 && styles.emptyListContent]} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={COLORS.honeyDark} colors={[COLORS.honeyDark]}/>} ItemSeparatorComponent={() => <View style={{ height: 16 }}/>} renderItem={({ item, index }) => <QuestCard quest={item.quest} reasons={item.reasons} priority={view === 'context' ? index + 1 : undefined} locked={item.locked} nearby={item.nearby} completing={completingId === item.quest.id} proof={proofDrafts[item.quest.id]} onProofChange={proof => setProofDrafts(current => ({ ...current, [item.quest.id]: proof }))} onOpen={() => view === 'context' ? openRecommendation(item, index) : router.setParams({ questId: item.quest.id })} onDismiss={view === 'context' ? () => dismissRecommendation(item, index) : undefined} onComplete={proof => { if (completionBusy.current)
-        return; if (view === 'context')
-        void recordRecommendationEvent({ questId: item.quest.id, eventType: 'selection', sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined); void handleComplete(item.quest, proof); }} onDelete={() => handleConfirmDelete(item.quest)}/>} ListEmptyComponent={isLoading ? <View style={styles.stateCard}>
+        <FlatList style={styles.list} data={visibleRanked} keyExtractor={item => item.quest.id} extraData={{ completingId, expandedReasons }} contentContainerStyle={[styles.content, styles.listContent, visibleQuests.length === 0 && styles.emptyListContent]} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={COLORS.honeyDark} colors={[COLORS.honeyDark]}/>} ItemSeparatorComponent={() => <View style={{ height: 8 }}/>} renderItem={({ item, index }) => view === 'all' ? <AllQuestRow quest={item.quest} locked={item.locked} completing={completingId === item.quest.id} onOpen={() => router.setParams({ questId: item.quest.id })} onComplete={() => void handleComplete(item.quest)} /> : <RecommendedQuestCard quest={item.quest} reasons={item.reasons} locked={item.locked} completing={completingId === item.quest.id} expanded={expandedReasons.has(item.quest.id)} onExpandedChange={expanded => setReasonsExpanded(item.quest.id, expanded)} onOpen={() => openRecommendation(item, index)} onDismiss={() => dismissRecommendation(item, index)} onComplete={() => { if (completionBusy.current) return;
+        void recordRecommendationEvent({ questId: item.quest.id, eventType: 'selection', sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined);
+        void handleComplete(item.quest); }} />} ListEmptyComponent={isLoading ? <View style={styles.stateCard}>
         <ActivityIndicator color={COLORS.honeyDark}/>
         <ThemedText>Loading your quests…</ThemedText>
         </View> : !loadError ? <EmptyState title="No quests in this view" subtitle={view === 'all' && filterCount ? 'Try resetting filters to see your quests.' : 'Create a small, specific quest to get started.'} actionLabel={view === 'all' && filterCount ? 'Reset filters' : 'New quest'} actionIcon={view === 'all' && filterCount ? 'refresh-outline' : 'add'} onPress={() => view === 'all' && filterCount ? setAppliedFilters({ ...DEFAULT_FILTERS }) : router.push(isAuthenticated ? '/add-quest' : '/auth')} onBrowse={view === 'context' ? () => setView('all') : undefined}/> : null}/>
       </SafeAreaView>
     </View>;
 }
-function QuestCard({ quest, reasons, priority, locked = false, details = false, completing = false, proof, onProofChange, onOpen, onDismiss, onEdit, onComplete, onDelete }: {
+function QuestCard({ quest, reasons, locked = false, completing = false, proof, onProofChange, onEdit, onComplete, onDelete }: {
     quest: Quest;
     reasons: string[];
-    priority?: number;
-    nearby?: boolean;
     locked?: boolean;
     details?: boolean;
     completing?: boolean;
     proof?: ProofFile;
     onProofChange: (proof?: ProofFile) => void;
-    onOpen?: () => void;
-    onDismiss?: () => void;
     onEdit?: () => void;
     onComplete: (proof?: ProofFile) => void;
     onDelete: () => void;
@@ -255,34 +258,6 @@ function QuestCard({ quest, reasons, priority, locked = false, details = false, 
     };
     const status = { label: statusCopy[quest.status]?.label ?? 'Active', color: quest.status === 'rejected' ? COLORS.danger : quest.status === 'pending' ? COLORS.honeyDark : COLORS.success };
     const canComplete = quest.status === 'active' && !locked;
-    const timing = quest.deadline_at ? 'Due ' + new Date(quest.deadline_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : quest.scheduled_at ? 'Scheduled ' + new Date(quest.scheduled_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : quest.preferred_time ? 'Preferred at ' + quest.preferred_time.slice(0, 5) : '';
-    if (!details)
-        return <Surface featured={priority === 1}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel={'View ' + quest.title} onPress={onOpen} style={{ minHeight: 48, gap: 8 }}>
-        <View style={styles.listHeading}>
-        <ThemedText type="small" style={{ color: COLORS.muted }}>
-        {quest.category}
-        </ThemedText>
-        <XpBadge xp={quest.xp}/>
-        </View>
-        <ThemedText type="item">
-        {quest.title}
-        </ThemedText>
-        <ThemedText type="small" style={{ color: status.color }}>
-        {locked ? 'Prerequisite required' : status.label}
-        </ThemedText>
-            {!!timing && <ThemedText type="small" style={{ color: COLORS.muted }}>
-            {timing}
-            </ThemedText>}{reasons[0] && <ThemedText type="small" aria-hidden={priority === undefined} accessibilityElementsHidden={priority === undefined} importantForAccessibility={priority === undefined ? 'no-hide-descendants' : 'auto'} style={[{ color: COLORS.muted }, priority === undefined && styles.hiddenControl]}>
-            {reasons[0]}
-            </ThemedText>}
-        </TouchableOpacity>
-        <View style={styles.compactActions}>
-        {canComplete && !quest.requires_proof ? <Button label="Complete" icon="checkmark-outline" intent={priority === 1 ? 'primary' : 'secondary'} loading={completing} onPress={() => onComplete()}/> : <Button label={quest.requires_proof ? 'View proof requirements' : 'View details'} intent="secondary" onPress={() => onOpen?.()}/>}<View aria-hidden={!onDismiss} pointerEvents={onDismiss ? 'auto' : 'none'} accessibilityElementsHidden={!onDismiss} importantForAccessibility={onDismiss ? 'auto' : 'no-hide-descendants'} style={!onDismiss && styles.hiddenControl}>
-          <Button label="Not now" intent="quiet" disabled={!onDismiss} onPress={() => onDismiss?.()}/>
-        </View>
-        </View>
-        </Surface>;
     return <Surface>
     <View style={styles.listHeading}>
     <ThemedText type="small" style={{ color: COLORS.muted }}>
@@ -336,27 +311,12 @@ function FilterOptions({ label, value, options, onChange }: {
     }[];
     onChange: (value: string) => void;
 }) {
-    const styles = useBeeStyles(makeStyles);
-    return <View style={styles.optionGroup}>
-    <ThemedText style={styles.sectionTitle}>
-    {label}
-    </ThemedText>
-    <View style={styles.optionWrap}>
-        {options.map(option => <TouchableOpacity key={option.value} accessibilityRole="button" accessibilityState={{ selected: value === option.value }} style={[styles.filterPill, value === option.value && styles.filterPillActive]} onPress={() => onChange(option.value)}>
-        <ThemedText style={[styles.filterText, value === option.value && styles.filterTextActive]}>
-        {option.label}
-        </ThemedText>
-        </TouchableOpacity>)}
-    </View>
-  </View>;
-}
-function QuestViewTab({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-    const COLORS = useBeePalette();
-    const styles = useBeeStyles(makeStyles);
-    const [focused, setFocused] = useState(false);
-    return <Pressable cssInterop={false} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected }} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [styles.viewButton, { backgroundColor: pressed ? COLORS.surfaceMuted : 'transparent', borderColor: focused ? COLORS.focus : 'transparent', borderBottomColor: selected ? COLORS.accent : COLORS.surfaceMuted }]}>
-      <ThemedText style={[styles.viewLabel, { color: selected ? COLORS.foreground : COLORS.muted }]}>{label}</ThemedText>
-    </Pressable>;
+    return <View className="gap-3">
+      <QuestText className="text-[16px] font-bold">{label}</QuestText>
+      <View className="flex-row flex-wrap gap-2">
+        {options.map(option => <QuestChoice key={option.value} label={option.label} selected={value === option.value} onPress={() => onChange(option.value)} />)}
+      </View>
+    </View>;
 }
 function EmptyState({ title, subtitle, actionLabel, actionIcon, onPress, onBrowse }: {
     title: string;
@@ -390,9 +350,10 @@ function EmptyState({ title, subtitle, actionLabel, actionIcon, onPress, onBrows
     </View>;
 }
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-    listControls: { gap: Spacing.lg, width: '100%', maxWidth: Layout.maxContentWidth, alignSelf: 'center', paddingHorizontal: Spacing.gutter, paddingTop: Spacing.xl, paddingBottom: Spacing.lg },
+    listControls: { gap: Spacing.lg, width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: Spacing.gutter, paddingTop: Spacing.xl, paddingBottom: Spacing.lg },
+    compactListControls: { gap: Spacing.sm, paddingTop: Spacing.sm, paddingBottom: Spacing.sm },
     list: { flex: 1 },
-    listContent: { paddingTop: 0, paddingBottom: Spacing.lg },
+    listContent: { maxWidth: 480, paddingTop: 0, paddingBottom: Spacing.lg },
     emptyListContent: { flexGrow: 1, justifyContent: 'center', paddingTop: Spacing.lg, paddingBottom: Spacing.lg },
     listToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm, minHeight: Controls.minHeight },
     toolbarCount: { minHeight: Controls.minHeight, justifyContent: 'center' },
@@ -403,23 +364,15 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
     rewardBackdrop: { flex: 1, backgroundColor: 'rgba(45,36,29,0.45)' },
     rewardContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
     sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(45,36,29,0.35)' },
-    filterSheet: { maxHeight: '90%', width: '100%', maxWidth: 640, alignSelf: 'center', backgroundColor: COLORS.background, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12 },
+    filterSheet: { maxHeight: '90%', width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 12 },
     sheetContent: { gap: 18, paddingVertical: 12 },
     sheetActions: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, paddingVertical: 16 },
-    optionGroup: { gap: 10 },
-    optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    viewButton: { flex: 1, minHeight: Controls.minHeight, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.xs, paddingVertical: Spacing.md, borderWidth: Borders.focus },
     viewToggle: { flexDirection: 'row' },
     expandedViews: { flexDirection: 'column' },
-    viewLabel: { ...Typography.item, fontWeight: '600', textAlign: 'center' },
     contextHint: { fontSize: 14, lineHeight: 20, color: COLORS.muted },
     container: { flex: 1, backgroundColor: 'transparent' },
     safeArea: { flex: 1 },
     content: { width: '100%', maxWidth: Layout.maxContentWidth, alignSelf: 'center', paddingHorizontal: Spacing.gutter, paddingTop: Spacing.xl, paddingBottom: Spacing.section },
-    filterPill: { backgroundColor: COLORS.card, borderRadius: Radii.pill, paddingHorizontal: 14, paddingVertical: 9, minHeight: 48, justifyContent: 'center', borderWidth: 1, borderColor: COLORS.surfaceMuted },
-    filterPillActive: { backgroundColor: COLORS.honeySoft },
-    filterText: { color: COLORS.muted, fontSize: 14, fontWeight: '700', lineHeight: 20 },
-    filterTextActive: { color: COLORS.ink },
     listHeading: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
     sectionTitle: { color: COLORS.ink, fontSize: 20, fontWeight: '700', lineHeight: 28 },
     deleteIconButton: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },

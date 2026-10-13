@@ -14,8 +14,8 @@ const native = Object.fromEntries(['ActivityIndicator','FlatList','Modal','Refre
 native.StyleSheet = { create: x => x }; native.Platform = { OS:'web' }; native.useWindowDimensions = () => ({width:375,fontScale:1});
 const presentation = { Button:'Button', IconButton:'IconButton', Surface:'Surface', ScreenFrame:'ScreenFrame', Sheet:'Sheet', Field:'Field', ChoiceChip:'ChoiceChip', StatusMessage:'StatusMessage' };
 const features = load('src/constants/features.ts');
-const theme = { Borders:tokens.borders, Controls:tokens.controls, Layout:tokens.layout, Spacing:tokens.spacing, States:tokens.states, Typography:tokens.typography, Fonts: { sans: 'sans-serif' }, BeeBetterColors:c, Radii:tokens.radii, MaxContentWidth:720, useBeePalette:()=>c, useBeeStyles:fn=>fn(c) };
-function basics(h) { return { react:h.react, 'expo-image':{Image:'Image'}, '../../assets/images/beebetter-logo.png':5, '../../../assets/svg/book-svgrepo-com.svg':1, '../../../assets/svg/health-insurance-round-svgrepo-com.svg':2, '../../../assets/svg/user-social-network-svgrepo-com.svg':3, '../../../assets/svg/infinite-symbol-svgrepo-com.svg':4, '@/constants/features':features, 'react-native':native, 'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'}, '@expo/vector-icons':{Ionicons:'Icon'}, '@/constants/theme':theme, '@/components/themed-text':{ThemedText:'Text'}, './themed-text':{ThemedText:'Text'}, '@/components/mobile-ui':presentation, '@/components/xp-visuals':{XpBadge:'XpBadge',QuestReward:'QuestReward',XpProgress:'XpProgress'}, '@/components/bee-visuals':{BeeMark:'BeeMark'}, '@/components/user-avatar':{UserAvatar:'Avatar'}, '@/components/home-menu':{HomeMenu:'HomeMenu'}, '@/hooks/use-app-appearance':{useAppAppearance:()=>({scheme:'light',toggleTheme(){}})}, '@/context/location-context':{useLocationContext:()=>({locations:[]})} }; }
+const theme = { Borders:tokens.borders, Controls:tokens.controls, Layout:tokens.layout, Spacing:tokens.spacing, States:tokens.states, Typography:tokens.typography, Fonts: { sans: 'sans-serif', rounded: 'sans-serif' }, BeeBetterColors:c, Radii:tokens.radii, MaxContentWidth:720, useAppColorScheme:()=> 'light', useBeePalette:()=>c, useBeeStyles:fn=>fn(c) };
+function basics(h) { const mocks = { react:h.react, 'expo-image':{Image:'Image'}, '../../assets/images/beebetter-logo.png':5, '../../../assets/svg/book-svgrepo-com.svg':1, '../../../assets/svg/health-insurance-round-svgrepo-com.svg':2, '../../../assets/svg/user-social-network-svgrepo-com.svg':3, '../../../assets/svg/infinite-symbol-svgrepo-com.svg':4, '@/constants/features':features, 'react-native':native, 'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'}, '@expo/vector-icons':{Ionicons:'Icon'}, '@/constants/theme':theme, '@/components/themed-text':{ThemedText:'Text'}, './themed-text':{ThemedText:'Text'}, '@/components/mobile-ui':presentation, '@/components/xp-visuals':{XpBadge:'XpBadge',QuestReward:'QuestReward',XpProgress:'XpProgress'}, '@/components/bee-visuals':{BeeMark:'BeeMark'}, '@/components/user-avatar':{UserAvatar:'Avatar'}, '@/components/home-menu':{HomeMenu:'HomeMenu'}, '@/hooks/use-app-appearance':{useAppAppearance:()=>({scheme:'light',toggleTheme(){}})}, '@/context/location-context':{useLocationContext:()=>({locations:[]})}, '@/components/quest-wizard':{QuestText:'Text',QuestCard:'WizardCard',QuestChoice:'QuestChoice'}, '@/components/ui/accordion':{Accordion:'Accordion',AccordionContent:'AccordionContent',AccordionItem:'AccordionItem',AccordionTrigger:'AccordionTrigger'} }; mocks['@/components/quest-list']=load('src/components/quest-list.tsx',mocks); return mocks; }
 const quests = [
  {id:'q1',title:'A long quest title that wraps instead of losing useful information',category:'Academics',status:'active',xp:25,requires_proof:false},
  {id:'q2',title:'Walk outdoors',category:'Health',status:'active',xp:15,requires_proof:true},
@@ -26,31 +26,54 @@ const quests = [
 quests.forEach(q => { q.created_at = '2026-10-06T00:00:00Z'; });
 function questScreen(overrides = {}) {
  const h=hooks(), routes=[],events=[],alerts=[],data={user:{id:'a'},levelProgress:{level:2},questsHasMore:false,isLoading:false,isRefreshing:false,workspaceErrors:{},refresh:async()=>{},retryWorkspace:async scope=>routes.push(['retry',scope]),completeQuest:async()=>({success:true}),deleteQuest:async()=>{},...overrides};
- let params={}, candidates=quests;const router={push:r=>routes.push(r),setParams:p=>{params={...params,...p};h.render();}};
- const ranked=()=>candidates.map(q=>({quest:q,locked:!!q.prerequisite_quest_id,reasons:['Fits your goal'],reasonCodes:['goal_alignment'],tier:'available'}));
+ let params={}, candidates=quests;const reasonSets=new Map();const router={push:r=>routes.push(r),setParams:p=>{params={...params,...p};h.render();}};
+ const ranked=()=>candidates.map(q=>({quest:q,locked:!!q.prerequisite_quest_id,reasons:reasonSets.get(q.id)||['Fits your goal'],reasonCodes:['goal_alignment'],tier:'available'}));
  const mod=load('src/app/(tabs)/quests.tsx',{...basics(h),'react-native':{...native,Alert:{alert:(...a)=>alerts.push(a)}},'expo-router':{router,useLocalSearchParams:()=>params},'expo-image-picker':{},'expo-document-picker':{},'@/hooks/use-user-data':{useUserData:()=>data},'@/hooks/use-quest-categories':{useQuestCategories:()=>({categories:[]})},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:ranked(),locationAvailable:false,now:Date.now()})},'@/lib/quest-discovery':load('src/lib/quest-discovery.ts', { './quest-time': load('src/lib/quest-time.ts') }), '@/lib/recommendation-events':{createRecommendationSession:()=> 'test',recordRecommendationEvent:async e=>events.push(e)}});
  h.mount(()=>mod.default().type());
  const list=()=>find(h.value,n=>n.type==='FlatList');const row=id=>{const p=list().props;const index=p.data.findIndex(item=>item.quest.id===id);return p.renderItem({item:p.data[index],index});};const detail=()=>find(h.value,n=>typeof n.type==='function'&&n.props.details);
- const renderCard=element=>{const ch=hooks();const m=load('src/app/(tabs)/quests.tsx',{...basics(ch),'react-native':{...native,Alert:{alert(){}}},'expo-router':{router,useLocalSearchParams:()=>params},'expo-image-picker':{},'expo-document-picker':{},'@/hooks/use-user-data':{useUserData:()=>data},'@/hooks/use-quest-categories':{useQuestCategories:()=>({categories:[]})},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:ranked(),locationAvailable:false,now:Date.now()})},'@/lib/quest-discovery':load('src/lib/quest-discovery.ts', { './quest-time': load('src/lib/quest-time.ts') }),'@/lib/recommendation-events':{createRecommendationSession:()=> 'test',recordRecommendationEvent:async()=>{}}});ch.mount(()=>{const tree=m.default().type();const lp=find(tree,n=>n.type==='FlatList').props;const target=lp.renderItem({item:{quest:element.props.quest,reasons:[],locked:element.props.locked},index:0});return target.type(element.props);});return ch;};
- return {h,data,list,row,detail,routes,events,alerts,router,renderCard,accountKey:()=>mod.default().props.key,setCandidates(q){candidates=q;h.render();}};
+ const renderCard=element=>{
+  const ch=hooks(),components=basics(ch)['@/components/quest-list'];
+  const expand=(node,accordion)=>{
+   if(!node||typeof node!=='object')return node;
+   if(Array.isArray(node))return node.map(child=>expand(child,accordion));
+   if(node.type?.name==='QuestRowContent')return expand(node.type(node.props),accordion);
+   if(node.type==='Accordion')accordion=node.props;
+   if(node.type==='AccordionContent'&&!accordion.value)return null;
+   const trigger=node.type==='AccordionTrigger'?{accessibilityState:{expanded:accordion.value==='why'},onPress:()=>accordion.onValueChange(accordion.value==='why'?undefined:'why')}:{};
+   return {...node,props:{...node.props,...trigger,children:expand(node.props?.children,accordion)}};
+  };
+  ch.mount(()=>expand(components[element.type.name](element.props)));return ch;
+ };
+ return {h,data,list,row,detail,routes,events,alerts,router,renderCard,accountKey:()=>mod.default().props.key,setCandidates(q){candidates=q;h.render();},setReasons(id,reasons){reasonSets.set(id,reasons);h.render();}};
 }
 const cases=[];const test=(name,fn)=>cases.push({name,fn});
-test('only active unlocked proof-free rows offer quick completion',()=>{const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();s.h.render();for(const q of quests){const element=s.row(q.id),card=s.renderCard(element);assert.equal(!!button(card.value,'Complete'),q.id==='q1');assert.equal(!!find(card.value,n=>n.props?.label==='Edit quest'),false);card.unmount();}s.h.unmount();});
+test('All Quests checkboxes complete eligible quests and open requirements for the others',()=>{
+ const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();s.h.render();
+ for(const q of quests){const card=s.renderCard(s.row(q.id));const control=find(card.value,n=>n.type==='Pressable');
+  assert.equal(control.props.accessibilityRole,q.id==='q1'||q.id==='q5'?'checkbox':'button');
+  assert.equal(control.props.disabled,q.status==='completed');
+  assert.equal(control.props.accessibilityState.checked,q.status==='completed');
+  if(q.id!=='q1'){s.router.setParams({questId:''});control.props.onPress();assert.equal(s.detail()?.props.quest.id,q.id==='q5'?undefined:q.id);}
+  card.unmount();
+ }
+ const rejected={...quests[0],id:'revision',status:'rejected'};s.setCandidates([rejected]);
+ const revision=s.renderCard(s.row('revision'));find(revision.value,n=>n.type==='Pressable').props.onPress();assert.equal(s.detail().props.quest.id,'revision');revision.unmount();s.h.unmount();
+});
 test('quest IDs, detail route, and recommendation selection stay stable',()=>{const s=questScreen();assert.equal(s.list().props.keyExtractor({quest:quests[0]}),'q1');s.row('q1').props.onOpen();assert.equal(s.detail().props.quest.id,'q1');assert.equal(s.events.filter(e=>e.eventType==='selection').length,1);s.h.unmount();});
 test('completion deduplicates while pending and displays the reward after success',async()=>{const wait=deferred();let calls=0;const s=questScreen({completeQuest:()=>{calls++;return wait.promise}});const action=s.row('q1').props.onComplete;action();action();await flush();assert.equal(calls,1);assert.equal(s.events.filter(e=>e.eventType==='selection').length,1);assert.equal(s.row('q1').props.completing,true);wait.resolve({success:true});await flush();assert.ok(find(s.h.value,n=>n.type==='QuestReward'));s.h.unmount();});
-test('failed completion retains proof and permits a retry',async()=>{let calls=0;const s=questScreen({completeQuest:async()=>{calls++;throw Error('offline')}});const proof={uri:'file:///synthetic',name:'proof.jpg',mimeType:'image/jpeg'};s.row('q2').props.onProofChange(proof);await flush();s.row('q2').props.onComplete(proof);await flush();assert.equal(s.row('q2').props.proof.name,'proof.jpg');assert.equal(s.row('q2').props.completing,false);s.row('q2').props.onComplete(proof);await flush();assert.equal(calls,2);s.h.unmount();});
-test('proof survives row virtualization, closing details, and filtering',async()=>{const s=questScreen();s.row('q2').props.onProofChange({name:'proof.jpg',uri:'file:///synthetic'});await flush();s.row('q2').props.onOpen();assert.equal(s.detail().props.proof.name,'proof.jpg');s.router.setParams({questId:''});s.setCandidates([quests[0]]);s.setCandidates(quests);s.router.setParams({questId:'q2'});assert.equal(s.detail().props.proof.name,'proof.jpg');s.h.unmount();});
-test('account-keyed quest lifetime clears drafts and ignores late completions',async()=>{const wait=deferred();const s=questScreen({completeQuest:()=>wait.promise});s.row('q2').props.onProofChange({name:'old.jpg'});await flush();s.row('q1').props.onComplete();s.h.unmount();const other=questScreen({user:{id:'b'}});assert.equal(s.accountKey(),'a');assert.equal(other.accountKey(),'b');assert.equal(other.row('q2').props.proof,undefined);wait.resolve({success:false,error:'old account'});await flush();assert.equal(s.alerts.length,0);assert.equal(find(other.h.value,n=>n.type==='QuestReward'),undefined);other.h.unmount();});
-test('filter dismissal discards edits while apply changes the visible list',async()=>{const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();await flush();button(s.h.value,'Filters').props.onPress();await flush();const group=()=>find(s.h.value,n=>typeof n.type==='function'&&n.props.label==='Category');group().props.onChange('Health');await flush();find(s.h.value,n=>n.props?.accessibilityLabel==='Close filters without applying').props.onPress();await flush();assert.equal(s.list().props.data.length,5);button(s.h.value,'Filters').props.onPress();await flush();assert.equal(group().props.value,'');group().props.onChange('Health');await flush();find(s.h.value,n=>n.type==='TouchableOpacity'&&text(n)==='Apply Filters').props.onPress();await flush();assert.equal(s.list().props.data.length,1);assert.equal(s.list().props.data[0].quest.id,'q2');s.h.unmount();});
+test('failed completion retains proof and permits a retry',async()=>{let calls=0;const s=questScreen({completeQuest:async()=>{calls++;throw Error('offline')}});const proof={uri:'file:///synthetic',name:'proof.jpg',mimeType:'image/jpeg'};s.row('q2').props.onOpen();s.detail().props.onProofChange(proof);await flush();s.detail().props.onComplete(proof);await flush();assert.equal(s.detail().props.proof.name,'proof.jpg');assert.equal(s.row('q2').props.completing,false);s.detail().props.onComplete(proof);await flush();assert.equal(calls,2);s.h.unmount();});
+test('proof survives row virtualization, closing details, and filtering',async()=>{const s=questScreen();s.row('q2').props.onOpen();s.detail().props.onProofChange({name:'proof.jpg',uri:'file:///synthetic'});await flush();s.row('q2').props.onOpen();assert.equal(s.detail().props.proof.name,'proof.jpg');s.router.setParams({questId:''});s.setCandidates([quests[0]]);s.setCandidates(quests);s.router.setParams({questId:'q2'});assert.equal(s.detail().props.proof.name,'proof.jpg');s.h.unmount();});
+test('account-keyed quest lifetime clears drafts and ignores late completions',async()=>{const wait=deferred();const s=questScreen({completeQuest:()=>wait.promise});s.row('q2').props.onOpen();s.detail().props.onProofChange({name:'old.jpg'});await flush();s.row('q1').props.onComplete();s.h.unmount();const other=questScreen({user:{id:'b'}});assert.equal(s.accountKey(),'a');assert.equal(other.accountKey(),'b');other.row('q2').props.onOpen();assert.equal(other.detail().props.proof,undefined);wait.resolve({success:false,error:'old account'});await flush();assert.equal(s.alerts.length,0);assert.equal(find(other.h.value,n=>n.type==='QuestReward'),undefined);other.h.unmount();});
+test('filter dismissal discards edits while apply changes the visible list',async()=>{const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();await flush();button(s.h.value,'Filters').props.onPress();await flush();const group=()=>find(s.h.value,n=>typeof n.type==='function'&&n.props.label==='Category');group().props.onChange('Health');await flush();find(s.h.value,n=>n.props?.accessibilityLabel==='Close filters without applying').props.onPress();await flush();assert.equal(s.list().props.data.length,5);button(s.h.value,'Filters').props.onPress();await flush();assert.equal(group().props.value,'');group().props.onChange('Health');await flush();find(s.h.value,n=>n.type==='QuestChoice'&&n.props.label==='Apply Filters').props.onPress();await flush();assert.equal(s.list().props.data.length,1);assert.equal(s.list().props.data[0].quest.id,'q2');s.h.unmount();});
 test('scoped quest failure retains cached rows and exposes its retry callback',async()=>{const s=questScreen({workspaceErrors:{quests:'Could not refresh'},isLoading:true});assert.ok(s.list().props.data.length);button(s.h.value,'Retry quests').props.onPress();await flush();assert.deepEqual(s.routes[0],['retry','quests']);s.h.unmount();});
-test('header-free quests show counts and preserve creation and All Quests destinations', async () => {
+test('quest header shows counts and preserves creation and All Quests destinations', async () => {
  const s=questScreen();s.setCandidates([]);
  const header=s.h.value;
  assert.equal(button(header,'New quest'),undefined);
  assert.equal(text(header).includes('Suggestions for your day'),false);
  assert.equal(button(header,'Filters').props.disabled,true);
  assert.equal(find(header,n=>n.props?.label==='Open notifications'),undefined);
- assert.equal(find(header,n=>n.type==='Text'&&text(n)==='Quests'),undefined);
+ const heading=find(header,n=>n.type.name==='QuestListHeader');assert.ok(heading);heading.props.onSettings();assert.equal(s.routes.pop(),'/settings');
  assert.ok(find(header,n=>n.type==='Text'&&text(n)==='0 quests'));
  assert.equal(viewTab(header,'Recommended').props.selected,true);
  let empty=s.list().props.ListEmptyComponent;
@@ -69,18 +92,82 @@ test('filtered empty quests reset filters without creating a quest', async () =>
  const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();await flush();
  button(s.h.value,'Filters').props.onPress();await flush();
  find(s.h.value,n=>typeof n.type==='function'&&n.props.label==='Category').props.onChange('Missing category');await flush();
- find(s.h.value,n=>n.type==='TouchableOpacity'&&text(n)==='Apply Filters').props.onPress();await flush();
+ find(s.h.value,n=>n.type==='QuestChoice'&&n.props.label==='Apply Filters').props.onPress();await flush();
  assert.equal(s.list().props.data.length,0);
  const empty=s.list().props.ListEmptyComponent;assert.equal(empty.props.actionLabel,'Reset filters');
  empty.props.onPress();await flush();assert.equal(s.list().props.data.length,5);assert.equal(s.routes.length,0);s.h.unmount();
 });
-test('All Quests retains dismissal spacing with an inactive dismissal control', async () => {
+test('All Quests omits recommendation actions while Recommended retains dismissal', async () => {
  const s=questScreen();const recommended=s.renderCard(s.row('q1'));
- assert.equal(button(recommended.value,'Not now').props.disabled,false);recommended.unmount();
+ assert.equal(find(recommended.value,n=>n.props?.accessibilityLabel?.startsWith('Not now:')).props.disabled,false);recommended.unmount();
  viewTab(s.h.value,'All Quests').props.onPress();await flush();
  const all=s.renderCard(s.row('q1'));const dismiss=button(all.value,'Not now');
- assert.equal(dismiss.props.disabled,true);const before=s.events.length;dismiss.props.onPress();
- assert.equal(s.events.length,before);all.unmount();s.h.unmount();
+ assert.equal(dismiss,undefined);assert.equal(button(all.value,'Complete'),undefined);all.unmount();s.h.unmount();
+});
+test('tab underlines persist through focus and preserve the selected tab', async()=>{
+ const h=hooks();let selected=true;const mod=basics(h)['@/components/quest-list'];h.mount(()=>mod.QuestListTab({label:'All Quests',selected,onPress(){}}));
+ const underline=()=>find(h.value,n=>n.type==='View'&&n.props.pointerEvents==='none');assert.equal(underline().props.style.backgroundColor,c.accent);
+ h.value.props.onFocus();await flush();assert.equal(underline().props.style.backgroundColor,c.accent);
+ h.value.props.onBlur();await flush();assert.equal(underline().props.style.height,3);
+ selected=false;h.render();assert.equal(underline().props.style.backgroundColor,c.border);h.unmount();
+});
+test('checkbox submission is deduplicated, stays unchecked while busy, and retries after failure', async()=>{
+ const wait=deferred();let calls=0;const s=questScreen({completeQuest:()=>{calls++;return calls===1?wait.promise:Promise.resolve({success:true});}});
+ viewTab(s.h.value,'All Quests').props.onPress();await flush();
+ let card=s.renderCard(s.row('q1'));const control=find(card.value,n=>n.type==='Pressable');control.props.onPress();control.props.onPress();await flush();assert.equal(calls,1);card.unmount();
+ card=s.renderCard(s.row('q1'));const busy=find(card.value,n=>n.type==='Pressable');assert.equal(busy.props.disabled,true);assert.equal(busy.props.accessibilityState.busy,true);assert.equal(busy.props.accessibilityState.checked,false);assert.ok(find(card.value,n=>n.type==='ActivityIndicator'));card.unmount();
+ wait.resolve({success:false,error:'Offline'});await flush();assert.equal(s.alerts.length,1);assert.equal(find(s.h.value,n=>n.type==='QuestReward'),undefined);
+ card=s.renderCard(s.row('q1'));find(card.value,n=>n.type==='Pressable').props.onPress();await flush();assert.equal(calls,2);assert.ok(find(s.h.value,n=>n.type==='QuestReward'));assert.equal(s.events.filter(e=>e.eventType==='selection').length,0);card.unmount();s.h.unmount();
+});
+test('All Quests row details remain separate from completion and render real timing and custom categories', async()=>{
+ const s=questScreen();viewTab(s.h.value,'All Quests').props.onPress();await flush();
+ const q={...quests[0],category:'My custom category',preferred_time:'09:30:00'};s.setCandidates([q]);const card=s.renderCard(s.row('q1'));
+ assert.ok(text(card.value).includes('My custom category'));assert.ok(text(card.value).includes('Preferred at 09:30'));assert.equal(text(card.value).includes('mins'),false);
+ const details=find(card.value,n=>n.props?.accessibilityLabel==='View '+q.title);details.props.onPress();assert.equal(s.detail().props.quest.id,q.id);assert.equal(s.row(q.id).props.completing,false);
+ card.unmount();s.h.unmount();
+});
+test('recommended explanation expands without opening or completing the quest',async()=>{
+ let calls=0;const s=questScreen({completeQuest:async()=>{calls++;return {success:true}}});s.setReasons('q1',['Location unavailable','Due soon','Matches your personal goal']);
+ let card=s.renderCard(s.row('q1'));let disclosure=find(card.value,n=>n.props?.accessibilityLabel==='Show why '+quests[0].title+' is recommended');
+ assert.equal(disclosure.props.accessibilityState.expanded,false);assert.equal(text(card.value).includes('Due soon'),false);assert.equal(text(card.value).includes('Location unavailable'),false);assert.equal(text(card.value).includes('Matches your personal goal'),false);
+ disclosure.props.onPress();await flush();card.unmount();card=s.renderCard(s.row('q1'));
+ assert.ok(text(card.value).includes('Matches your personal goal'));assert.ok(text(card.value).includes('Context'));assert.ok(text(card.value).includes('Location unavailable'));
+ disclosure=find(card.value,n=>n.props?.accessibilityLabel==='Hide why '+quests[0].title+' is recommended');assert.equal(disclosure.props.accessibilityState.expanded,true);disclosure.props.onPress();await flush();
+ assert.equal(s.row('q1').props.expanded,false);assert.equal(s.detail(),undefined);assert.equal(calls,0);assert.equal(s.events.filter(e=>e.eventType==='selection'||e.eventType==='dismissal').length,0);card.unmount();s.h.unmount();
+});
+test('single and context-only explanations stay hidden until their accordion opens',async()=>{
+ const s=questScreen();
+ for(const reasons of [['Fits your goal'],['Location unavailable'],[]]){
+  s.setReasons('q1',reasons);s.row('q1').props.onExpandedChange(false);await flush();let card=s.renderCard(s.row('q1'));
+  const trigger=find(card.value,n=>n.type==='AccordionTrigger');assert.ok(trigger);assert.equal(trigger.props.accessibilityState.expanded,false);assert.equal(text(card.value).includes('Fits your goal'),false);assert.equal(text(card.value).includes('Suggested from your unfinished quests'),false);assert.equal(text(card.value).includes('Location unavailable'),false);
+  trigger.props.onPress();await flush();card.unmount();card=s.renderCard(s.row('q1'));
+  if(reasons[0]==='Fits your goal')assert.ok(text(card.value).includes('Fits your goal'));else assert.ok(text(card.value).includes('Suggested from your unfinished quests'));
+  if(reasons[0]==='Location unavailable'){assert.ok(text(card.value).includes('Context'));assert.ok(text(card.value).includes('Location unavailable'));}
+  card.unmount();
+ }s.h.unmount();
+});
+test('recommendation footer keeps accordion and dismissal as separate controls in one row',()=>{
+ const s=questScreen();const card=s.renderCard(s.row('q1'));const footer=find(card.value,n=>n.type==='View'&&nodes(n.props.children).some(child=>child.type==='AccordionTrigger')&&nodes(n.props.children).some(child=>child.props?.accessibilityLabel?.startsWith('Not now:')));
+ assert.ok(footer);assert.ok(footer.props.className.includes('flex-row'));const trigger=find(footer,n=>n.type==='AccordionTrigger');assert.ok(trigger.props.className.includes('min-h-12'));assert.ok(find(footer,n=>n.props?.accessibilityLabel?.startsWith('Not now:')).props.className.includes('min-h-12'));assert.equal(find(trigger,n=>n.props?.accessibilityLabel?.startsWith('Not now:')),undefined);card.unmount();s.h.unmount();
+});
+test('expanded explanations survive tab changes and row virtualization, and reset for another account',async()=>{
+ const s=questScreen();s.setReasons('q1',['Due soon','Matches your personal goal']);s.row('q1').props.onExpandedChange(true);s.row('q1').props.onExpandedChange(true);await flush();assert.equal(s.row('q1').props.expanded,true);
+ s.setCandidates([quests[1]]);s.setCandidates(quests);assert.equal(s.row('q1').props.expanded,true);
+ viewTab(s.h.value,'All Quests').props.onPress();await flush();assert.equal(s.row('q1').props.expanded,undefined);viewTab(s.h.value,'Recommended').props.onPress();await flush();assert.equal(s.row('q1').props.expanded,true);
+ s.h.unmount();const other=questScreen({user:{id:'b'}});assert.equal(other.row('q1').props.expanded,false);assert.equal(other.accountKey(),'b');other.h.unmount();
+});
+test('recommended cards cap engine explanations at three and avoid nesting quest cards',async()=>{
+ const s=questScreen();s.setReasons('q1',['Due soon','Matches your personal goal','High importance','Fourth reason']);s.row('q1').props.onExpandedChange(true);await flush();const card=s.renderCard(s.row('q1'));assert.equal(text(card.value).includes('Fourth reason'),false);assert.equal(nodes(card.value).filter(n=>n.type==='WizardCard').length,1);card.unmount();s.h.unmount();
+});
+test('recommended checkbox preserves deduplication, busy and failure states, and selection tracking',async()=>{
+ const wait=deferred();let calls=0;const s=questScreen({completeQuest:()=>{calls++;return wait.promise}});let card=s.renderCard(s.row('q1'));const checkbox=find(card.value,n=>n.props?.accessibilityRole==='checkbox');checkbox.props.onPress();checkbox.props.onPress();await flush();assert.equal(calls,1);assert.equal(s.events.filter(e=>e.eventType==='selection').length,1);assert.equal(s.events.find(e=>e.eventType==='selection').reasonCodes[0],'goal_alignment');card.unmount();
+ card=s.renderCard(s.row('q1'));assert.equal(find(card.value,n=>n.props?.accessibilityRole==='checkbox').props.accessibilityState.busy,true);assert.equal(find(card.value,n=>n.props?.accessibilityLabel?.startsWith('Not now:')).props.disabled,true);card.unmount();
+ wait.resolve({success:false,error:'Offline'});await flush();assert.equal(s.alerts.length,1);assert.equal(s.row('q1').props.completing,false);assert.equal(find(s.h.value,n=>n.type==='QuestReward'),undefined);s.h.unmount();
+});
+test('recommended proof and revision checkboxes open details, and dismissal keeps its event meaning',async()=>{
+ let calls=0;const s=questScreen({completeQuest:async()=>{calls++;return {success:true}}});let card=s.renderCard(s.row('q2'));find(card.value,n=>n.props?.accessibilityLabel==='View requirements for Walk outdoors').props.onPress();assert.equal(s.detail().props.quest.id,'q2');assert.equal(calls,0);card.unmount();
+ const revision={...quests[0],id:'revision',status:'rejected'};s.setCandidates([revision]);card=s.renderCard(s.row('revision'));find(card.value,n=>n.props?.accessibilityLabel==='View requirements for '+revision.title).props.onPress();assert.equal(s.detail().props.quest.id,'revision');assert.equal(calls,0);card.unmount();
+ s.setCandidates(quests);s.router.setParams({questId:''});card=s.renderCard(s.row('q1'));find(card.value,n=>n.props?.accessibilityLabel==='Not now: '+quests[0].title).props.onPress();await flush();assert.equal(s.list().props.data.some(item=>item.quest.id==='q1'),false);assert.equal(s.events.filter(e=>e.eventType==='dismissal').length,1);assert.equal(s.events.find(e=>e.eventType==='dismissal').rankPosition,1);card.unmount();s.h.unmount();
 });
 test('quest loading and failures keep the creation empty state hidden', () => {
  const loading=questScreen({isLoading:true});loading.setCandidates([]);
