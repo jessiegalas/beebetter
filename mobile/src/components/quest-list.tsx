@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { QuestCard as WizardCard, QuestText } from '@/components/quest-wizard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useAppColorScheme, useBeePalette } from '@/constants/theme';
+import type { PrerequisiteState } from '@/lib/quest-priority';
+import { prerequisiteMessage } from '@/lib/recommendation-reasons';
 import type { Quest } from '@/hooks/use-user-data';
 
 export function QuestListHeader({ onSettings, compact = false }: { onSettings: () => void; compact?: boolean }) {
@@ -38,13 +40,20 @@ const categoryStyles: Record<string, string> = {
 type QuestRowProps = {
   quest: Quest;
   locked?: boolean;
+  prerequisiteState: PrerequisiteState;
+  prerequisiteTitle?: string;
+  onRetryContext?: () => void;
   completing?: boolean;
   onOpen: () => void;
   onComplete: () => void;
 };
 
 export function AllQuestRow(props: QuestRowProps) {
-  return <WizardCard className="px-2 py-2"><QuestRowContent {...props} /></WizardCard>;
+  const c = useBeePalette();
+  const [retryFocused, setRetryFocused] = useState(false);
+  return <WizardCard className="px-2 py-2"><QuestRowContent {...props} />
+    {props.prerequisiteState === 'unknown' && <Pressable accessibilityRole="button" accessibilityLabel={'Retry prerequisite status for ' + props.quest.title} onPress={props.onRetryContext} onFocus={() => setRetryFocused(true)} onBlur={() => setRetryFocused(false)} style={{ borderColor: retryFocused ? c.focus : 'transparent' }} className="min-h-12 justify-center rounded-xl border-2 px-3 active:opacity-60"><QuestText>Retry context</QuestText></Pressable>}
+  </WizardCard>;
 }
 
 const contextMessages = new Set([
@@ -52,8 +61,10 @@ const contextMessages = new Set([
   'Location unavailable', 'Scheduled for later', 'Outside your preferred time', 'Prerequisite unavailable',
 ]);
 
-export function RecommendedQuestCard({ reasons, expanded, onExpandedChange, onDismiss, ...row }: QuestRowProps & {
+export function RecommendedQuestCard({ reasons, constraints = [], groupLabel, expanded, onExpandedChange, onDismiss, ...row }: QuestRowProps & {
   reasons: string[];
+  constraints?: string[];
+  groupLabel?: string;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   onDismiss: () => void;
@@ -61,10 +72,11 @@ export function RecommendedQuestCard({ reasons, expanded, onExpandedChange, onDi
   const c = useBeePalette();
   const [focused, setFocused] = useState<'reasons' | 'dismiss' | null>(null);
   const explanations = [...new Set(reasons.filter(reason => reason.trim()))].slice(0, 3);
-  const context = explanations.filter(reason => contextMessages.has(reason) || reason.startsWith('Do after: '));
+  const context = [...new Set([...constraints, ...explanations.filter(reason => contextMessages.has(reason) || reason.startsWith('Do after: '))])];
   const positive = explanations.filter(reason => !context.includes(reason));
   const summary = positive[0] ?? 'Suggested from your unfinished quests';
   return <WizardCard className="px-2 py-2">
+    {groupLabel && <QuestText accessibilityRole="header" className="text-[13px] font-semibold">{groupLabel}</QuestText>}
     <QuestRowContent {...row} />
     <Accordion type="single" collapsible value={expanded ? 'why' : ''} onValueChange={(value: string | undefined) => onExpandedChange(value === 'why')} className="mt-1">
       <AccordionItem value="why" className="border-0">
@@ -78,12 +90,9 @@ export function RecommendedQuestCard({ reasons, expanded, onExpandedChange, onDi
         </View>
         <AccordionContent className="px-3 pb-2 pt-1">
           <View className="gap-1">
-            <QuestText className="text-[13px] leading-[18px] text-[#6d5d4d] dark:text-[#c6b9a7]">{summary}</QuestText>
-            {positive.slice(1).map(reason => <QuestText key={reason} className="text-[13px] leading-[18px] text-[#6d5d4d] dark:text-[#c6b9a7]">{reason}</QuestText>)}
-            {context.length > 0 && <View className="gap-1 pt-1">
-              <QuestText className="text-[12px] font-semibold leading-[18px] text-[#796e64] dark:text-[#c6b9a7]">Context</QuestText>
-              {context.map(reason => <QuestText key={reason} className="text-[13px] leading-[18px] text-[#796e64] dark:text-[#c6b9a7]">{reason}</QuestText>)}
-            </View>}
+            {!positive.length && <QuestText className="text-[13px] leading-[18px]">{summary}</QuestText>}
+            {positive.map(reason => <QuestText key={reason} className="text-[13px] leading-[18px] text-[#6d5d4d] dark:text-[#c6b9a7]">{reason}</QuestText>)}
+            {context.map(reason => <QuestText key={reason} className="text-[13px] leading-[18px] text-[#796e64] dark:text-[#c6b9a7]">{reason}</QuestText>)}
           </View>
         </AccordionContent>
       </AccordionItem>
@@ -91,17 +100,18 @@ export function RecommendedQuestCard({ reasons, expanded, onExpandedChange, onDi
   </WizardCard>;
 }
 
-function QuestRowContent({ quest, locked = false, completing = false, onOpen, onComplete }: QuestRowProps) {
+function QuestRowContent({ quest, locked = false, prerequisiteState = 'none', prerequisiteTitle, completing = false, onOpen, onComplete }: QuestRowProps) {
   const c = useBeePalette();
   const { fontScale } = useWindowDimensions();
   const [focused, setFocused] = useState<'checkbox' | 'details' | null>(null);
   const completed = quest.status === 'completed';
-  const canComplete = quest.status === 'active' && !locked && !quest.requires_proof;
-  const stateLabel = completed ? 'Completed' : quest.status === 'pending' ? 'Pending review' : quest.status === 'rejected' ? 'Needs revision' : locked ? 'Prerequisite required' : quest.requires_proof ? 'Proof required' : '';
+  const prerequisiteWarning = prerequisiteMessage(prerequisiteState, prerequisiteTitle);
+  const canComplete = quest.status === 'active' && !locked && !prerequisiteWarning && !quest.requires_proof;
+  const stateLabel = completed ? 'Completed' : quest.status === 'pending' ? 'Pending review' : quest.status === 'rejected' ? 'Needs revision' : prerequisiteWarning ? prerequisiteWarning : quest.requires_proof ? 'Proof required' : '';
   const timing = quest.deadline_at ? `Due ${formatTiming(quest.deadline_at)}` : quest.scheduled_at ? `Scheduled ${formatTiming(quest.scheduled_at)}` : quest.preferred_time ? `Preferred at ${quest.preferred_time.slice(0, 5)}` : '';
   const categoryClass = completed ? 'bg-[#efeeea] dark:bg-[#493d2a]' : categoryStyles[quest.category.trim().toLowerCase()] ?? 'bg-[#f4eedf] dark:bg-[#493d2a]';
   return <View className="flex-row items-center gap-[6px]">
-    <Pressable accessibilityRole={completed || canComplete ? 'checkbox' : 'button'} accessibilityLabel={completed ? `${quest.title}, completed` : canComplete ? `Complete ${quest.title}` : `View requirements for ${quest.title}`} accessibilityHint={completed ? undefined : canComplete ? 'Completes this quest and awards its XP after confirmation.' : stateLabel} accessibilityState={{ checked: completed, disabled: completed || completing, busy: completing }} disabled={completed || completing} onPress={() => { if (!completed && !completing) { if (canComplete) onComplete(); else onOpen(); } }} onFocus={() => setFocused('checkbox')} onBlur={() => setFocused(null)} className="min-h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 active:opacity-60" style={{ borderColor: focused === 'checkbox' ? c.focus : 'transparent' }}>
+    <Pressable accessibilityRole={completed || canComplete ? 'checkbox' : 'button'} accessibilityLabel={completed ? `${quest.title}, completed` : canComplete ? `Complete ${quest.title}` : `View requirements for ${quest.title}`} accessibilityHint={completed ? undefined : prerequisiteWarning || (canComplete ? 'Completes this quest and awards its XP after confirmation.' : stateLabel)} accessibilityState={{ checked: completed, disabled: completed || completing, busy: completing }} disabled={completed || completing} onPress={() => { if (!completed && !completing) { if (canComplete) onComplete(); else onOpen(); } }} onFocus={() => setFocused('checkbox')} onBlur={() => setFocused(null)} className="min-h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 active:opacity-60" style={{ borderColor: focused === 'checkbox' ? c.focus : 'transparent' }}>
       <View className={`h-6 w-6 items-center justify-center rounded-[7px] border-2 ${completed ? 'border-[#bf811b] bg-[#d29d30]' : 'border-[#65452c] bg-[#fffdf7] dark:border-[#d1b997] dark:bg-[#30291f]'}`}>
         {completing ? <ActivityIndicator size="small" color={c.primary} /> : completed ? <Ionicons name="checkmark" size={18} color="#432914" accessible={false} /> : null}
       </View>
@@ -113,6 +123,7 @@ function QuestRowContent({ quest, locked = false, completing = false, onOpen, on
           <View className="flex-row flex-wrap gap-1">
             <View className={`max-w-full rounded-full px-2 py-[2px] ${categoryClass}`}><QuestText className={`text-[12px] font-semibold leading-[16px] ${completed ? 'text-[#796e64] dark:text-[#c6b9a7]' : ''}`}>{quest.category}</QuestText></View>
           </View>
+          {!!prerequisiteWarning && prerequisiteWarning !== stateLabel && !completed && <QuestText className="text-[12px] leading-[18px]">{prerequisiteWarning}</QuestText>}
           {!!timing && <QuestText className="text-[12px] leading-[18px] text-[#796e64] dark:text-[#c6b9a7]">{timing}</QuestText>}
           {!!stateLabel && !completed && <QuestText className={`text-[12px] font-semibold leading-[18px] ${quest.status === 'rejected' ? 'text-[#ae3428] dark:text-[#ffb4a9]' : 'text-[#796e64] dark:text-[#c6b9a7]'}`}>{stateLabel}</QuestText>}
         </View>

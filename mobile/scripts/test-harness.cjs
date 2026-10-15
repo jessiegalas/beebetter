@@ -67,7 +67,7 @@ function load(relative, mocks = {}, globals = {}) {
   vm.runInNewContext(code, {
     module, exports: module.exports,
     require: name => { if (name in mocks) return mocks[name]; throw new Error(`Unexpected import ${name} in ${relative}`); },
-    React: mocks.react, URL, URLSearchParams, AbortController, console: silentConsole, setTimeout, clearTimeout,
+    React: mocks.react, __DEV__: false, queueMicrotask, URL, URLSearchParams, AbortController, console: silentConsole, setTimeout, clearTimeout,
     setInterval: () => 0, clearInterval() {}, ...globals,
   }, { filename: relative });
   return module.exports;

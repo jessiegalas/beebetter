@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -19,18 +19,18 @@ export function HomeMenu({ visible, onClose, displayName, avatarUri }: { visible
   const { levelProgress, signOut, isSigningOut } = useUserData();
   const [profileFocused, setProfileFocused] = useState(false);
   const panelWidth = Math.min(320, width * 0.84);
-  const slideX = useRef(new Animated.Value(-panelWidth)).current;
-  const scrimOpacity = useRef(new Animated.Value(0)).current;
+  const [slideX] = useState(() => new Animated.Value(-panelWidth));
+  const [scrimOpacity] = useState(() => new Animated.Value(0));
   const modalMountedRef = useRef(visible);
   const modalShownRef = useRef(false);
   const visibleRef = useRef(visible);
-  visibleRef.current = visible;
+  useLayoutEffect(() => { visibleRef.current = visible; }, [visible]);
   const [modalMounted, setModalMounted] = useState(visible);
 
   useEffect(() => {
     if (visible) {
       modalMountedRef.current = true;
-      setModalMounted(true);
+      queueMicrotask(() => { if (visibleRef.current) setModalMounted(true); });
       slideX.stopAnimation();
       scrimOpacity.stopAnimation();
       if (reduced) {
@@ -65,7 +65,7 @@ export function HomeMenu({ visible, onClose, displayName, avatarUri }: { visible
       scrimOpacity.setValue(0);
       modalMountedRef.current = false;
       modalShownRef.current = false;
-      setModalMounted(false);
+      queueMicrotask(() => { if (!visibleRef.current) setModalMounted(false); });
       return;
     }
 
@@ -125,7 +125,7 @@ export function HomeMenu({ visible, onClose, displayName, avatarUri }: { visible
   };
   return <Modal visible={modalMounted} transparent animationType="none" onShow={handleModalShow} onRequestClose={onClose}>
     <View style={s.overlay}>
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: c.scrim, opacity: scrimOpacity }]} />
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim, opacity: scrimOpacity }]} />
       <Animated.View style={{ width: panelWidth, flexDirection: 'row', transform: [{ translateX: slideX }] }}>
         <SafeAreaView edges={['top', 'bottom']} accessibilityViewIsModal style={[s.panel, { width: panelWidth, backgroundColor: c.background }]}>
           <ScrollView contentContainerStyle={s.contents} showsVerticalScrollIndicator={false}>

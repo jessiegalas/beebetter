@@ -29,15 +29,25 @@ const quest = (id, extra = {}) => ({
 });
 let count = 0;
 function test(name, run) { run(); count++; console.log('PASS ' + name); }
-const rank = (quests, override = {}) => prioritizeQuests(quests, { ...context, ...override });
+const rank = (quests, override = {}) => {
+  const current = override.now ?? now;
+  const history = [...(override.history ?? []), ...quests.filter(q => q.status === 'completed').map(q => ({ ...q, completed_at: q.completed_at ?? q.updated_at }))];
+  const facts = quests.map(q => {
+    const rows = history.filter(h => h.category === q.category && Date.parse(h.completed_at) <= current);
+    const latest = hs => hs.length ? new Date(Math.max(...hs.map(h => Date.parse(h.completed_at)))).toISOString() : null;
+    const parent = quests.find(p => p.id === q.prerequisite_quest_id);
+    return { quest_id:q.id,status:q.status,updated_at:q.updated_at,prerequisite_quest_id:q.prerequisite_quest_id??null,prerequisite_status:parent?.status??null,prerequisite_title:parent?.title??null,latest_activity_at:latest(rows.filter(h => h.title.trim().toLowerCase() === q.title.trim().toLowerCase())),latest_category_at:latest(rows) };
+  });
+  return prioritizeQuests(quests, { ...context, candidatesUpdatedAt:current, factsUpdatedAt:current, profileUpdatedAt:current, placesUpdatedAt:current, facts, ...override });
+};
 test('location plus time beats location alone', () => {
-  assert.equal(rank([quest('place', { location_id: 'place' }), quest('both', { location_id: 'place', scheduled_at: iso(40) })])[0].quest.id, 'both');
+  assert.equal(rank([quest('place', { location_id: 'place' }), quest('both', { location_id: 'place', scheduled_at: iso(20) })])[0].quest.id, 'both');
 });
 test('location alone is relevant, without requiring a time', () => assert.equal(rank([quest('q', { location_id: 'place' })])[0].tier, 'now'));
 test('time alone is relevant without location permission', () => assert.equal(rank([quest('q', { scheduled_at: iso(0) })], { coords: null })[0].tier, 'now'));
 test('no context remains available without fabricated reasons', () => {
   const item = rank([quest('q')], { coords: null })[0];
-  assert.equal(item.tier, 'other'); assert.deepEqual(item.reasons, ['Fits whenever you have time']);
+  assert.equal(item.tier, 'other'); assert.deepEqual(item.reasons, ['No timing, location, or activity reason currently raises this quest’s priority']);
 });
 test('recommendations are unchanged when wellness context is absent', () => {
   const quests = [quest('a', { xp: 20 }), quest('b', { importance: 'high' })];
@@ -46,20 +56,20 @@ test('recommendations are unchanged when wellness context is absent', () => {
 test('recent low-capacity context gently favors a manageable quest within its tier', () => {
   const wellness = { checkIn: { check_in_date: '2026-09-25', overall_wellbeing: 2, stress_level: 4, energy_level: 2, motivation_level: 2 }, reflection: null };
   const items = rank([quest('larger', { xp: 50 }), quest('small', { xp: 20 })], { wellness });
-  assert.equal(items[0].quest.id, 'small'); assert(items[0].reasons.includes('A manageable step for today'));
-  assert(items[0].reasons.slice(0, 2).includes('A manageable step for today'));
+  assert.equal(items[0].quest.id, 'small'); assert(items[0].reasons.includes('Lower XP reward; favored by your reported check-in or reflection'));
+  assert(items[0].reasons.slice(0, 2).includes('Lower XP reward; favored by your reported check-in or reflection'));
   assert.equal(items[0].tier, rank([quest('small', { xp: 20 })])[0].tier);
 });
 test('high motivation only complements high importance and does not change its tier', () => {
   const q = quest('important', { importance: 'high', xp: 50 });
   const wellness = { checkIn: { check_in_date: '2026-09-25', overall_wellbeing: 4, stress_level: 2, energy_level: 4, motivation_level: 5 }, reflection: null };
   const before = rank([q])[0]; const after = rank([q], { wellness })[0];
-  assert.equal(after.tier, before.tier); assert.equal(after.score, before.score + 3); assert(after.reasons.includes('Matches the momentum you reported'));
+  assert.equal(after.tier, before.tier); assert.equal(after.score, before.score + 3); assert(after.reasons.includes('You reported high motivation and marked this quest high importance'));
 });
 test('recent reflection association is deterministic and does not read private text', () => {
   const reflection = { quest_id: 'related', period_end: '2026-09-25', planning_score: 1, follow_through_score: 2, confidence_score: 2 };
   const items = rank([quest('other'), quest('related')], { wellness: { checkIn: null, reflection } });
-  assert.equal(items[0].quest.id, 'related'); assert(items[0].reasons.includes('Connects with your recent reflection'));
+  assert.equal(items[0].quest.id, 'related'); assert(items[0].reasons.includes('This quest is linked to your recent reflection'));
 });
 test('stale wellness context has no effect', () => {
   const wellness = { checkIn: { check_in_date: '2026-08-01', overall_wellbeing: 1, stress_level: 5, energy_level: 1, motivation_level: 1 }, reflection: { quest_id: 'q', period_end: '2026-08-01', planning_score: 1, follow_through_score: 1, confidence_score: 1 } };
@@ -88,7 +98,7 @@ test('geofence exit supersedes old in-fence GPS', () => assert.equal(rank([quest
 test('stale geofence entries expire', () => assert.equal(rank([quest('q', { location_id: 'place' })], { coords: null, geofenceEvents: { place: { inside: true, timestamp: now - 360000 } } })[0].nearby, false));
 test('time passing changes hierarchy without changing quests', () => {
   const q = quest('q', { scheduled_at: iso(180) });
-  assert.equal(rank([q])[0].tier, 'other');
+  assert.equal(rank([q])[0].tier, 'next');
   assert.equal(rank([q], { now: now + 180 * 60000 })[0].tier, 'now');
 });
 test('preferred time works across midnight in device local time', () => {
@@ -97,11 +107,11 @@ test('preferred time works across midnight in device local time', () => {
 test('future schedule reduces immediate recommendations', () => assert.notEqual(rank([quest('q', { scheduled_at: iso(300), location_id: 'place' })])[0].tier, 'now'));
 test('history uses completion time rather than edit time', () => {
   const historyQuest = quest('old', { title: 'activity', status: 'completed', completed_at: iso(-6 * 1440), updated_at: iso(0) });
-  assert(rank([historyQuest, quest('new', { title: 'activity' })]).find(item => item.quest.id === 'new').reasons.includes('Not done recently'));
+  assert(rank([historyQuest, quest('new', { title: 'activity' })]).find(item => item.quest.id === 'new').reasonCodes.includes('activity_gap'));
 });
 test('durable history works after original quest deletion', () => {
   const items = rank([quest('new', { title: 'activity' })], { history: [{ id: 'h', quest_id: null, title: 'activity', category: 'Habits', completed_at: iso(-7 * 1440) }] });
-  assert(items[0].reasons.includes('Not done recently'));
+  assert(items[0].reasonCodes.includes('activity_gap'));
 });
 test('recent matching activity decreases priority', () => {
   const q = quest('q');
@@ -118,7 +128,7 @@ test('dependency cycles and unavailable prerequisites do not crash', () => {
 });
 test('completing a quest removes it from recommendations', () => assert.equal(rank([quest('q', { status: 'completed', location_id: 'place', deadline_at: iso(0) })])[0].tier, 'history'));
 test('pending quests are retained for review', () => assert.equal(rank([quest('q', { status: 'pending' })])[0].tier, 'history'));
-test('rejected quests remain actionable', () => assert.equal(rank([quest('q', { status: 'rejected', deadline_at: iso(0) })])[0].tier, 'now'));
+test('rejected quests remain actionable', () => assert.equal(rank([quest('q', { status: 'rejected', deadline_at: iso(0) })])[0].tier, 'other'));
 test('every quest remains available with stable tie breaks', () => {
   const quests = [quest('b'), quest('a'), quest('c', { location_id: 'missing' })];
   const items = rank(quests);
@@ -208,12 +218,12 @@ test('date validation permits anytime current minute and future with ordered dea
 test('unscheduled quests remain eligible without deadline or schedule urgency', () => {
   const item = rank([quest('anytime')])[0];
   assert.equal(item.tier, 'other');
-  assert.deepEqual(item.reasons, ['Fits whenever you have time']);
+  assert.deepEqual(item.reasons, ['No timing, location, or activity reason currently raises this quest’s priority']);
   assert(!item.reasonCodes.some(code => code.startsWith('deadline_') || code.startsWith('schedule_')));
 });
 test('reason codes exactly match visible scoring explanations', () => {
   const item = rank([quest('timed', { location_id: 'place', deadline_at: iso(30), importance: 'high' })])[0];
-  assert(item.reasons.includes('Due soon'));
+  assert(item.reasons.some(reason => reason.startsWith('Due ')));
   assert(item.reasonCodes.includes('deadline_soon'));
   assert(item.reasonCodes.includes('location_at'));
   assert(!item.reasonCodes.includes('goal_alignment'));
@@ -222,14 +232,14 @@ test('goal alignment is scored and explained only on actual token overlap', () =
   const match = rank([quest('study', { title: 'Finish thesis chapter' })], { personalGoal: 'Complete my thesis research' })[0];
   const miss = rank([quest('exercise', { title: 'Morning walk' })], { personalGoal: 'Complete my thesis research' })[0];
   assert(match.score > miss.score);
-  assert(match.reasons.includes('Matches your personal goal'));
+  assert(match.reasons.includes('This quest and your goal both mention “thesis”'));
   assert(match.reasonCodes.includes('goal_alignment'));
   assert(!miss.reasonCodes.includes('goal_alignment'));
 });
 test('waiting prerequisites expose a deterministic locked state', () => {
   const item = rank([quest('child', { prerequisite_quest_id: 'missing', deadline_at: iso(-10) })])[0];
   assert.equal(item.locked, true);
-  assert(item.reasons.includes('Prerequisite unavailable'));
+  assert(item.constraints.includes('Prerequisite status could not be verified. Refresh to check.'));
   assert.equal(rank([quest('parent', { status: 'completed' }), quest('ready', { prerequisite_quest_id: 'parent' })]).find(i => i.quest.id === 'ready').locked, false);
 });
 console.log(count + ' context-aware tests passed.');

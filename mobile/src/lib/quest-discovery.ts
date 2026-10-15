@@ -12,10 +12,15 @@ export const DEFAULT_FILTERS: QuestFilters = { category: null, status: 'all', ne
 export function activeFilterCount(filters: QuestFilters) {
   return Number(filters.category !== null) + Number(filters.status !== 'all') + Number(filters.nearby) + Number(filters.time !== 'all');
 }
+export type RecommendationGroup = 'now' | 'upcoming' | 'other' | 'revision';
+export const GROUP_LABELS: Record<RecommendationGroup, string> = { now: 'Recommended now', upcoming: 'Upcoming', other: 'Other options', revision: 'Needs revision' };
+export function recommendationGroup(item: RankedQuest): RecommendationGroup {
+  return item.quest.status === 'rejected' ? 'revision' : item.tier === 'now' && item.fresh ? 'now' : item.tier === 'next' ? 'upcoming' : 'other';
+}
 export function recommendedQuests(ranked: RankedQuest[]) {
-  const completed = new Set(ranked.filter(item => item.quest.status === 'completed').map(item => item.quest.id));
-  return ranked.filter(({ quest }) => (quest.status === 'active' || quest.status === 'rejected') &&
-    (!quest.prerequisite_quest_id || completed.has(quest.prerequisite_quest_id)));
+  return ranked.filter(item => (item.quest.status === 'active' || item.quest.status === 'rejected') && !item.locked &&
+    (item.prerequisiteState === 'none' || item.prerequisiteState === 'completed'))
+    .sort((a, b) => ['now','upcoming','other','revision'].indexOf(recommendationGroup(a)) - ['now','upcoming','other','revision'].indexOf(recommendationGroup(b)));
 }
 export function filterAllQuests(ranked: RankedQuest[], filters: QuestFilters, now: number) {
   const start = new Date(now); start.setHours(0, 0, 0, 0);

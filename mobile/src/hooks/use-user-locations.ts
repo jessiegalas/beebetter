@@ -34,6 +34,8 @@ export function useUserLocations() {
   const [locations, setLocations] = useState<UserLocation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locationRead, setLocationRead] = useState<{ owner: string; at: number } | null>(null);
+  const locationsUpdatedAt = locationRead?.owner === user?.id ? locationRead?.at ?? null : null;
 
   const fetchLocations = useCallback(async () => {
     const isCurrent = fence.capture(user?.id);
@@ -57,6 +59,7 @@ export function useUserLocations() {
       if (fetchError) throw fetchError;
       const next = (data as UserLocation[]) ?? [];
       setLocations(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+      setLocationRead({ owner: user.id, at: Date.now() });
     } catch (err) {
       if (isCurrent()) setError(err instanceof Error ? err.message : 'Failed to load locations');
     } finally {
@@ -148,6 +151,7 @@ export function useUserLocations() {
     activeLocations,
     isLoading,
     error,
+    locationsUpdatedAt,
     fetchLocations,
     addLocation,
     updateLocation,

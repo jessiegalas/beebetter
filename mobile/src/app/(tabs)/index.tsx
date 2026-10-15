@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,13 +6,17 @@ import { Image } from 'expo-image';
 import { XpProgress } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { Button, IconButton, ScreenFrame, Sheet, StatusMessage, Surface } from '@/components/mobile-ui';
+import { Card, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import type { RankedQuest } from '@/lib/quest-priority';
 import { HomeMenu } from '@/components/home-menu';
 import { Borders, Controls, Layout, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
 import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
 import { useQuestPriority } from '@/context/quest-priority-context';
 import { useLocationContext } from '@/context/location-context';
 import { useUserData } from '@/hooks/use-user-data';
-import { recommendedQuests } from '@/lib/quest-discovery';
+import { GROUP_LABELS, recommendationGroup } from '@/lib/quest-discovery';
+import { useHomeRecommendationVisibility, useRecommendationMeasurement } from '@/hooks/use-recommendation-measurement';
 
 const DEFAULT_QUEST_ILLUSTRATION = require('../../../assets/svg/book-svgrepo-com.svg');
 // Static asset references let Metro bundle every category illustration.
@@ -26,18 +30,25 @@ const QUEST_ILLUSTRATIONS = new Map<string, number>([
 export default function HomeScreen() {
   const { user, profile, progressSummary, isLoading, isRefreshing, levelProgress, refresh, workspaceErrors, retryWorkspace } = useUserData();
   const c = useBeePalette();
+  const [whyOpen, setWhyOpen] = useState(false);
+  const [helpFocused, setHelpFocused] = useState(false);
   const [wellnessOpen, setWellnessOpen] = useState(false), [menuOpen, setMenuOpen] = useState(false);
   const { fontScale } = useWindowDimensions();
   const expanded = fontScale >= Layout.largeTextScale;
-  const { ranked, locationAvailable } = useQuestPriority();
+  const { recommendations, snoozesReady, snoozedCount, contextError, retryContext, undoSnooze, restoreSnoozes, lastSnoozedId } = useQuestPriority();
   const { locations } = useLocationContext();
-  const next = recommendedQuests(ranked)[0];
+  const next = recommendations[0];
+  const recommendationRef = useRef<View>(null);
+  const viewportRef = useRef<View>(null);
+  const measurement = useRecommendationMeasurement('home', next ? [next] : [], snoozesReady && !menuOpen && !wellnessOpen && !whyOpen && !isLoading);
+  useHomeRecommendationVisibility(recommendationRef, viewportRef, next?.quest.id, measurement.active, measurement.setVisible);
+  const summary = recommendationSummary(next);
   const illustration = QUEST_ILLUSTRATIONS.get(next?.quest.category?.trim().toLowerCase() ?? '') ?? DEFAULT_QUEST_ILLUSTRATION;
   const place = next?.quest.location_id ? locations.find(item => item.id === next.quest.location_id) : undefined;
   const displayName = profile?.display_name?.trim() || profile?.name?.trim() || user?.email?.split('@')[0] || 'Explorer';
   const avatarUri = typeof user?.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : undefined;
   return <>
-    <ScreenFrame tab refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={c.primary} colors={[c.primary]} />}>
+    <ScreenFrame tab viewportRef={viewportRef} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={c.primary} colors={[c.primary]} />}>
       <View style={s.header}>
         <IconButton icon="menu-outline" label="Open menu" onPress={() => setMenuOpen(true)} />
         <View style={s.identity}>
@@ -52,27 +63,33 @@ export default function HomeScreen() {
       </View>
       {isLoading && !profile ? <StatusMessage loading message="Loading your overview…" /> : <>
         <View style={s.section}>
-          <Surface style={[s.recommendation, expanded && s.recommendationExpanded]}>
-            <View style={s.questArt} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
-              <Image source={illustration} style={s.book} tintColor={c.primary} contentFit="contain" accessible={false} />
-            </View>
-            <View style={s.recommendationCopy}>
-              <View style={s.labelRow}>
-                <Ionicons name="sparkles" size={16} color={c.accent} accessible={false} />
-                <ThemedText type="small" style={{ color: c.muted }}>Recommended Quest</ThemedText>
+          <View style={s.heading}>
+            <ThemedText type="subtitle" accessibilityRole="header">{next ? GROUP_LABELS[recommendationGroup(next)] : 'Recommended now'}</ThemedText>
+          </View>
+          <View ref={recommendationRef} collapsable={false}>
+            <Card className="gap-0 border-0 py-0 shadow-none" style={[s.recommendation, { backgroundColor: c.card }]}>
+              <View style={s.questArt} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
+                <Image source={illustration} style={s.book} tintColor={c.primary} contentFit="contain" accessible={false} />
               </View>
-              <ThemedText type="item">{next ? next.quest.title : 'Choose your next small step'}</ThemedText>
-              {next ? (next.quest.description?.trim() || next.reasons[0]) && <ThemedText type="small" numberOfLines={expanded ? undefined : 3} style={{ color: c.muted }}>{next.quest.description?.trim() || next.reasons[0]}</ThemedText> : <ThemedText type="small" style={{ color: c.muted }}>Browse your quests or create a goal that fits your day.</ThemedText>}
-              {next && <View style={s.metadata}>
-                {place && <View style={[s.labelRow, { flexShrink: 1 }]}><Ionicons name="location-outline" size={16} color={c.muted} accessible={false} /><ThemedText type="small" style={{ color: c.muted, flexShrink: 1 }}>{place.name}</ThemedText></View>}
-                {Number.isFinite(next.quest.xp) && <ThemedText type="small" style={{ color: c.muted }}>+{next.quest.xp} XP</ThemedText>}
-              </View>}
-            </View>
-            <View style={[s.recommendationAction, expanded && { width: '100%' }]}>
-              <Button intent="accent-quiet" foregroundColor="#000000" label={next ? 'View quest' : 'Explore quests'} icon="arrow-forward" onPress={() => next ? router.push({ pathname: '/quests', params: { questId: next.quest.id } }) : router.push('/quests')} style={{ paddingHorizontal: Spacing.sm, width: '100%', flexDirection: 'row-reverse', flexWrap: 'nowrap' }} />
-            </View>
-          </Surface>
-          {next && !locationAvailable && <ThemedText type="small" style={{ color: c.muted }}>Timing and activity still guide suggestions when location is unavailable.</ThemedText>}
+              <CardHeader className="p-0" style={s.recommendationHeader}>
+                <View style={s.recommendationCopy}>
+                  <CardTitle numberOfLines={expanded ? undefined : 2} style={[Typography.section, { color: c.foreground }]}>{next ? next.quest.title : !snoozesReady && contextError ? 'Recommendations unavailable' : !snoozesReady || (isLoading && !next) ? 'Loading recommendations…' : snoozedCount ? 'Your quests are snoozed for now' : contextError ? 'Refresh to check recommendations' : 'Nothing fits your current context right now'}</CardTitle>
+                  {!next && <ThemedText type="small" style={{ color: c.muted }}>Browse All Quests or restore snoozed quests.</ThemedText>}
+                </View>
+                {next && Number.isFinite(next.quest.xp) && <ThemedText type="item" style={[s.recommendationXp, { color: c.primary }]}>+{next.quest.xp} XP</ThemedText>}
+              </CardHeader>
+              <Separator style={{ backgroundColor: c.border, zIndex: 1 }} />
+              <CardFooter className="p-0" style={[s.recommendationFooter, expanded && s.recommendationFooterExpanded]}>
+                <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={next ? 'Why this quest' : 'Recommendation status'} accessibilityHint="Opens the full recommendation explanation." accessibilityState={{ expanded: whyOpen }} onPress={() => setWhyOpen(true)} onFocus={() => setHelpFocused(true)} onBlur={() => setHelpFocused(false)} style={({ pressed }) => [s.recommendationReason, expanded && { flex: 0, alignSelf: 'stretch' }, { borderColor: helpFocused ? c.focus : 'transparent', backgroundColor: pressed ? c.surfaceMuted : 'transparent' }]}>
+                  <Ionicons name={summary.icon} size={20} color={c.muted} accessible={false}/>
+                  <ThemedText type="small" style={{ color: c.muted, flexShrink: 1 }}>{summary.label}</ThemedText>
+                </Pressable>
+                <Button intent="quiet" foregroundColor={c.foreground} label={next ? 'View quest' : 'Explore quests'} icon="arrow-forward" onPress={() => { if (next) { measurement.action(next, 1, 'selection'); router.push({ pathname: '/quests', params: { questId: next.quest.id } }); } else router.push('/quests'); }} style={s.recommendationView}/>
+              </CardFooter>
+            </Card>
+          </View>
+          {lastSnoozedId && <View accessibilityLiveRegion="polite"><ThemedText type="small">Quest snoozed for one hour.</ThemedText><Button intent="quiet" label="Undo" onPress={undoSnooze}/></View>}
+          {snoozedCount > 0 && <Button intent="quiet" label="Restore snoozed quests" onPress={restoreSnoozes}/>}
           {workspaceErrors.quests && <View accessibilityLiveRegion="polite">
             <ThemedText type="small" style={{ color: c.danger }}>{workspaceErrors.quests}</ThemedText>
             <Button intent="quiet" label="Retry quests" onPress={() => void retryWorkspace('quests')} />
@@ -118,6 +135,19 @@ export default function HomeScreen() {
           <HomeEntry icon="people-outline" title="Request OSAS support" description="Choose to contact authorized support personnel" onPress={() => router.push('/support-requests')} />
         </View>}
       </>}
+      <Sheet title={next ? 'Why this quest' : 'Recommendation status'} visible={whyOpen} onClose={() => setWhyOpen(false)}>
+        {next && <>
+          <ThemedText type="item">{next.quest.title}</ThemedText>
+          <ThemedText type="small">{GROUP_LABELS[recommendationGroup(next)]}</ThemedText>
+          {recommendationGroup(next) !== 'now' && <ThemedText type="small">This is an alternative to a recommendation for right now.</ThemedText>}
+          {next.reasons.map(reason => <ThemedText key={reason} type="small">{reason}</ThemedText>)}
+          {next.constraints.map(reason => <ThemedText key={reason} type="small">{reason}</ThemedText>)}
+          {place && <ThemedText type="small">Saved place: {place.name}</ThemedText>}
+          {!!next.quest.description?.trim() && <ThemedText type="small">{next.quest.description}</ThemedText>}
+        </>}
+        {contextError && <><ThemedText type="small">{contextError}</ThemedText><Button intent="quiet" label="Retry context" onPress={retryContext}/></>}
+        {!next && !contextError && <ThemedText type="small">Browse All Quests or restore snoozed quests.</ThemedText>}
+      </Sheet>
       {MOBILE_WELLNESS_AND_SUPPORT_ENABLED && <Sheet title="Wellness" visible={wellnessOpen} onClose={() => setWellnessOpen(false)}>
         <ThemedText type="small" style={{ color: c.muted }}>These records are optional and private to you.</ThemedText>
         {[{ label: 'Daily check-in', route: '/wellness-check-in' }, { label: 'Self-management reflection', route: '/self-management-reflection' }, { label: 'My history and trends', route: '/wellness-history' }].map(item => <Button key={item.route} intent="secondary" label={item.label} onPress={() => { setWellnessOpen(false); router.push(item.route as '/wellness-check-in'); }} />)}
@@ -125,6 +155,25 @@ export default function HomeScreen() {
     </ScreenFrame>
     <HomeMenu visible={menuOpen} onClose={() => setMenuOpen(false)} displayName={displayName} avatarUri={avatarUri} />
   </>;
+}
+
+type SummaryIcon = 'location-outline' | 'time-outline' | 'flag-outline' | 'repeat-outline' | 'git-network-outline' | 'help-circle-outline' | 'refresh-outline' | 'create-outline';
+function recommendationSummary(item?: RankedQuest): { label: string; icon: SummaryIcon } {
+  if (!item) return { label: 'Recommendation status', icon: 'help-circle-outline' };
+  if (!item.fresh) return { label: 'Refresh recommendations', icon: 'refresh-outline' };
+  if (item.quest.status === 'rejected') return { label: 'Quest needs revision', icon: 'create-outline' };
+  const evidence = [...(item.evidence ?? [])].filter(e => e.kind === 'positive').sort((a, b) => b.contribution - a.contribution)[0];
+  const code = evidence?.code ?? '';
+  if (code === 'location_at' || code === 'location_nearby') return { label: 'Location-based quest', icon: 'location-outline' };
+  if (code === 'location_time') return { label: 'Time and location fit', icon: 'location-outline' };
+  if (code === 'deadline_overdue') return { label: 'Overdue deadline', icon: 'time-outline' };
+  if (code.startsWith('deadline_')) return { label: 'Deadline approaching', icon: 'time-outline' };
+  if (code.startsWith('schedule_') || code.startsWith('preferred_')) return { label: 'Time-based quest', icon: 'time-outline' };
+  if (code === 'importance_high') return { label: 'High importance', icon: 'flag-outline' };
+  if (code === 'goal_alignment') return { label: 'Shared goal term', icon: 'flag-outline' };
+  if (code === 'activity_gap' || code === 'activity_variety') return { label: 'Recorded activity', icon: 'repeat-outline' };
+  if (code === 'unlocks_quest') return { label: 'Unlocks other quests', icon: 'git-network-outline' };
+  return { label: 'Why this quest', icon: 'help-circle-outline' };
 }
 
 function Shortcut({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
@@ -150,16 +199,18 @@ const s = StyleSheet.create({
   copy: { flex: 1, minWidth: 0 },
   section: { gap: Spacing.md },
   heading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  labelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   divider: { height: Borders.default },
   levelLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: Controls.minHeight, paddingHorizontal: Spacing.xs },
-  recommendation: { position: 'relative', overflow: 'hidden', padding: Spacing.lg, gap: Spacing.md, flexDirection: 'row', alignItems: 'center' },
-  recommendationExpanded: { flexDirection: 'column', alignItems: 'stretch' },
-  recommendationCopy: { zIndex: 1, flex: 1, minWidth: 0, gap: Spacing.sm },
-  recommendationAction: { zIndex: 1, width: 120, minHeight: Controls.minHeight * 2 + Spacing.lg, alignSelf: 'stretch', justifyContent: 'flex-end', alignItems: 'center' },
+  recommendation: { position: 'relative', overflow: 'hidden', padding: Spacing.gutter, gap: Spacing.lg, borderRadius: Radii.xl },
+  recommendationHeader: { zIndex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.lg, paddingHorizontal: 0, minHeight: 56 },
+  recommendationCopy: { flex: 1, minWidth: 0, gap: Spacing.sm },
+  recommendationXp: { flexShrink: 0, paddingTop: Spacing.xs },
+  recommendationFooter: { zIndex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md, paddingHorizontal: 0 },
+  recommendationFooterExpanded: { flexDirection: 'column', alignItems: 'stretch', gap: Spacing.sm },
+  recommendationReason: { flex: 1, minWidth: 0, minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xs, paddingHorizontal: Spacing.xs, borderWidth: Borders.focus, borderRadius: Radii.sm },
+  recommendationView: { alignSelf: 'flex-end', minWidth: 108, flexDirection: 'row-reverse', paddingHorizontal: Spacing.xs },
   questArt: { position: 'absolute', zIndex: 0, bottom: -Spacing.section, right: -Spacing.page, width: Spacing.page * 5, height: Spacing.page * 5, alignItems: 'center', justifyContent: 'center', opacity: 0.2 },
   book: { width: Spacing.page * 5, height: Spacing.page * 5, transform: [{ rotate: '15deg' }] },
-  metadata: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.sm },
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   stat: { flexGrow: 1, flexBasis: '45%', minWidth: 0, minHeight: Controls.minHeight * 2 + Spacing.lg, alignItems: 'center', justifyContent: 'center', padding: Spacing.md, gap: Spacing.sm },
   statValue: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },

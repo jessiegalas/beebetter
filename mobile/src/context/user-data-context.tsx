@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState, useCall
 import { AppState, Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import type { CompletionRecord } from '@/lib/quest-priority';
+import { EMPTY_RECOMMENDATION_DATA, type RecommendationData } from '@/lib/recommendation-facts';
 import { User } from '@supabase/supabase-js';
 import { supabase, authRecoveryStorage } from '@/supabase';
 import { authFailure, parseAuthCallback, readRegistrationDraft, registrationInput, type RegistrationDraft, type AuthenticationResult, type AuthOperationResult, type AuthFailure, type RegistrationInput } from '@/lib/auth-flow';
@@ -113,6 +114,7 @@ interface UserDataContextType {
   questsHasMore: boolean;
   completionHistory: CompletionRecord[];
   completionHistoryHasMore: boolean;
+  recommendationData: RecommendationData;
   progressSummary: ProgressSummary;
   activeQuests: Quest[];
   isLoading: boolean;
@@ -173,6 +175,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [quests, setQuests] = useState<Quest[]>([]);
   const [questsHasMore, setQuestsHasMore] = useState(false);
+  const [recommendationData, setRecommendationData] = useState<RecommendationData>(EMPTY_RECOMMENDATION_DATA);
   const [completionHistory, setCompletionHistory] = useState<CompletionRecord[]>([]);
   const [completionHistoryHasMore, setCompletionHistoryHasMore] = useState(false);
   const [progressSummary, setProgressSummary] = useState<ProgressSummary>({ totalCompleted: 0, byCategory: {} });
@@ -191,6 +194,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
     setQuests([]);
     setQuestsHasMore(false);
+    setRecommendationData(EMPTY_RECOMMENDATION_DATA);
     setCompletionHistory([]);
     setCompletionHistoryHasMore(false);
     setProgressSummary({ totalCompleted: 0, byCategory: {} });
@@ -417,6 +421,11 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         return { ...next, ...result.errors };
       });
       setProfile(result.updateProfile);
+      setRecommendationData(previous => ({ ...previous,
+        ...(result.profileUpdatedAt != null ? { profileUpdatedAt: result.profileUpdatedAt } : {}),
+        ...(result.recommendation ?? {}),
+        ...(result.errors.quests ? { error: "Quest context could not be refreshed. Retry to check recommendations." } : {}),
+      }));
       if (result.history) {
         setCompletionHistory(result.history.rows);
         setCompletionHistoryHasMore(result.history.hasMore);
@@ -532,6 +541,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       }
 
       setProfile((current) => current ? { ...current, ...data, display_name: data.name } : current);
+      setRecommendationData(previous => ({ ...previous, profileUpdatedAt: Date.now() }));
       await supabase.from('profiles').update({ display_name: data.name }).eq('id', user.id);
       return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (error) {
@@ -679,7 +689,10 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       if (result.status === 'failed') return { success: false, error: result.message };
       if (result.status === 'cancelled') return { success: false, error: 'Session ended.' };
       // Refresh server timestamps, durable history and XP together.
-      if (isCurrent()) await fetchUserData(user, false, true, true);
+      if (isCurrent()) {
+        setRecommendationData(previous => ({ ...previous, factsUpdatedAt: null }));
+        await fetchUserData(user, false, true, true);
+      }
       return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
       // Completion has already been acknowledged; refresh failures must not
@@ -702,12 +715,14 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     const isCurrent = fence.capture(user.id);
 
     const previousQuests = [...quests];
-    // Optimistic removal
+    // Optimistic removal; dependent facts must be read again after the database clears deleted prerequisites.
+    setRecommendationData(previous => ({ ...previous, factsUpdatedAt: null }));
     setQuests((prev) => prev.filter((q) => q.id !== questId));
 
     try {
       const { error: delError } = await supabase.from('quests').delete().eq('id', questId);
       if (delError) throw delError;
+      if (isCurrent()) await fetchUserData(user, false, true, true);
       return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
       if (isCurrent()) setQuests(previousQuests);
@@ -716,7 +731,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         error: err instanceof Error ? err.message : 'Failed to delete quest.',
       };
     }
-  }, [user, quests, isAdmittedSession, fence]);
+  }, [user, quests, isAdmittedSession, fence, fetchUserData]);
 
   const addQuest = useCallback(async (questData: QuestDraft): Promise<{ success: boolean; error?: string }> => {
     if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };
@@ -747,7 +762,9 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         throw new Error(databaseQuestError(insertError));
       }
       if (data && isCurrent()) {
+        setRecommendationData(previous => ({ ...previous, factsUpdatedAt: null }));
         setQuests((prev) => [data as Quest, ...prev]);
+        await fetchUserData(user, false, true, true);
       }
       return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (err) {
@@ -756,7 +773,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
         error: err instanceof Error ? err.message : 'Failed to create quest.',
       };
     }
-  }, [user, isAdmittedSession, fence]);
+  }, [user, isAdmittedSession, fence, fetchUserData]);
 
   const updateQuest = useCallback(async (id: string, draft: QuestDraft) => {
     if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };
@@ -770,12 +787,14 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       }).eq('id', id).eq('owner_id', user.id).neq('status', 'completed').select('*').single();
       if (!isCurrent()) return { success: false, error: 'Session ended.' };
       if (updateError) return { success: false, error: databaseQuestError(updateError) };
+      setRecommendationData(previous => ({ ...previous, factsUpdatedAt: null }));
       setQuests(previous => previous.map(q => q.id === id ? data as Quest : q));
+      await fetchUserData(user, false, true, true);
       return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Could not update quest.' };
     }
-  }, [user, isAdmittedSession, fence]);
+  }, [user, isAdmittedSession, fence, fetchUserData]);
 
   // Revalidate restored/open sessions even when Realtime is not enabled.
   useEffect(() => {
@@ -819,6 +838,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       questsHasMore,
       completionHistory,
       completionHistoryHasMore,
+      recommendationData,
       progressSummary,
       activeQuests,
       isLoading,
@@ -857,6 +877,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       questsHasMore,
       completionHistory,
       completionHistoryHasMore,
+      recommendationData,
       progressSummary,
       activeQuests,
       isLoading,

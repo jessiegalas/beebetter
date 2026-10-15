@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Alert, Pressable, RefreshControl, StyleSheet, Switch, TouchableOpacity, View, ScrollView, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Modal, Alert, Pressable, RefreshControl, StyleSheet, Switch, TouchableOpacity, View, ScrollView, useWindowDimensions, type ViewToken } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -9,13 +9,16 @@ import { XpBadge, QuestReward } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { AllQuestRow, RecommendedQuestCard, QuestListHeader, QuestListTab } from '@/components/quest-list';
 import { QuestChoice, QuestText } from '@/components/quest-wizard';
-import { Button, IconButton, Surface } from '@/components/mobile-ui';
+import { Button, Disclosure, IconButton, Surface } from '@/components/mobile-ui';
 import { useBeePalette, useBeeStyles, type BeePalette, Borders, Controls, Layout, Radii, Spacing, States, Typography } from '@/constants/theme';
 import { useUserData, Quest, QuestStatus, ProofFile } from '@/hooks/use-user-data';
 import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useQuestPriority } from '@/context/quest-priority-context';
-import { activeFilterCount, DEFAULT_FILTERS, filterAllQuests, recommendedQuests, type QuestFilters } from '@/lib/quest-discovery';
-import { createRecommendationSession, recordRecommendationEvent } from '@/lib/recommendation-events';
+import { activeFilterCount, DEFAULT_FILTERS, filterAllQuests, recommendationGroup, GROUP_LABELS, type QuestFilters } from '@/lib/quest-discovery';
+import type { PrerequisiteState } from '@/lib/quest-priority';
+import { prerequisiteMessage } from '@/lib/recommendation-reasons';
+import { useRecommendationMeasurement } from '@/hooks/use-recommendation-measurement';
+const RECOMMENDATION_VIEWABILITY = { itemVisiblePercentThreshold: 50 };
 const statusCopy: Record<QuestStatus, {
     label: string;
 }> = { active: { label: 'Active' }, rejected: { label: 'Needs revision' }, pending: { label: 'Pending review' }, completed: { label: 'Completed' } };
@@ -47,11 +50,9 @@ function QuestList() {
         questId?: string;
     }>();
     const closeDetails = () => router.setParams({ questId: '' });
-    const { ranked, locationAvailable, now } = useQuestPriority();
+    const { ranked, recommendations, locationAvailable, now, snoozesReady, snoozedCount, contextError, retryContext, snoozeQuest, undoSnooze, restoreSnoozes, lastSnoozedId } = useQuestPriority();
     const selected = ranked.find(item => item.quest.id === questId);
     const [view, setView] = useState<'context' | 'all'>('context');
-    const recommendationSession = useRef(createRecommendationSession());
-    const [dismissed, setDismissed] = useState<Set<string>>(new Set());
     const [expandedReasons, setExpandedReasons] = useState<Set<string>>(new Set());
     const setReasonsExpanded = (id: string, expanded: boolean) => setExpandedReasons(current => {
         if (current.has(id) === expanded) return current;
@@ -66,26 +67,21 @@ function QuestList() {
     const filterCount = activeFilterCount(appliedFilters);
     const openFilters = () => { setDraftFilters({ ...appliedFilters }); setFiltersOpen(true); };
     const visibleRanked = useMemo(() => view === 'context'
-        ? recommendedQuests(ranked).filter(item => !dismissed.has(item.quest.id))
-        : filterAllQuests(ranked, appliedFilters, now), [ranked, appliedFilters, view, now, dismissed]);
+        ? recommendations
+        : filterAllQuests(ranked, appliedFilters, now), [ranked, recommendations, appliedFilters, view, now]);
     const visibleQuests = visibleRanked.map(item => item.quest);
-    useEffect(() => {
-        if (view !== 'context' || isLoading || loadError)
-            return;
-        visibleRanked.slice(0, 10).forEach((item, index) => {
-            void recordRecommendationEvent({ questId: item.quest.id, eventType: 'exposure',
-                sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined);
-        });
-    }, [view, isLoading, loadError, visibleRanked]);
+    const measurement = useRecommendationMeasurement('quest_board', visibleRanked, view === 'context' && !questId && !filtersOpen && !reward && !isLoading && !loadError && snoozesReady);
+    const { setVisible: setVisibleRecommendations } = measurement;
+    const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+        setVisibleRecommendations(new Set(viewableItems.filter(token => token.isViewable).map(token => token.item.quest.id)));
+    }, [setVisibleRecommendations]);
     const openRecommendation = (item: typeof visibleRanked[number], index: number) => {
-        void recordRecommendationEvent({ questId: item.quest.id, eventType: 'selection',
-            sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined);
+        measurement.action(item, index + 1, 'selection');
         router.setParams({ questId: item.quest.id });
     };
     const dismissRecommendation = (item: typeof visibleRanked[number], index: number) => {
-        void recordRecommendationEvent({ questId: item.quest.id, eventType: 'dismissal',
-            sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined);
-        setDismissed(current => new Set(current).add(item.quest.id));
+        measurement.action(item, index + 1, 'snooze');
+        snoozeQuest(item.quest.id);
     };
     const handleConfirmDelete = (quest: Quest) => {
         Alert.alert('Delete Quest', `Are you sure you want to delete "${quest.title}"?`, [
@@ -172,7 +168,7 @@ function QuestList() {
     <IconButton icon="close" label="Close quest details" onPress={() => { dismissReward(); closeDetails(); }}/>
     </View>
     <ScrollView contentContainerStyle={styles.content}>
-          {reward ? <QuestReward {...reward} progress={levelProgress} onClose={dismissReward}/> : selected ? <QuestCard key={selected.quest.id} quest={selected.quest} reasons={selected.reasons} locked={selected.locked} details completing={completingId === selected.quest.id} proof={proofDrafts[selected.quest.id]} onProofChange={proof => setProofDrafts(current => ({ ...current, [selected.quest.id]: proof }))} onEdit={() => { closeDetails(); router.push({ pathname: '/add-quest', params: { id: selected.quest.id } }); }} onComplete={proof => void handleComplete(selected.quest, proof)} onDelete={() => handleConfirmDelete(selected.quest)}/> : <ThemedText>
+          {reward ? <QuestReward {...reward} progress={levelProgress} onClose={dismissReward}/> : selected ? <QuestCard key={selected.quest.id} quest={selected.quest} reasons={[...selected.reasons, ...selected.constraints]} locked={selected.locked} prerequisiteState={selected.prerequisiteState} prerequisiteTitle={selected.evidence?.find(e => e.code === 'prerequisite_incomplete')?.values.title} onRetryContext={retryContext} details completing={completingId === selected.quest.id} proof={proofDrafts[selected.quest.id]} onProofChange={proof => setProofDrafts(current => ({ ...current, [selected.quest.id]: proof }))} onEdit={() => { closeDetails(); router.push({ pathname: '/add-quest', params: { id: selected.quest.id } }); }} onComplete={proof => void handleComplete(selected.quest, proof)} onDelete={() => handleConfirmDelete(selected.quest)}/> : <ThemedText>
         {isLoading ? 'Loading quest…' : 'This quest is no longer available.'}
         </ThemedText>}
         </ScrollView>
@@ -192,25 +188,32 @@ function QuestList() {
               <Button intent="quiet" icon="options-outline" label={filterCount ? 'Filters (' + filterCount + ')' : 'Filters'} disabled={view !== 'all'} onPress={openFilters}/>
             </View>
           </View>
+          {view === 'context' && snoozesReady && !isLoading && !loadError && !contextError && !recommendations.some(item => recommendationGroup(item) === 'now') && <ThemedText type="small">{snoozedCount && !recommendations.length ? 'Your available quests are snoozed for now. Browse All Quests or restore them.' : contextError ? 'Current context could not be verified. Browse these alternatives.' : 'Nothing fits your current context right now. Here are other options.'}</ThemedText>}
+          {view === 'context' && contextError && <Disclosure title="Refresh recommendations"><ThemedText type="small">{contextError}</ThemedText><Button intent="quiet" label="Retry context" onPress={retryContext}/></Disclosure>}
+          {view === 'context' && lastSnoozedId && <View accessibilityLiveRegion="polite"><ThemedText type="small">Quest snoozed for one hour.</ThemedText><Button intent="quiet" label="Undo" onPress={undoSnooze}/></View>}
+          {view === 'context' && snoozedCount > 0 && <Button intent="quiet" label="Restore snoozed quests" onPress={restoreSnoozes}/>}
           {questsHasMore && <ThemedText type="small">More quests are loading. Suggestions may reorder.</ThemedText>}
           {loadError && <View accessibilityLiveRegion="polite">
             <ThemedText type="small" style={{ color: COLORS.danger }}>{loadError}</ThemedText>
             <Button intent="quiet" label="Retry quests" onPress={() => void retryWorkspace('quests')}/>
           </View>}
         </View>
-        <FlatList style={styles.list} data={visibleRanked} keyExtractor={item => item.quest.id} extraData={{ completingId, expandedReasons }} contentContainerStyle={[styles.content, styles.listContent, visibleQuests.length === 0 && styles.emptyListContent]} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={COLORS.honeyDark} colors={[COLORS.honeyDark]}/>} ItemSeparatorComponent={() => <View style={{ height: 8 }}/>} renderItem={({ item, index }) => view === 'all' ? <AllQuestRow quest={item.quest} locked={item.locked} completing={completingId === item.quest.id} onOpen={() => router.setParams({ questId: item.quest.id })} onComplete={() => void handleComplete(item.quest)} /> : <RecommendedQuestCard quest={item.quest} reasons={item.reasons} locked={item.locked} completing={completingId === item.quest.id} expanded={expandedReasons.has(item.quest.id)} onExpandedChange={expanded => setReasonsExpanded(item.quest.id, expanded)} onOpen={() => openRecommendation(item, index)} onDismiss={() => dismissRecommendation(item, index)} onComplete={() => { if (completionBusy.current) return;
-        void recordRecommendationEvent({ questId: item.quest.id, eventType: 'selection', sessionId: recommendationSession.current, rankPosition: index + 1, reasonCodes: item.reasonCodes }).catch(() => undefined);
-        void handleComplete(item.quest); }} />} ListEmptyComponent={isLoading ? <View style={styles.stateCard}>
+        <FlatList viewabilityConfig={RECOMMENDATION_VIEWABILITY} onViewableItemsChanged={onViewableItemsChanged} style={styles.list} data={visibleRanked} keyExtractor={item => item.quest.id} extraData={{ completingId, expandedReasons }} contentContainerStyle={[styles.content, styles.listContent, visibleQuests.length === 0 && styles.emptyListContent]} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={COLORS.honeyDark} colors={[COLORS.honeyDark]}/>} ItemSeparatorComponent={() => <View style={{ height: 8 }}/>} renderItem={({ item, index }) => view === 'all' ? <AllQuestRow quest={item.quest} locked={item.locked} prerequisiteState={item.prerequisiteState} prerequisiteTitle={item.evidence?.find(e => e.code === 'prerequisite_incomplete')?.values.title} onRetryContext={retryContext} completing={completingId === item.quest.id} onOpen={() => router.setParams({ questId: item.quest.id })} onComplete={() => void handleComplete(item.quest)} /> : <RecommendedQuestCard groupLabel={GROUP_LABELS[recommendationGroup(item)]} quest={item.quest} reasons={item.reasons} constraints={item.constraints} locked={item.locked} prerequisiteState={item.prerequisiteState} completing={completingId === item.quest.id} expanded={expandedReasons.has(item.quest.id)} onExpandedChange={expanded => setReasonsExpanded(item.quest.id, expanded)} onOpen={() => openRecommendation(item, index)} onDismiss={() => dismissRecommendation(item, index)} onComplete={() => { if (completionBusy.current) return;
+        measurement.action(item, index + 1, 'selection');
+        void handleComplete(item.quest); }} />} ListEmptyComponent={isLoading || (view === 'context' && !snoozesReady && !contextError) ? <View style={styles.stateCard}>
         <ActivityIndicator color={COLORS.honeyDark}/>
         <ThemedText>Loading your quests…</ThemedText>
-        </View> : !loadError ? <EmptyState title="No quests in this view" subtitle={view === 'all' && filterCount ? 'Try resetting filters to see your quests.' : 'Create a small, specific quest to get started.'} actionLabel={view === 'all' && filterCount ? 'Reset filters' : 'New quest'} actionIcon={view === 'all' && filterCount ? 'refresh-outline' : 'add'} onPress={() => view === 'all' && filterCount ? setAppliedFilters({ ...DEFAULT_FILTERS }) : router.push(isAuthenticated ? '/add-quest' : '/auth')} onBrowse={view === 'context' ? () => setView('all') : undefined}/> : null}/>
+        </View> : !loadError ? <EmptyState title="No quests in this view" subtitle={view === 'all' && filterCount ? 'Try resetting filters to see your quests.' : snoozedCount ? 'Your available quests are snoozed. Restore them or browse All Quests.' : contextError ? 'Browse All Quests while context is unavailable.' : 'Create a small, specific quest to get started.'} actionLabel={view === 'all' && filterCount ? 'Reset filters' : 'New quest'} actionIcon={view === 'all' && filterCount ? 'refresh-outline' : 'add'} onPress={() => view === 'all' && filterCount ? setAppliedFilters({ ...DEFAULT_FILTERS }) : router.push(isAuthenticated ? '/add-quest' : '/auth')} onBrowse={view === 'context' ? () => setView('all') : undefined}/> : null}/>
       </SafeAreaView>
     </View>;
 }
-function QuestCard({ quest, reasons, locked = false, completing = false, proof, onProofChange, onEdit, onComplete, onDelete }: {
+function QuestCard({ quest, reasons, locked = false, prerequisiteState = 'none', prerequisiteTitle, onRetryContext, completing = false, proof, onProofChange, onEdit, onComplete, onDelete }: {
     quest: Quest;
     reasons: string[];
     locked?: boolean;
+    prerequisiteState: PrerequisiteState;
+    prerequisiteTitle?: string;
+    onRetryContext: () => void;
     details?: boolean;
     completing?: boolean;
     proof?: ProofFile;
@@ -257,7 +260,9 @@ function QuestCard({ quest, reasons, locked = false, completing = false, proof, 
         }
     };
     const status = { label: statusCopy[quest.status]?.label ?? 'Active', color: quest.status === 'rejected' ? COLORS.danger : quest.status === 'pending' ? COLORS.honeyDark : COLORS.success };
-    const canComplete = quest.status === 'active' && !locked;
+    const prerequisiteWarning = prerequisiteMessage(prerequisiteState, prerequisiteTitle);
+    const otherReasons = reasons.filter(reason => reason !== prerequisiteWarning);
+    const canComplete = quest.status === 'active' && !locked && !prerequisiteWarning;
     return <Surface>
     <View style={styles.listHeading}>
     <ThemedText type="small" style={{ color: COLORS.muted }}>
@@ -273,11 +278,11 @@ function QuestCard({ quest, reasons, locked = false, completing = false, proof, 
     </ThemedText>
         {!!quest.description && <ThemedText>
         {quest.description}
-        </ThemedText>}{locked && <ThemedText style={{ color: COLORS.danger }}>Complete the prerequisite quest first.</ThemedText>}{[quest.scheduled_at ? 'Scheduled: ' + new Date(quest.scheduled_at).toLocaleString() : '', quest.preferred_time ? 'Preferred time: ' + quest.preferred_time.slice(0, 5) : '', quest.deadline_at ? 'Deadline: ' + new Date(quest.deadline_at).toLocaleString() : ''].filter(Boolean).map(label => <ThemedText key={label} type="small" style={{ color: COLORS.muted }}>
+        </ThemedText>}{prerequisiteWarning && <ThemedText accessibilityLiveRegion="polite" style={{ color: COLORS.danger }}>{prerequisiteWarning}</ThemedText>}{prerequisiteState === 'unknown' && <Button label="Retry context" intent="quiet" onPress={onRetryContext}/>}{[quest.scheduled_at ? 'Scheduled: ' + new Date(quest.scheduled_at).toLocaleString() : '', quest.preferred_time ? 'Preferred time: ' + quest.preferred_time.slice(0, 5) : '', quest.deadline_at ? 'Deadline: ' + new Date(quest.deadline_at).toLocaleString() : ''].filter(Boolean).map(label => <ThemedText key={label} type="small" style={{ color: COLORS.muted }}>
         {label}
-        </ThemedText>)}{reasons.length > 0 && <View style={{ gap: 8 }}>
+        </ThemedText>)}{otherReasons.length > 0 && <View style={{ gap: 8 }}>
         <ThemedText type="label">Why this quest</ThemedText>
-            {reasons.map(reason => <ThemedText key={reason} type="small" style={{ color: COLORS.muted }}>
+            {otherReasons.map(reason => <ThemedText key={reason} type="small" style={{ color: COLORS.muted }}>
             {reason}
             </ThemedText>)}
         </View>}

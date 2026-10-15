@@ -11,6 +11,8 @@ interface LocationContextType {
   locations: UserLocation[];
   activeLocations: UserLocation[];
   isLoadingLocations: boolean;
+  locationsUpdatedAt: number | null;
+  locationsError: string | null;
   addLocation: (loc: { name: string; label?: string; latitude: number; longitude: number; radius?: number }) => Promise<{ success: boolean; error?: string }>;
   updateLocation: (id: string, updates: Partial<UserLocation>) => Promise<{ success: boolean; error?: string }>;
   deleteLocation: (id: string) => Promise<{ success: boolean; error?: string }>;
@@ -42,6 +44,8 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     locations,
     activeLocations,
     isLoading: isLoadingLocations,
+    locationsUpdatedAt,
+    error: locationsError,
     addLocation,
     updateLocation,
     deleteLocation,
@@ -117,6 +121,8 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     locations,
     activeLocations,
     isLoadingLocations,
+    locationsUpdatedAt,
+    locationsError,
     addLocation,
     updateLocation,
     deleteLocation,
@@ -142,6 +148,8 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     locations,
     activeLocations,
     isLoadingLocations,
+    locationsUpdatedAt,
+    locationsError,
     addLocation,
     updateLocation,
     deleteLocation,

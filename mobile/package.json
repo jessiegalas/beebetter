@@ -70,7 +70,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test:context": "node scripts/test-quest-priority.cjs",
+    "test:context": "node scripts/test-quest-priority.cjs && node scripts/test-recommendation-regressions.cjs",
     "test:students": "node scripts/test-student-validation.cjs",
     "test:completion": "node scripts/test-quest-completion.cjs",
     "test:workspace": "node scripts/test-student-workspace.cjs",

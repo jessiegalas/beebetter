@@ -90,6 +90,7 @@ function provider(initialUser = user('a'), initialState = {}) {
     react: h.react,
     'expo-linking': { createURL: (path, options) => 'beebetter://' + path + (options.queryParams ? '?flow=recovery' : ''), getInitialURL: async () => state.initialUrl || null, addEventListener: (_, fn) => { state.link = fn; return { remove() {} }; } },
     '@/lib/auth-flow': authFlow, '@/lib/enrollment-catalogue': catalogue, '@/lib/student-validation': validation,
+    '@/lib/recommendation-facts': load('src/lib/recommendation-facts.ts'),
     '@/lib/student-workspace': load('src/lib/student-workspace.ts', {}),
     '@/lib/quest-completion': load('src/lib/quest-completion.ts'),
     '@/lib/quest-completion-adapter': load('src/lib/quest-completion-adapter.ts', {}, { fetch: async uri => ({ arrayBuffer: async () => state.readProof ? state.readProof(uri) : new ArrayBuffer(2) }) }),
@@ -373,7 +374,7 @@ test('all private routes are excluded for every non-active access state', () => 
   const privateRoutes = routes(layout.default());
   assert(privateRoutes.includes('(tabs)')); assert(privateRoutes.includes('add-quest'));
   assert(!privateRoutes.includes('auth'));
-  assert.deepEqual(privateRoutes, ['(tabs)', 'notifications', 'add-quest', 'manage-locations']);
+  assert.deepEqual(privateRoutes, ['(tabs)', 'notifications', 'add-quest', 'manage-locations', 'settings/index', 'settings/general']);
   // Retained screens can return after a product decision, still behind admission.
   features.MOBILE_WELLNESS_AND_SUPPORT_ENABLED = true;
   assert(routes(layout.default()).includes('support-requests'));

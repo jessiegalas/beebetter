@@ -6,20 +6,21 @@ import { ThemedText } from './themed-text';
 import { Borders, Controls, Fonts, Layout, MaxContentWidth, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
 // StyleSheet-only controls bypass CSS interop so native pressed-style callbacks stay intact.
 type Icon = keyof typeof Ionicons.glyphMap;
-export function ScreenFrame({ children, tab = false, scroll = true, refreshControl }: {
+export function ScreenFrame({ children, tab = false, scroll = true, refreshControl, viewportRef }: {
     children: ReactNode;
     tab?: boolean;
     scroll?: boolean;
     refreshControl?: React.ReactElement<RefreshControlProps>;
+    viewportRef?: React.RefObject<View | null>;
 }) {
     const { width } = useWindowDimensions();
     const content = { width: '100%' as const, maxWidth: MaxContentWidth, alignSelf: 'center' as const, paddingHorizontal: width >= Layout.wideBreakpoint ? Spacing.xl : Spacing.gutter, paddingTop: Spacing.gutter, paddingBottom: Spacing.section, gap: Spacing.section };
     return <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }} edges={tab ? ['top'] : ['top', 'bottom']}>
-    {scroll ? <ScrollView contentContainerStyle={content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
+    <View ref={viewportRef} collapsable={false} style={{ flex: 1 }}>{scroll ? <ScrollView contentContainerStyle={content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
         {children}
         </ScrollView> : <View style={[content, { flex: 1 }]}>
         {children}
-        </View>}
+        </View>}</View>
   </SafeAreaView>;
 }
 export function Surface({ children, featured = false, style }: {

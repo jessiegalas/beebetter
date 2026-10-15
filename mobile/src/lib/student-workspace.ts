@@ -1,5 +1,6 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import type { CompletionRecord } from './quest-priority';
+import type { RecommendationFact } from './recommendation-facts';
 import type { ProgressSummary, Quest, UserProfile } from '@/context/user-data-context';
 
 export type WorkspaceSlice = 'profile' | 'streak' | 'progress' | 'quests';
@@ -13,6 +14,8 @@ export type WorkspaceRead = {
   errors: WorkspaceErrors;
   updateProfile: (previous: UserProfile | null) => UserProfile | null;
   quests?: Quest[];
+  recommendation?: { facts: RecommendationFact[]; candidatesUpdatedAt: number; factsUpdatedAt: number | null; error: string | null };
+  profileUpdatedAt?: number;
   history?: { rows: CompletionRecord[]; hasMore: boolean };
   progressSummary?: ProgressSummary;
 };
@@ -65,18 +68,35 @@ export function createStudentWorkspaceReader(client: Pick<SupabaseClient, 'from'
           ]);
           return { data: { history, summary }, error: null };
         }),
-        readSlice<Quest[]>('quests', async signal => {
-          const rows: Quest[] = [];
-          const pageSize = 200;
-          while (isCurrent() && !signal.aborted) {
-            const result = await client.rpc('student_list_recommendation_candidates', { page_size: pageSize, page_offset: rows.length }).abortSignal(signal);
-            if (result.error) return { data: null, error: result.error };
-            if (!isCurrent() || signal.aborted) return { data: null, error: 'cancelled' };
-            const page = (result.data ?? []) as Quest[];
-            rows.push(...page);
-            if (page.length < pageSize) return { data: rows, error: null };
-          }
-          return { data: null, error: 'cancelled' };
+        readSlice('quests', async signal => {
+          const load = async (attempt: number): Promise<{ data: { rows: Quest[]; facts: RecommendationFact[]; factsUpdatedAt: number | null; error: string | null }; error: null }> => {
+            const rows: Quest[] = [], pageSize = 200;
+            while (isCurrent() && !signal.aborted) {
+              const result = await client.rpc('student_list_recommendation_candidates', { page_size: pageSize, page_offset: rows.length }).abortSignal(signal);
+              if (result.error) throw result.error;
+              if (!isCurrent() || signal.aborted) throw new Error('cancelled');
+              const page = (result.data ?? []) as Quest[]; rows.push(...page);
+              if (page.length < pageSize) break;
+            }
+            if (!isCurrent() || signal.aborted) throw new Error('cancelled');
+            try {
+              const facts: RecommendationFact[] = [];
+              for (let offset = 0; offset < rows.length; offset += pageSize) {
+                const result = await client.rpc('student_get_recommendation_facts', { quest_ids: rows.slice(offset, offset + pageSize).map(q => q.id) }).abortSignal(signal);
+                if (!isCurrent() || signal.aborted) throw new Error('cancelled');
+                if (result.error) throw result.error;
+                facts.push(...(result.data ?? []) as RecommendationFact[]);
+              }
+              const byId = new Map(facts.map(f => [f.quest_id, f]));
+              if (rows.some(q => { const f = byId.get(q.id); return !f || f.status !== q.status || f.updated_at !== q.updated_at || f.prerequisite_quest_id !== (q.prerequisite_quest_id ?? null); })) {
+                if (attempt === 0) return load(1);
+                throw new Error('Candidates changed while refreshing');
+              }
+              return { data: { rows, facts, factsUpdatedAt: Date.now(), error: null }, error: null };
+            } catch {
+              return { data: { rows, facts: [], factsUpdatedAt: null, error: 'Context could not be refreshed. Retry to check recommendations.' }, error: null };
+            }
+          }; return load(0);
         }),
       ]);
       if (!isCurrent()) return null;
@@ -114,7 +134,10 @@ export function createStudentWorkspaceReader(client: Pick<SupabaseClient, 'from'
           if (next && summaryRow) next = { ...next, total_xp: Number(summaryRow.total_xp), level: Number(summaryRow.level), current_streak: Number(summaryRow.current_streak) };
           return next;
         },
-        ...(!quests?.failed && quests?.data ? { quests: quests.data } : {}),
+        ...(profile && !profile.failed ? { profileUpdatedAt: Date.now() } : {}),
+        ...(!quests?.failed && quests?.data ? { quests: quests.data.rows, recommendation: {
+          facts: quests.data.facts, candidatesUpdatedAt: Date.now(), factsUpdatedAt: quests.data.factsUpdatedAt, error: quests.data.error,
+        } } : {}),
         ...(history && !history.failed ? { history: { rows: history.data ?? [], hasMore: Number(history.data?.[0]?.total_count ?? 0) > (history.data?.length ?? 0) } } : {}),
         ...(summaryRow ? { progressSummary: { totalCompleted: Number(summaryRow.total_completed), byCategory: {
           Academics: Number(summaryRow.academics_completed), Habits: Number(summaryRow.habits_completed), Social: Number(summaryRow.social_completed), Health: Number(summaryRow.health_completed),

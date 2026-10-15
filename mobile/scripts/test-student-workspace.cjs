@@ -70,13 +70,14 @@ test('failed history does not discard a successful summary, and failed summary d
     assert.equal(!!result.progressSummary, failed !== 'student_progress_summary');
   }
 });
-test('candidate pagination is atomic and keeps every page including completed quests', async () => {
-  const { state, reader } = adapter(); const page = Array.from({ length: 200 }, (_, i) => ({ id: String(i), status: 'completed' }));
-  state.handler = call => call.name === 'student_list_recommendation_candidates' ? ok(call.args.page_offset === 0 ? page : [{ id: 'last' }]) : undefined;
-  const result = await reader.read(input(), 'quests'); assert.equal(result.quests.length, 201);
-  assert.deepEqual(state.calls.map(call => call.args.page_offset), [0, 200]);
-  state.handler = call => { if (call.args.page_offset === 200) throw Error('page failed'); return ok(page); };
-  const failed = await reader.read(input(), 'quests'); assert(failed.errors.quests); assert.equal(failed.quests, undefined);
+test('candidate pagination loads facts atomically without completed candidates', async () => {
+  const {state,reader}=adapter(); const page=Array.from({length:200},(_,i)=>({id:String(i),status:'active',updated_at:'2026-10-14T00:00:00Z',prerequisite_quest_id:null}));
+  const last={...page[0],id:'last'};
+  state.handler=call=>call.name==='student_list_recommendation_candidates'?ok(call.args.page_offset===0?page:[last]):call.name==='student_get_recommendation_facts'?ok(call.args.quest_ids.map(id=>({quest_id:id,status:'active',updated_at:page[0].updated_at,prerequisite_quest_id:null,prerequisite_status:null,latest_activity_at:null,latest_category_at:null}))):undefined;
+  const result=await reader.read(input(),'quests'); assert.equal(result.quests.length,201); assert.equal(result.recommendation.facts.length,201);assert.equal(result.recommendation.error,null);
+  assert.deepEqual(state.calls.filter(c=>c.name==='student_list_recommendation_candidates').map(c=>c.args.page_offset),[0,200]);
+  state.handler=call=>{if(call.name==='student_list_recommendation_candidates'&&call.args.page_offset===200)throw Error('page failed');return ok(page);};
+  const failed=await reader.read(input(),'quests');assert(failed.errors.quests);assert.equal(failed.quests,undefined);
 });
 test('overlapping full and scoped reads coalesce at each slice', async () => {
   const { state, reader } = adapter(); const wait = deferred(); state.handler = () => wait.promise;
