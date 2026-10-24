@@ -57,18 +57,25 @@ function questScreen(overrides = {}) {
 }
 const cases=[];const test=(name,fn)=>cases.push({name,fn});
 test('Home keeps recommendation explanations and refresh diagnostics in the details sheet',async()=>{
- const h=hooks();let scale=1;
+ const h=hooks();let scale=1,width=320;
  const contextError='Context is out of date. Refresh to check what fits now';
  const item={quest:{...quests[0],description:'Full description belongs in details'},reasons:['Strongest grounded reason'],constraints:['A very long saved-place limitation',contextError],fresh:false,prerequisiteState:'none',tier:'other'};
  const data={user:{id:'a'},profile:{name:'Alex'},progressSummary:{totalCompleted:1},levelProgress:{},workspaceErrors:{},isLoading:false,isRefreshing:false,refresh(){},retryWorkspace(){}};
  let retries=0;
- const mod=load('src/app/(tabs)/index.tsx',{...basics(h),'react-native':{...native,useWindowDimensions:()=>({width:320,fontScale:scale})},'expo-router':{router:{push(){}}},'@/hooks/use-user-data':{useUserData:()=>data},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:[item],contextError,retryContext(){retries++;}})}});
+ const mod=load('src/app/(tabs)/index.tsx',{...basics(h),'react-native':{...native,useWindowDimensions:()=>({width,fontScale:scale})},'expo-router':{router:{push(){}}},'@/hooks/use-user-data':{useUserData:()=>data},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:[item],contextError,retryContext(){retries++;}})}});
  h.mount(()=>mod.default());let banner=find(h.value,n=>n.props?.collapsable===false);
  for(const hidden of [...item.reasons,...item.constraints,item.quest.description,'Current context could not be verified'])assert.equal(text(banner).includes(hidden),false);
  assert.equal(text(banner).includes('Strongest grounded reason'),false);
  let sheet=find(h.value,n=>n.type==='Sheet'&&n.props.title==='Why this quest');assert.equal(sheet.props.visible,false);
- const help=find(h.value,n=>n.type==='Pressable'&&n.props.accessibilityLabel==='Why this quest');assert(help);assert.equal(help.props.accessibilityRole,'button');const helpStyle=help.props.style({pressed:false})[0];assert.equal(helpStyle.position,undefined);assert(helpStyle.minHeight>=48);const footer=find(banner,n=>n.type==='CardFooter');assert(footer);assert(find(banner,n=>n.type==='Separator'));assert(find(footer,n=>n.props?.accessibilityLabel==='Why this quest'));assert(button(footer,'View quest'));assert(text(find(banner,n=>n.type==='CardHeader')).includes('+25 XP'));assert.equal(button(h.value,'Why this quest'),undefined);help.props.onPress();await flush();sheet=find(h.value,n=>n.type==='Sheet'&&n.props.title==='Why this quest');assert.equal(sheet.props.visible,true);
+ const help=find(h.value,n=>n.type==='Pressable'&&n.props.accessibilityLabel==='Why this quest');assert(help);assert.equal(help.props.accessibilityRole,'button');const helpStyle=help.props.style({pressed:false})[0];assert.equal(helpStyle.position,undefined);assert(helpStyle.minHeight>=48);const footer=find(banner,n=>n.type==='View'&&Array.isArray(n.props.children)&&n.props.children.some(child=>child?.props?.accessibilityLabel==='Why this quest'));assert(footer);assert(find(footer,n=>n.props?.accessibilityLabel==='Why this quest'));assert(button(footer,'View quest'));assert(text(banner).includes('+25 XP'));assert.equal(button(h.value,'Why this quest'),undefined);help.props.onPress();await flush();sheet=find(h.value,n=>n.type==='Sheet'&&n.props.title==='Why this quest');assert.equal(sheet.props.visible,true);
  for(const visible of [...item.reasons,...item.constraints,item.quest.description])assert(text(sheet).includes(visible));button(sheet,'Retry context').props.onPress();assert.equal(retries,1);
+ const layout=style=>Object.assign({},...[style].flat(Infinity).filter(Boolean));
+ for(width of [320,375,430]) {
+  h.render();banner=find(h.value,n=>n.props?.collapsable===false);
+  const header=find(banner,n=>n.type==='View'&&Array.isArray(n.props.children)&&n.props.children.some(child=>text(child)==='+25 XP'));
+  const actions=find(banner,n=>n.type==='View'&&Array.isArray(n.props.children)&&n.props.children.some(child=>child?.props?.accessibilityLabel==='Why this quest'));
+  assert.equal(layout(header.props.style).flexDirection,'row');assert.equal(layout(actions.props.style).flexDirection,'row');assert.equal(layout(button(actions,'View quest').props.style).alignSelf,'flex-end');
+ }
  scale=1.5;h.render();banner=find(h.value,n=>n.props?.collapsable===false);assert.equal(text(banner).includes('Strongest grounded reason'),false);h.unmount();
 });
 test('board refresh diagnostics are collapsed and separate from individual quest explanations',async()=>{

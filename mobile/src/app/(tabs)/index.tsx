@@ -6,8 +6,6 @@ import { Image } from 'expo-image';
 import { XpProgress } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { Button, IconButton, ScreenFrame, Sheet, StatusMessage, Surface } from '@/components/mobile-ui';
-import { Card, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import type { RankedQuest } from '@/lib/quest-priority';
 import { HomeMenu } from '@/components/home-menu';
 import { Borders, Controls, Layout, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
@@ -67,26 +65,26 @@ export default function HomeScreen() {
             <ThemedText type="subtitle" accessibilityRole="header">{next ? GROUP_LABELS[recommendationGroup(next)] : 'Recommended now'}</ThemedText>
           </View>
           <View ref={recommendationRef} collapsable={false}>
-            <Card className="gap-0 border-0 py-0 shadow-none" style={[s.recommendation, { backgroundColor: c.card }]}>
+            <Surface style={s.recommendation}>
               <View style={s.questArt} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
                 <Image source={illustration} style={s.book} tintColor={c.primary} contentFit="contain" accessible={false} />
               </View>
-              <CardHeader className="p-0" style={s.recommendationHeader}>
-                <View style={s.recommendationCopy}>
-                  <CardTitle numberOfLines={expanded ? undefined : 2} style={[Typography.section, { color: c.foreground }]}>{next ? next.quest.title : !snoozesReady && contextError ? 'Recommendations unavailable' : !snoozesReady || (isLoading && !next) ? 'Loading recommendations…' : snoozedCount ? 'Your quests are snoozed for now' : contextError ? 'Refresh to check recommendations' : 'Nothing fits your current context right now'}</CardTitle>
+              <View style={[s.recommendationHeader, expanded && s.recommendationHeaderStacked]}>
+                <View style={[s.recommendationCopy, expanded && s.recommendationCopyStacked]}>
+                  <ThemedText type="subtitle" accessibilityRole="header">{next ? next.quest.title : !snoozesReady && contextError ? 'Recommendations unavailable' : !snoozesReady || (isLoading && !next) ? 'Loading recommendations…' : snoozedCount ? 'Your quests are snoozed for now' : contextError ? 'Refresh to check recommendations' : 'Nothing fits your current context right now'}</ThemedText>
                   {!next && <ThemedText type="small" style={{ color: c.muted }}>Browse All Quests or restore snoozed quests.</ThemedText>}
                 </View>
                 {next && Number.isFinite(next.quest.xp) && <ThemedText type="item" style={[s.recommendationXp, { color: c.primary }]}>+{next.quest.xp} XP</ThemedText>}
-              </CardHeader>
-              <Separator style={{ backgroundColor: c.border, zIndex: 1 }} />
-              <CardFooter className="p-0" style={[s.recommendationFooter, expanded && s.recommendationFooterExpanded]}>
-                <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={next ? 'Why this quest' : 'Recommendation status'} accessibilityHint="Opens the full recommendation explanation." accessibilityState={{ expanded: whyOpen }} onPress={() => setWhyOpen(true)} onFocus={() => setHelpFocused(true)} onBlur={() => setHelpFocused(false)} style={({ pressed }) => [s.recommendationReason, expanded && { flex: 0, alignSelf: 'stretch' }, { borderColor: helpFocused ? c.focus : 'transparent', backgroundColor: pressed ? c.surfaceMuted : 'transparent' }]}>
+              </View>
+              <View style={[s.divider, { backgroundColor: c.border, zIndex: 1 }]} />
+              <View style={[s.recommendationFooter, expanded && s.recommendationFooterStacked]}>
+                <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={next ? 'Why this quest' : 'Recommendation status'} accessibilityHint="Opens the full recommendation explanation." accessibilityState={{ expanded: whyOpen }} onPress={() => setWhyOpen(true)} onFocus={() => setHelpFocused(true)} onBlur={() => setHelpFocused(false)} style={({ pressed }) => [s.recommendationReason, expanded && s.recommendationReasonStacked, { borderColor: helpFocused ? c.focus : 'transparent', backgroundColor: pressed ? c.surfaceMuted : 'transparent' }]}>
                   <Ionicons name={summary.icon} size={20} color={c.muted} accessible={false}/>
                   <ThemedText type="small" style={{ color: c.muted, flexShrink: 1 }}>{summary.label}</ThemedText>
                 </Pressable>
-                <Button intent="quiet" foregroundColor={c.foreground} label={next ? 'View quest' : 'Explore quests'} icon="arrow-forward" onPress={() => { if (next) { measurement.action(next, 1, 'selection'); router.push({ pathname: '/quests', params: { questId: next.quest.id } }); } else router.push('/quests'); }} style={s.recommendationView}/>
-              </CardFooter>
-            </Card>
+                <Button intent="quiet" foregroundColor={c.primary} label={next ? 'View quest' : 'Explore quests'} icon="arrow-forward" onPress={() => { if (next) { measurement.action(next, 1, 'selection'); router.push({ pathname: '/quests', params: { questId: next.quest.id } }); } else router.push('/quests'); }} style={s.recommendationView}/>
+              </View>
+            </Surface>
           </View>
           {lastSnoozedId && <View accessibilityLiveRegion="polite"><ThemedText type="small">Quest snoozed for one hour.</ThemedText><Button intent="quiet" label="Undo" onPress={undoSnooze}/></View>}
           {snoozedCount > 0 && <Button intent="quiet" label="Restore snoozed quests" onPress={restoreSnoozes}/>}
@@ -202,14 +200,17 @@ const s = StyleSheet.create({
   divider: { height: Borders.default },
   levelLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: Controls.minHeight, paddingHorizontal: Spacing.xs },
   recommendation: { position: 'relative', overflow: 'hidden', padding: Spacing.gutter, gap: Spacing.lg, borderRadius: Radii.xl },
-  recommendationHeader: { zIndex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.lg, paddingHorizontal: 0, minHeight: 56 },
+  recommendationHeader: { zIndex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
+  recommendationHeaderStacked: { flexDirection: 'column', alignItems: 'stretch', gap: Spacing.sm },
   recommendationCopy: { flex: 1, minWidth: 0, gap: Spacing.sm },
-  recommendationXp: { flexShrink: 0, paddingTop: Spacing.xs },
-  recommendationFooter: { zIndex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md, paddingHorizontal: 0 },
-  recommendationFooterExpanded: { flexDirection: 'column', alignItems: 'stretch', gap: Spacing.sm },
+  recommendationCopyStacked: { flex: 0 },
+  recommendationXp: { flexShrink: 0, textAlign: 'right' },
+  recommendationFooter: { zIndex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
+  recommendationFooterStacked: { flexDirection: 'column', alignItems: 'stretch', gap: Spacing.xs },
   recommendationReason: { flex: 1, minWidth: 0, minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.xs, paddingHorizontal: Spacing.xs, borderWidth: Borders.focus, borderRadius: Radii.sm },
-  recommendationView: { alignSelf: 'flex-end', minWidth: 108, flexDirection: 'row-reverse', paddingHorizontal: Spacing.xs },
-  questArt: { position: 'absolute', zIndex: 0, bottom: -Spacing.section, right: -Spacing.page, width: Spacing.page * 5, height: Spacing.page * 5, alignItems: 'center', justifyContent: 'center', opacity: 0.2 },
+  recommendationReasonStacked: { flex: 0, alignSelf: 'stretch' },
+  recommendationView: { flexShrink: 0, maxWidth: '100%', alignSelf: 'flex-end', flexDirection: 'row-reverse', paddingHorizontal: Spacing.xs },
+  questArt: { position: 'absolute', zIndex: 0, bottom: -Spacing.section, right: -Spacing.page, width: Spacing.page * 5, height: Spacing.page * 5, alignItems: 'center', justifyContent: 'center', opacity: 0.1 },
   book: { width: Spacing.page * 5, height: Spacing.page * 5, transform: [{ rotate: '15deg' }] },
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   stat: { flexGrow: 1, flexBasis: '45%', minWidth: 0, minHeight: Controls.minHeight * 2 + Spacing.lg, alignItems: 'center', justifyContent: 'center', padding: Spacing.md, gap: Spacing.sm },
