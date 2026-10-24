@@ -495,7 +495,7 @@ test('a delayed location read cannot leak old places after switching accounts', 
   const query = { select: () => query, eq: () => query, order: () => queryResult };
   const mod = load('src/hooks/use-user-locations.ts', {
     react: h.react, '@/lib/account-access': access,
-    '@/hooks/use-user-data': { useUserData: () => ({ user: currentUser }) },
+    '@/context/user-data-context': { useUserData: () => ({ user: currentUser }) },
     '@/supabase': { supabase: { from: () => query } },
   });
   h.mount(() => mod.useUserLocations());

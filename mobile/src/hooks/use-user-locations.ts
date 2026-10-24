@@ -1,7 +1,7 @@
 import { useCallback, useState, useMemo, useLayoutEffect } from 'react';
 import { SessionFence } from '@/lib/account-access';
 import { supabase } from '@/supabase';
-import { useUserData } from '@/hooks/use-user-data';
+import { useUserData } from '@/context/user-data-context';
 
 export type UserLocation = {
   id: string;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/supabase';
-import { useUserData } from '@/hooks/use-user-data';
+import { useUserData } from '@/context/user-data-context';
 export type QuestCategory = { id: string; name: string; owner_id: string | null };
 export function useQuestCategories() {
   const { user } = useUserData();
