@@ -7,7 +7,7 @@ import { Button } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
 import { useUserData, type Quest } from '@/hooks/use-user-data';
-import { useQuestPriority } from '@/context/quest-priority-context';
+import { useQuestBrowsing } from '@/hooks/use-quest-browsing';
 import { questNeedsOpen, retryQuestNotifications, useQuestNotificationStatus } from '@/lib/quest-notifications';
 
 const dateLabel = (value: string) => new Date(value).toLocaleString(undefined, {
@@ -22,13 +22,13 @@ export default function NotificationsScreen() {
   const styles = useBeeStyles(makeStyles);
   const { user, completionHistory, completeQuest, refresh, isLoading, isRefreshing, workspaceErrors, retryWorkspace } = useUserData();
   const error = workspaceErrors.quests;
-  const { ranked } = useQuestPriority();
+  const { items } = useQuestBrowsing();
   const status = useQuestNotificationStatus();
   const busy = useRef(false);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const active = ranked.filter(item => item.quest.status === 'active');
+  const active = items.filter(item => item.quest.status === 'active');
   const open = (quest: Quest) => router.push({ pathname: '/quests', params: { questId: quest.id } });
   const act = async (quest: Quest) => {
     if (questNeedsOpen(quest)) { open(quest); return; }

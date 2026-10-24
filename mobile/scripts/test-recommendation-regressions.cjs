@@ -3,7 +3,8 @@ const { hooks, load } = require('./test-harness.cjs');
 const time = load('src/lib/quest-time.ts');
 const facts = load('src/lib/recommendation-facts.ts');
 const reasons = load('src/lib/recommendation-reasons.ts');
-const engine = load('src/lib/quest-priority.ts', { './quest-time':time, './recommendation-facts':facts, './recommendation-reasons':reasons });
+const questContext = load('src/lib/quest-context.ts', { './recommendation-facts':facts });
+const engine = load('src/lib/quest-priority.ts', { './quest-time':time, './recommendation-facts':facts, './recommendation-reasons':reasons, './quest-context':questContext });
 const snapshots = load('src/lib/recommendation-snapshot.ts', { './quest-priority':engine, './recommendation-facts':facts });
 const discovery = load('src/lib/quest-discovery.ts', { './quest-time':time });
 const snooze = load('src/lib/recommendation-snooze.ts');
@@ -16,6 +17,36 @@ const place = {id:'p',name:'Library',latitude:14.6,longitude:121,radius:100,is_a
 const rank = (quests, extra={}) => engine.prioritizeQuests(quests,{now,coords:null,locationUpdatedAt:null,places:[place],history:[],facts:quests.map(quest=>f(quest)),candidatesUpdatedAt:now,factsUpdatedAt:now,profileUpdatedAt:now,placesUpdatedAt:now,...extra});
 const cases=[], test=(name,run)=>cases.push({name,run});
 const ok=data=>({data,error:null});
+test('core browsing keeps all workspace statuses and filters without scoring or fabricated prerequisite facts',()=>{
+ const items=[q('active'),q('pending',{status:'pending'}),q('revision',{status:'rejected'}),q('future',{scheduled_at:iso(120)}),q('child',{prerequisite_quest_id:'absent'})];
+ const context={now,coords:null,locationUpdatedAt:null,places:[],placesUpdatedAt:now};
+ const browse=questContext.browseQuests(items,[],null,context);
+ assert.equal(browse.length,items.length);assert.equal(browse.find(i=>i.quest.id==='child').prerequisiteState,'unknown');
+ assert.equal(browse.find(i=>i.quest.id==='child').locked,true);assert.equal(browse.find(i=>i.quest.id==='active').locked,false);
+ assert.equal(discovery.filterAllQuests(browse,{...discovery.DEFAULT_FILTERS,status:'pending'},now)[0].quest.id,'pending');
+ assert.equal(discovery.filterAllQuests(browse,{...discovery.DEFAULT_FILTERS,time:'scheduled'},now)[0].quest.id,'future');
+ const child=items.at(-1),fact=f(child,{prerequisite_status:'completed'});
+ assert.equal(questContext.browseQuests(items,[fact],now,context).at(-1).prerequisiteState,'completed');
+ for(const [value,at] of [[fact,now-300001],[{...fact,updated_at:iso(1)},now]])assert.equal(questContext.browseQuests(items,[value],at,context).at(-1).prerequisiteState,'unknown');
+});
+test('core nearby filtering and scored proximity agree for GPS, events, permission loss and stale places',()=>{
+ const quest=q('near',{location_id:'p'});
+ for(const extra of [{coords:place,locationUpdatedAt:now},{coords:null,geofenceEvents:{p:{inside:true,timestamp:now}}},{coords:place,locationUpdatedAt:now-1000,geofenceEvents:{p:{inside:false,timestamp:now}}},{coords:null},{placesUpdatedAt:now-300001}]){
+  const context={now,coords:null,locationUpdatedAt:null,places:[place],placesUpdatedAt:now,...extra};
+  const browse=questContext.browseQuests([quest],[f(quest)],now,context);
+  assert.equal(browse[0].nearby,rank([quest],extra)[0].nearby);
+  assert.equal(discovery.filterAllQuests(browse,{...discovery.DEFAULT_FILTERS,nearby:true},now).length,browse[0].nearby?1:0);
+ }
+});
+test('core browsing hook has no scoring dependency, fences owners and expires prerequisite facts on its own clock',async()=>{
+ const h=hooks();let at=Date.now(),tick;const child=q('child',{prerequisite_quest_id:'parent'});
+ let data={user:{id:'a'},quests:[child],recommendationData:{facts:[f(child,{prerequisite_status:'completed'})],factsUpdatedAt:at},retryWorkspace(){}};
+ const mod=load('src/hooks/use-quest-browsing.ts',{react:h.react,'react-native':{AppState:{currentState:'active',addEventListener:()=>({remove(){}})}},'@/context/user-data-context':{useUserData:()=>data},'@/context/location-context':{useLocationContext:()=>({coords:null,locationUpdatedAt:null,locations:[],locationsUpdatedAt:null,permissionStatus:'denied',geofenceEvents:{}})},'@/lib/quest-context':questContext},{Date:{now:()=>at},setInterval:fn=>{tick=fn;return 1},clearInterval(){}});
+ h.mount(()=>mod.useQuestBrowsing());assert.equal(h.value.items[0].prerequisiteState,'completed');
+ at+=300001;tick();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.value.items[0].prerequisiteState,'unknown');
+ data={...data,user:{id:'b'}};h.render();assert.equal(h.value.items.length,0);
+ data={...data,quests:[{...child,owner_id:'b'}],recommendationData:{facts:[],factsUpdatedAt:null}};h.render();assert.equal(h.value.items[0].quest.owner_id,'b');assert.equal(h.value.items[0].locked,true);h.unmount();
+});
 function client(handler) {
  const query=(name,args)=>{
   const result=()=>Promise.resolve().then(()=>handler(name,args)??ok([]));

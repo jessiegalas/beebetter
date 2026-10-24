@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { clearGeofenceEvents } from '@/lib/geofence-events';
-import { AppState } from 'react-native';
+import { clearGeofenceEvents, readGeofenceEvents, subscribeGeofenceEvents, type GeofenceEvents } from '@/lib/geofence-events';
+import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { useCurrentLocation } from '@/hooks/use-current-location';
 import { syncGeofences, unregisterAllGeofences } from '@/hooks/use-geofencing';
@@ -28,6 +28,7 @@ interface LocationContextType {
   permissionStatus: 'granted' | 'denied' | 'undetermined' | null;
   isTracking: boolean;
   locationError: string | null;
+  geofenceEvents: GeofenceEvents;
 
   // Actions
   requestPermissions: () => Promise<Location.PermissionStatus>;
@@ -71,6 +72,30 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const initialization = useMemo(() => ({ user }), [user]);
   const [initializedFor, setInitializedFor] = useState<object | null>(null);
   const hasInitialized = initializedFor === initialization;
+  const [eventSnapshot, setEventSnapshot] = useState<{ lifetime: object; events: GeofenceEvents } | null>(null);
+  const geofenceEvents = useMemo(() => eventSnapshot?.lifetime === initialization ? eventSnapshot.events : {}, [eventSnapshot, initialization]);
+
+  // Share one account-fenced event reader with browsing and recommendations.
+  useEffect(() => {
+    if (!user) return;
+    let alive = true, readVersion = 0;
+    const update = () => {
+      const version = ++readVersion;
+      void readGeofenceEvents().then(events => {
+        if (alive && version === readVersion) setEventSnapshot({ lifetime: initialization, events });
+      }).catch(() => {});
+    };
+    update();
+    const timer = setInterval(() => { if (AppState.currentState === 'active') update(); }, 30_000);
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') update(); });
+    const unsubscribe = subscribeGeofenceEvents(events => {
+      if (!alive) return;
+      readVersion += 1; setEventSnapshot({ lifetime: initialization, events });
+    });
+    if (Platform.OS === 'web' && typeof window !== 'undefined') window.addEventListener('online', update);
+    return () => { alive = false; clearInterval(timer); subscription.remove(); unsubscribe();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') window.removeEventListener('online', update); };
+  }, [user, initialization]);
 
   // Each admitted account owns its initialization. Check after every await.
   useEffect(() => {
@@ -138,6 +163,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     permissionStatus,
     isTracking,
     locationError,
+    geofenceEvents,
 
     // Actions
     requestPermissions,
@@ -163,6 +189,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     permissionStatus,
     isTracking,
     locationError,
+    geofenceEvents,
     requestPermissions,
     getCurrentPosition,
     startTracking,

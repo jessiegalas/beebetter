@@ -7,6 +7,11 @@ function priorityFixture(state) {
 }
 function load(relative,mocks={},globals={}) {
  if(mocks['@/context/quest-priority-context']) { const original=mocks['@/context/quest-priority-context']; mocks={...mocks,'@/context/quest-priority-context':{...original,useQuestPriority:()=>priorityFixture(original.useQuestPriority())}}; }
+ if(relative==='src/app/(tabs)/quests.tsx'||relative==='src/app/notifications.tsx') mocks={...mocks,'@/hooks/use-quest-browsing':rawLoad('src/hooks/use-quest-browsing.ts',{
+  react:mocks.react,'react-native':{AppState:{currentState:'active',addEventListener:()=>({remove(){}})}},
+  '@/context/user-data-context':mocks['@/hooks/use-user-data'],'@/context/location-context':mocks['@/context/location-context'],
+  '@/lib/quest-context':rawLoad('src/lib/quest-context.ts',{'./recommendation-facts':rawLoad('src/lib/recommendation-facts.ts')}),
+ })};
  return rawLoad(relative,mocks,globals);
 }
 const pause = () => new Promise(resolve => setTimeout(resolve, 5));
@@ -32,11 +37,15 @@ const quests = [
  {id:'q4',title:'Pending step',category:'Social',status:'pending',xp:20},
  {id:'q5',title:'Completed step',category:'Social',status:'completed',xp:20},
 ];
-quests.forEach(q => { q.created_at = '2026-10-06T00:00:00Z'; });
+quests.forEach(q => { q.owner_id='a'; q.created_at=q.updated_at='2026-10-06T00:00:00Z'; });
 function questScreen(overrides = {}) {
  const h=hooks(), routes=[],events=[],alerts=[],data={user:{id:'a'},levelProgress:{level:2},questsHasMore:false,isLoading:false,isRefreshing:false,workspaceErrors:{},refresh:async()=>{},retryWorkspace:async scope=>routes.push(['retry',scope]),completeQuest:async()=>({success:true}),deleteQuest:async()=>{},...overrides};
- let params={}, candidates=quests;const snoozed=new Set();const reasonSets=new Map();const router={push:r=>routes.push(r),setParams:p=>{params={...params,...p};h.render();}};
- const ranked=()=>candidates.map(q=>({quest:q,locked:q.prerequisiteState==='incomplete'||q.prerequisiteState==='unknown'||!!q.prerequisite_quest_id,prerequisiteState:q.prerequisiteState??(q.prerequisite_quest_id?'unknown':'none'),evidence:q.prerequisiteState==='incomplete'?[{code:'prerequisite_incomplete',values:{title:'Prepare'}}]:[],reasons:reasonSets.get(q.id)||['Fits your goal'],reasonCodes:['goal_alignment'],tier:'available'}));
+ let params={}, candidates=quests,scoring=true;const snoozed=new Set();const reasonSets=new Map();const router={push:r=>routes.push(r),setParams:p=>{params={...params,...p};h.render();}};
+ const updateWorkspace=()=>{
+  data.quests=candidates.map(q=>({...q,owner_id:data.user?.id??q.owner_id,prerequisite_quest_id:q.prerequisiteState&&q.prerequisiteState!=='none'?(q.prerequisite_quest_id??'parent'):q.prerequisite_quest_id}));
+  data.recommendationData={factsUpdatedAt:Date.now(),facts:data.quests.map(q=>({quest_id:q.id,status:q.status,updated_at:q.updated_at,prerequisite_quest_id:q.prerequisite_quest_id??null,prerequisite_status:q.prerequisiteState==='completed'?'completed':q.prerequisiteState==='incomplete'?'active':null,prerequisite_title:'Prepare'}))};
+ };updateWorkspace();
+ const ranked=()=>scoring?data.quests.map(q=>({quest:q,locked:q.prerequisiteState==='incomplete'||q.prerequisiteState==='unknown'||(!q.prerequisiteState&&!!q.prerequisite_quest_id),prerequisiteState:q.prerequisiteState??(q.prerequisite_quest_id?'unknown':'none'),evidence:q.prerequisiteState==='incomplete'?[{code:'prerequisite_incomplete',values:{title:'Prepare'}}]:[],reasons:reasonSets.get(q.id)||['Fits your goal'],reasonCodes:['goal_alignment'],tier:'available'})):[];
  const mod=load('src/app/(tabs)/quests.tsx',{...basics(h),'react-native':{...native,Alert:{alert:(...a)=>alerts.push(a)}},'expo-router':{router,useLocalSearchParams:()=>params},'expo-image-picker':{},'expo-document-picker':{},'@/hooks/use-user-data':{useUserData:()=>data},'@/hooks/use-quest-categories':{useQuestCategories:()=>({categories:[]})},'@/context/quest-priority-context':{useQuestPriority:()=>{const state=priorityFixture({ranked:ranked(),locationAvailable:false,now:Date.now(),contextError:data.contextError??null,retryContext:()=>data.retryWorkspace('quests')});return {...state,recommendations:state.recommendations.filter(item=>!snoozed.has(item.quest.id)),snoozeQuest(id){snoozed.add(id);h.render();}};}},'@/lib/quest-discovery':load('src/lib/quest-discovery.ts', { './quest-time': load('src/lib/quest-time.ts') }), '@/hooks/use-recommendation-measurement':{useRecommendationMeasurement:()=>({active:true,setVisible(){},action(item,rank,eventType){events.push({questId:item.quest.id,rankPosition:rank,reasonCodes:item.reasonCodes,eventType});}})}});
  h.mount(()=>mod.default().type());
  const list=()=>find(h.value,n=>n.type==='FlatList');const row=id=>{const p=list().props;const index=p.data.findIndex(item=>item.quest.id===id);return p.renderItem({item:p.data[index],index});};const detail=()=>find(h.value,n=>typeof n.type==='function'&&n.props.details);
@@ -53,9 +62,31 @@ function questScreen(overrides = {}) {
   };
   ch.mount(()=>expand(components[element.type.name](element.props)));return ch;
  };
- return {h,data,list,row,detail,routes,events,alerts,router,renderCard,accountKey:()=>mod.default().props.key,setCandidates(q){candidates=q;h.render();},setReasons(id,reasons){reasonSets.set(id,reasons);h.render();}};
+ return {h,data,list,row,detail,routes,events,alerts,router,renderCard,accountKey:()=>mod.default().props.key,setCandidates(q){candidates=q;updateWorkspace();h.render();},setScoring(enabled){scoring=enabled;h.render();},setReasons(id,reasons){reasonSets.set(id,reasons);h.render();}};
 }
 const cases=[];const test=(name,fn)=>cases.push({name,fn});
+test('All Quests and deep-linked details use workspace records when scoring returns no results',async()=>{
+ const s=questScreen();s.setScoring(false);s.router.setParams({questId:'q2'});
+ assert.equal(s.detail().props.quest.id,'q2');assert.equal(s.detail().props.reasons.length,0);
+ const detailHooks=hooks();detailHooks.mount(()=>s.detail().type(s.detail().props));
+ assert.equal(button(detailHooks.value,'Submit proof and complete').props.disabled,true);detailHooks.unmount();
+ s.router.setParams({questId:''});viewTab(s.h.value,'All Quests').props.onPress();await flush();
+ assert.equal(s.list().props.data.length,5);assert.equal(s.row('q4').props.quest.status,'pending');
+ s.row('q1').props.onOpen();s.detail().props.onEdit();assert.equal(s.routes.at(-1).pathname,'/add-quest');assert.equal(s.routes.at(-1).params.id,'q1');
+ s.router.setParams({questId:'q3'});assert.equal(s.detail().props.prerequisiteState,'unknown');assert.equal(s.detail().props.locked,true);
+ s.data.recommendationData={facts:[],factsUpdatedAt:null};s.h.render();
+ assert.equal(s.detail().props.prerequisiteState,'unknown');
+ s.router.setParams({questId:''});s.row('q1').props.onComplete();await flush();assert(find(s.h.value,n=>n.type==='QuestReward'));
+ s.h.unmount();
+});
+test('notifications list workspace quests and open exact proof details without recommendation results',async()=>{
+ const h=hooks(),routes=[],completed=[];
+ const data={user:{id:'a'},quests,completionHistory:[],workspaceErrors:{},recommendationData:{facts:[],factsUpdatedAt:null},retryWorkspace(){},refresh(){},completeQuest:async id=>{completed.push(id);return{success:true}}};
+ const mod=load('src/app/notifications.tsx',{...basics(h),'@/hooks/use-user-data':{useUserData:()=>data},'expo-router':{router:{push:r=>routes.push(r)}},'@/context/quest-priority-context':{useQuestPriority(){throw Error('Notifications must not consume ranking')}},'@/lib/quest-notifications':{useQuestNotificationStatus:()=> 'ready',retryQuestNotifications(){},questNeedsOpen:q=>q.requires_proof||q.status!=='active'||!!q.prerequisite_quest_id}});
+ h.mount(()=>mod.default());
+ find(h.value,n=>n.props?.accessibilityLabel==='Open '+quests[1].title).props.onPress();assert.equal(routes.at(-1).pathname,'/quests');assert.equal(routes.at(-1).params.questId,'q2');assert.equal(completed.length,0);
+ find(h.value,n=>n.props?.accessibilityLabel==='Complete '+quests[0].title).props.onPress();await flush();assert.deepEqual(completed,['q1']);h.unmount();
+});
 test('Home keeps recommendation explanations and refresh diagnostics in the details sheet',async()=>{
  const h=hooks();let scale=1,width=320;
  const contextError='Context is out of date. Refresh to check what fits now';

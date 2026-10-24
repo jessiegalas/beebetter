@@ -515,15 +515,35 @@ test('location initialization cannot start tracking after logout, even if cleanu
   const stop = async () => { stops++; throw new Error('Native removal failure'); };
   const mod = load('src/context/location-context.tsx', {
     react: h.react, 'expo-location': {},
-    'react-native': { AppState: { currentState: 'background', addEventListener: () => ({ remove() {} }) } },
+    'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'background', addEventListener: () => ({ remove() {} }) } },
     '@/hooks/use-user-locations': { useUserLocations: () => ({ user: currentUser, locations: [], activeLocations: [], fetchLocations: refresh }) },
     '@/hooks/use-current-location': { useCurrentLocation: () => ({ startTracking: start, stopTracking: stop }) },
     '@/hooks/use-geofencing': { unregisterAllGeofences: async () => { unregisters++; }, syncGeofences: async () => {} },
-    '@/lib/geofence-events': { clearGeofenceEvents: async () => { clears++; throw new Error('Storage unavailable'); } },
+    '@/lib/geofence-events': { clearGeofenceEvents: async () => { clears++; throw new Error('Storage unavailable'); }, readGeofenceEvents: async () => ({}), subscribeGeofenceEvents: () => () => {} },
   });
   h.mount(() => mod.LocationProvider({ children: null })); await flush();
   currentUser = null; h.render(); wait.resolve(); await flush();
   assert.equal(starts, 0); assert(stops > 0); assert(unregisters > 0); assert(clears > 0); h.unmount();
+});
+test('shared geofence context rejects delayed reads and retired subscriptions across accounts', async () => {
+  const h = hooks(), wait = deferred(); let currentUser = user('a'), listener; const retired = [];
+  const noWork = async () => {};
+  const mod = load('src/context/location-context.tsx', {
+    react: h.react, 'expo-location': {},
+    'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'background', addEventListener: () => ({ remove() {} }) } },
+    '@/hooks/use-user-locations': { useUserLocations: () => ({ user: currentUser, locations: [], activeLocations: [], fetchLocations: noWork }) },
+    '@/hooks/use-current-location': { useCurrentLocation: () => ({ startTracking: noWork, stopTracking: noWork }) },
+    '@/hooks/use-geofencing': { unregisterAllGeofences: noWork, syncGeofences: noWork },
+    '@/lib/geofence-events': { clearGeofenceEvents: noWork,
+      readGeofenceEvents: () => currentUser.id === 'a' ? wait.promise : Promise.resolve({ b: { inside: true, timestamp: 2 } }),
+      subscribeGeofenceEvents: callback => { listener = callback; return () => retired.push(callback); } },
+  });
+  h.mount(() => mod.LocationProvider({ children: null })); const oldListener = listener;
+  currentUser = user('b'); h.render(); assert.equal(Object.keys(h.value.geofenceEvents).length, 0);
+  await flush(); assert.equal(h.value.geofenceEvents.b.inside, true);
+  oldListener({ a: { inside: true, timestamp: 1 } }); wait.resolve({ a: { inside: true, timestamp: 1 } }); await flush();
+  assert.equal(h.value.geofenceEvents.a, undefined); assert.equal(h.value.geofenceEvents.b.inside, true);
+  currentUser = null; h.render(); assert.equal(Object.keys(h.value.geofenceEvents).length, 0); h.unmount(); assert.equal(retired.length, 2);
 });
 for (const foreground of ['denied', 'granted']) test('foreground ' + foreground + ' with background denied remains safe', async () => {
   const h = hooks(); let starts = 0, removals = 0;

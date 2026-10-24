@@ -2,9 +2,10 @@ import type { Quest } from '../context/user-data-context';
 import { isStoredPreferredTime, timestamp } from './quest-time';
 import { factMatches, isFresh, type RecommendationFact } from './recommendation-facts';
 import { FALLBACK_REASON, formatRecommendationEvidence, meaningfulGoalTerms, type EvidenceCode, type RecommendationEvidence } from './recommendation-reasons';
+import { questPrerequisite, questProximity, type ContextPlace, type Position, type PrerequisiteState } from './quest-context';
+export { distanceMeters, validPosition, hasFreshPosition } from './quest-context';
+export type { ContextPlace, Position, PrerequisiteState } from './quest-context';
 export type CompletionRecord = { id: string; quest_id: string | null; title: string; category: Quest['category']; completed_at: string };
-export type ContextPlace = { id: string; name: string; latitude: number; longitude: number; radius: number; is_active: boolean };
-export type Position = { latitude: number; longitude: number; accuracy?: number | null };
 export type RecommendationContext = {
   checkIn: { check_in_date: string; overall_wellbeing: number; stress_level: number; energy_level: number; motivation_level: number | null } | null;
   reflection: { quest_id: string | null; period_end: string; planning_score: number; follow_through_score: number; confidence_score: number } | null;
@@ -18,7 +19,6 @@ export type PriorityContext = {
 };
 export type RecommendationReasonCode = EvidenceCode;
 export type QuestTier = 'now' | 'next' | 'other' | 'history';
-export type PrerequisiteState = 'none' | 'completed' | 'incomplete' | 'unknown';
 export type RankedQuest = {
   quest: Quest; tier: QuestTier; reasons: string[]; constraints: string[]; evidence: RecommendationEvidence[];
   reasonCodes: RecommendationReasonCode[]; prerequisiteState: PrerequisiteState; fresh: boolean;
@@ -28,25 +28,13 @@ const MINUTE = 60_000, DAY = 1440 * MINUTE;
 export const LOCATION_MAX_AGE = 5 * MINUTE;
 export const TIER_LABELS: Record<QuestTier, string> = { now: 'Recommended now', next: 'Upcoming', other: 'Other options', history: 'Review & completed' };
 export const TIER_ORDER: QuestTier[] = ['now', 'next', 'other', 'history'];
-export function validPosition(p: Position): boolean {
-  return Number.isFinite(p.latitude) && Math.abs(p.latitude) <= 90 && Number.isFinite(p.longitude) && Math.abs(p.longitude) <= 180 &&
-    (p.accuracy == null || (Number.isFinite(p.accuracy) && p.accuracy >= 0));
-}
-export function distanceMeters(a: Position, b: Position): number {
-  const rad = Math.PI / 180;
-  const h = Math.sin((b.latitude - a.latitude) * rad / 2) ** 2 + Math.cos(a.latitude * rad) * Math.cos(b.latitude * rad) * Math.sin((b.longitude - a.longitude) * rad / 2) ** 2;
-  return 6371000 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, h))));
-}
-export function hasFreshPosition(c: Pick<PriorityContext, 'coords' | 'locationUpdatedAt' | 'now'>): boolean {
-  return !!c.coords && validPosition(c.coords) && isFresh(c.locationUpdatedAt, c.now);
-}
 /** Candidates remain browsable; authoritative facts establish prerequisite eligibility. */
 export function prioritizeQuests(quests: Quest[], c: PriorityContext): RankedQuest[] {
   const places = new Map(c.places.map(p => [p.id, p]));
   const facts = new Map((c.facts ?? []).map(f => [f.quest_id, f]));
   const goalTerms = new Set(isFresh(c.profileUpdatedAt, c.now) ? meaningfulGoalTerms(c.personalGoal ?? '') : []);
   const ranked = quests.map((quest): RankedQuest => {
-    let score = 8, nearby = false, distance: number | null = null;
+    let score = 8;
     const evidence: RecommendationEvidence[] = [];
     const add = (contribution: number, code: EvidenceCode, values: RecommendationEvidence['values'] = {}, kind: RecommendationEvidence['kind'] = contribution < 0 ? 'constraint' : 'positive') => {
       score += contribution; evidence.push({ contribution, code, values, kind });
@@ -54,27 +42,18 @@ export function prioritizeQuests(quests: Quest[], c: PriorityContext): RankedQue
     const fact = facts.get(quest.id);
     const factsValid = isFresh(c.factsUpdatedAt, c.now) && factMatches(quest, fact);
     const fresh = isFresh(c.candidatesUpdatedAt, c.now) && factsValid;
-    const prerequisiteState: PrerequisiteState = !quest.prerequisite_quest_id ? 'none' : !factsValid || !fact?.prerequisite_status ? 'unknown' : fact.prerequisite_status === 'completed' ? 'completed' : 'incomplete';
-    const locked = prerequisiteState === 'incomplete' || prerequisiteState === 'unknown';
+    const { prerequisiteState, locked } = questPrerequisite(quest, fact, c.factsUpdatedAt, c.now);
     if (!isFresh(c.candidatesUpdatedAt, c.now)) add(0, 'data_stale', {}, 'constraint');
     if (!factsValid) add(0, 'facts_unknown', {}, 'constraint');
     if (locked) add(prerequisiteState === 'incomplete' ? -35 : 0, prerequisiteState === 'incomplete' ? 'prerequisite_incomplete' : 'prerequisite_unknown', { title: fact?.prerequisite_title ?? undefined }, 'constraint');
-    let locationConflict = false;
-    if (quest.location_id) {
-      const place = places.get(quest.location_id), event = c.geofenceEvents?.[quest.location_id];
-      const usableGPS = !!place && hasFreshPosition(c) && !!c.coords && (c.coords.accuracy == null || c.coords.accuracy <= Math.max(place.radius, 150));
-      if (!place?.is_active || !validPosition(place) || !Number.isFinite(place.radius) || place.radius < 0 || !isFresh(c.placesUpdatedAt, c.now)) {
-        locationConflict = true; add(0, place && !place.is_active ? 'place_inactive' : 'location_unknown', {}, 'constraint');
-      } else if (event && isFresh(event.timestamp, c.now) && event.timestamp > (usableGPS ? c.locationUpdatedAt ?? 0 : 0)) {
-        if (event.inside === true) { nearby = true; add(32, 'location_at', { place: place.name }); }
-        else { locationConflict = true; add(-8, 'location_outside'); }
-      } else if (usableGPS && c.coords) {
-        distance = distanceMeters(c.coords, place); nearby = distance <= place.radius + 500;
-        if (distance <= place.radius) add(32, 'location_at', { place: place.name });
-        else if (nearby) add(14 + 14 * (1 - (distance - place.radius) / 500), 'location_nearby', { place: place.name });
-        else { locationConflict = true; add(-20, 'location_away'); }
-      } else { locationConflict = true; add(0, 'location_unknown', {}, 'constraint'); }
-    }
+    const place = places.get(quest.location_id ?? '');
+    const { fit, nearby, distance } = questProximity(quest, place, c);
+    const locationConflict = ['outside', 'away', 'inactive', 'unknown'].includes(fit);
+    if (fit === 'inside') add(32, 'location_at', { place: place!.name });
+    else if (fit === 'nearby') add(14 + 14 * (1 - (distance! - place!.radius) / 500), 'location_nearby', { place: place!.name });
+    else if (fit === 'outside') add(-8, 'location_outside');
+    else if (fit === 'away') add(-20, 'location_away');
+    else if (fit === 'inactive' || fit === 'unknown') add(0, fit === 'inactive' ? 'place_inactive' : 'location_unknown', {}, 'constraint');
     const deadline = timestamp(quest.deadline_at), due = deadline === null ? null : (deadline - c.now) / MINUTE;
     if (due !== null) {
       if (due < 0) add(46, 'deadline_overdue', { at: quest.deadline_at! });

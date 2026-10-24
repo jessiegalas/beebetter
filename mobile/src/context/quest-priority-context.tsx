@@ -10,12 +10,11 @@ import { recommendedQuests } from '@/lib/quest-discovery';
 import { createSnoozeStore, type Snoozes } from '@/lib/recommendation-snooze';
 import { createRecommendationQueue, type RecommendationEvent } from '@/lib/recommendation-measurement';
 import { recordRecommendationEventV2 } from '@/lib/recommendation-events';
-import { readGeofenceEvents, subscribeGeofenceEvents, type GeofenceEvents } from '@/lib/geofence-events';
 import { getMyRecommendationWellnessContext, subscribeRecommendationContext, type RecommendationWellnessContext } from '@/lib/wellbeing-data';
 
 function usePriorityValue() {
   const { user, profile, quests, completionHistory, recommendationData = EMPTY_RECOMMENDATION_DATA, workspaceErrors, retryWorkspace } = useUserData();
-  const { coords, locationUpdatedAt, locations, permissionStatus, locationsUpdatedAt, locationsError, refreshLocations } = useLocationContext();
+  const { coords, locationUpdatedAt, locations, permissionStatus, locationsUpdatedAt, locationsError, refreshLocations, geofenceEvents } = useLocationContext();
   const [now, setNow] = useState(Date.now);
   const owner = user?.id;
 
@@ -34,8 +33,6 @@ function usePriorityValue() {
   useLayoutEffect(() => { lifetime?.activate(); return () => lifetime?.invalidate(); }, [lifetime]);
   const snoozesReady = !owner || snoozeSnapshot?.owner === owner;
   const snoozes = useMemo(() => snoozeSnapshot?.owner === owner ? snoozeSnapshot?.value ?? {} : {}, [owner, snoozeSnapshot]);
-  const [geofenceSnapshot, setGeofenceSnapshot] = useState<{ owner: string; events: GeofenceEvents } | null>(null);
-  const geofenceEvents = useMemo(() => geofenceSnapshot?.owner === owner ? geofenceSnapshot?.events ?? {} : {}, [geofenceSnapshot, owner]);
   const [wellnessSnapshot, setWellnessSnapshot] = useState<{ owner: string; value: RecommendationWellnessContext } | null>(null);
   const wellness = MOBILE_WELLNESS_AND_SUPPORT_ENABLED && wellnessSnapshot?.owner === owner ? wellnessSnapshot?.value ?? null : null;
   useEffect(() => {
@@ -65,7 +62,7 @@ function usePriorityValue() {
   const [snapshotOwner, setSnapshotOwner] = useState(owner);
   if (snapshotOwner !== owner) {
     setSnapshotOwner(owner); setSnoozeSnapshot(null); setLastSnoozed(null);
-    setStorageError(null); setGeofenceSnapshot(null); setWellnessSnapshot(null);
+    setStorageError(null); setWellnessSnapshot(null);
   }
   useEffect(() => { void Promise.resolve().then(() => saveSnoozes('load')); }, [saveSnoozes]);
   useEffect(() => {
@@ -83,20 +80,17 @@ function usePriorityValue() {
     return () => clearTimeout(timer);
   }, [snoozes, now, saveSnoozes]);
   useEffect(() => {
-    let alive = true, readVersion = 0;
     if (!owner) return;
     const update = () => {
-      const version = ++readVersion; setNow(Date.now());
-      void readGeofenceEvents().then(events => { if (alive && version === readVersion) setGeofenceSnapshot({ owner, events }); }).catch(() => {});
+      setNow(Date.now());
       void saveSnoozes('load');
       void lifetime?.queue?.flush().catch(() => {});
     };
     update();
     const timer = setInterval(() => { if (AppState.currentState === 'active') update(); }, 30_000);
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') update(); });
-    const unsubscribe = subscribeGeofenceEvents(events => { readVersion += 1; setGeofenceSnapshot({ owner, events }); setNow(Date.now()); });
     if (Platform.OS === 'web' && typeof window !== 'undefined') window.addEventListener('online', update);
-    return () => { alive = false; clearInterval(timer); subscription.remove(); unsubscribe();
+    return () => { clearInterval(timer); subscription.remove();
       if (Platform.OS === 'web' && typeof window !== 'undefined') window.removeEventListener('online', update); };
   }, [owner, lifetime, saveSnoozes]);
   // Successful workspace reads also signal native connectivity recovery.

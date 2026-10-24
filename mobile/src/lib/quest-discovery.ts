@@ -1,4 +1,4 @@
-import type { Category, QuestStatus } from '../context/user-data-context';
+import type { Category, Quest, QuestStatus } from '../context/user-data-context';
 import type { RankedQuest } from './quest-priority';
 import { isStoredPreferredTime, timestamp } from './quest-time';
 
@@ -22,10 +22,10 @@ export function recommendedQuests(ranked: RankedQuest[]) {
     (item.prerequisiteState === 'none' || item.prerequisiteState === 'completed'))
     .sort((a, b) => ['now','upcoming','other','revision'].indexOf(recommendationGroup(a)) - ['now','upcoming','other','revision'].indexOf(recommendationGroup(b)));
 }
-export function filterAllQuests(ranked: RankedQuest[], filters: QuestFilters, now: number) {
+export function filterAllQuests<T extends { quest: Quest; nearby: boolean }>(items: T[], filters: QuestFilters, now: number) {
   const start = new Date(now); start.setHours(0, 0, 0, 0);
   const end = new Date(start); end.setDate(end.getDate() + 1);
-  return ranked.filter(({ quest, nearby }) => {
+  return items.filter(({ quest, nearby }) => {
     if (filters.category !== null && quest.category !== filters.category) return false;
     if (filters.status !== 'all' && quest.status !== filters.status) return false;
     if (filters.nearby && !nearby) return false;
