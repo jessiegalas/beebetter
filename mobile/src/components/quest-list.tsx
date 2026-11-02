@@ -5,7 +5,7 @@ import { QuestCard as WizardCard, QuestText } from '@/components/quest-wizard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useAppColorScheme, useBeePalette } from '@/constants/theme';
 import type { PrerequisiteState } from '@/lib/quest-priority';
-import { prerequisiteMessage } from '@/lib/recommendation-reasons';
+import { prerequisiteMessage } from '@/lib/quest-context';
 import type { Quest } from '@/hooks/use-user-data';
 
 export function QuestListHeader({ onSettings, compact = false }: { onSettings: () => void; compact?: boolean }) {

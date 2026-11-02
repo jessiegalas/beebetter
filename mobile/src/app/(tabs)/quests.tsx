@@ -16,8 +16,7 @@ import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useQuestBrowsing } from '@/hooks/use-quest-browsing';
 import { useQuestPriority } from '@/context/quest-priority-context';
 import { activeFilterCount, DEFAULT_FILTERS, filterAllQuests, recommendationGroup, GROUP_LABELS, type QuestFilters } from '@/lib/quest-discovery';
-import type { PrerequisiteState, QuestBrowseItem } from '@/lib/quest-context';
-import { prerequisiteMessage } from '@/lib/recommendation-reasons';
+import { prerequisiteMessage, type PrerequisiteState, type QuestBrowseItem } from '@/lib/quest-context';
 import { useRecommendationMeasurement } from '@/hooks/use-recommendation-measurement';
 const RECOMMENDATION_VIEWABILITY = { itemVisiblePercentThreshold: 50 };
 const statusCopy: Record<QuestStatus, {

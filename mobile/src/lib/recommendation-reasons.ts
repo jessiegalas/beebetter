@@ -1,10 +1,4 @@
-import type { PrerequisiteState } from './quest-priority';
-
-export function prerequisiteMessage(state: PrerequisiteState, title?: string): string {
-  if (state === 'unknown') return 'Prerequisite status could not be verified. Refresh to check.';
-  if (state === 'incomplete') return 'Complete the prerequisite quest first' + (title ? ': ' + title : '.');
-  return '';
-}
+import { prerequisiteMessage } from './quest-context';
 export type EvidenceCode = 'location_at' | 'location_nearby' | 'location_outside' | 'location_away' | 'location_unknown' | 'place_inactive' |
   'deadline_overdue' | 'deadline_soon' | 'deadline_day' | 'deadline_days' | 'schedule_now' | 'schedule_soon' | 'schedule_later' | 'schedule_earlier' |
   'preferred_now' | 'preferred_soon' | 'preferred_outside' | 'importance_high' | 'importance_low' | 'activity_gap' | 'activity_variety' | 'activity_recent' |

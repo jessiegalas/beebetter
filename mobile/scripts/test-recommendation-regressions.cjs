@@ -2,8 +2,8 @@ const assert = require('node:assert/strict');
 const { hooks, load } = require('./test-harness.cjs');
 const time = load('src/lib/quest-time.ts');
 const facts = load('src/lib/recommendation-facts.ts');
-const reasons = load('src/lib/recommendation-reasons.ts');
 const questContext = load('src/lib/quest-context.ts', { './recommendation-facts':facts });
+const reasons = load('src/lib/recommendation-reasons.ts', { './quest-context':questContext });
 const engine = load('src/lib/quest-priority.ts', { './quest-time':time, './recommendation-facts':facts, './recommendation-reasons':reasons, './quest-context':questContext });
 const snapshots = load('src/lib/recommendation-snapshot.ts', { './quest-priority':engine, './recommendation-facts':facts });
 const discovery = load('src/lib/quest-discovery.ts', { './quest-time':time });
@@ -301,9 +301,9 @@ test('enabled provider resumes preserved events and prunes expired entries befor
  p.h.value.recordEvent(event('new',Date.now()));await settle();assert.deepEqual(sent.map(e=>e.impressionId),['valid','new']);p.h.unmount();
 });
 test('prerequisite formatter distinguishes all states without asserting an unknown status',()=>{
- assert.equal(reasons.prerequisiteMessage('unknown'),'Prerequisite status could not be verified. Refresh to check.');
- assert.equal(reasons.prerequisiteMessage('incomplete','Prepare'),'Complete the prerequisite quest first: Prepare');
- for(const state of ['none','completed'])assert.equal(reasons.prerequisiteMessage(state,'Prepare'),'');
+ assert.equal(questContext.prerequisiteMessage('unknown'),'Prerequisite status could not be verified. Refresh to check.');
+ assert.equal(questContext.prerequisiteMessage('incomplete','Prepare'),'Complete the prerequisite quest first: Prepare');
+ for(const state of ['none','completed'])assert.equal(questContext.prerequisiteMessage(state,'Prepare'),'');
 });
 test('source refreshes between 30-second clock ticks stay fresh throughout repeated idle polls',()=>{
  const quest=q('near',{location_id:'p',deadline_at:iso(60)}),tick=now;

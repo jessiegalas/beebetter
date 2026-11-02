@@ -29,6 +29,12 @@ export function questPrerequisite(quest: Quest, fact: RecommendationFact | undef
     prerequisiteTitle: verified ? fact?.prerequisite_title ?? undefined : undefined };
 }
 
+export function prerequisiteMessage(state: PrerequisiteState, title?: string): string {
+  if (state === 'unknown') return 'Prerequisite status could not be verified. Refresh to check.';
+  if (state === 'incomplete') return 'Complete the prerequisite quest first' + (title ? ': ' + title : '.');
+  return '';
+}
+
 /** Location evidence is independent of recommendation scores and completion authorization. */
 export function questProximity(quest: Quest, place: ContextPlace | undefined, c: QuestLocationContext): {
   fit: 'none' | 'inside' | 'nearby' | 'outside' | 'away' | 'inactive' | 'unknown'; nearby: boolean; distance: number | null;
