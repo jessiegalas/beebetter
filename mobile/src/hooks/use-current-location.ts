@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 import type { UserLocation } from './use-user-locations';
-import { distanceMeters } from '@/lib/quest-priority';
+import { distanceMeters } from '@/lib/quest-context';
 
 export function useCurrentLocation(userLocations: UserLocation[] = [], enabled = true) {
   const [coords, setCoords] = useState<Location.LocationObjectCoords | null>(null);

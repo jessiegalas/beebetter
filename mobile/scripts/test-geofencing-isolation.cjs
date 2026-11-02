@@ -30,7 +30,7 @@ function fixture({ enabled = true, running = false, available = true, background
   // Foreground GPS has no TaskManager mock and cannot depend on background startup.
   const foreground = load('src/hooks/use-current-location.ts', {
     react: h.react, 'react-native': { Platform: { OS: 'android' } }, 'expo-location': native,
-    '@/lib/quest-priority': { distanceMeters: () => 0 },
+    '@/lib/quest-context': { distanceMeters: () => 0 },
   });
   let current;
   const feature = load('src/components/geofencing-feature.tsx', {

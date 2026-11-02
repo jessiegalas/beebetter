@@ -488,7 +488,7 @@ test('pending Android permission result cannot start a watcher after logout', as
   const h = hooks(); const permission = deferred(); let starts = 0, enabled = true;
   const mod = load('src/hooks/use-current-location.ts', {
     react: h.react, 'react-native': { Platform: { OS: 'android' } },
-    '@/lib/quest-priority': { distanceMeters: () => 0 },
+    '@/lib/quest-context': { distanceMeters: () => 0 },
     'expo-task-manager': { isAvailableAsync: async () => true },
     'expo-location': {
       requestForegroundPermissionsAsync: () => permission.promise,
@@ -587,7 +587,7 @@ for (const foreground of ['denied', 'granted']) test('foreground ' + foreground 
   const h = hooks(); let starts = 0, removals = 0;
   const mod = load('src/hooks/use-current-location.ts', {
     react: h.react, 'react-native': { Platform: { OS: 'android' } },
-    '@/lib/quest-priority': { distanceMeters: () => 0 },
+    '@/lib/quest-context': { distanceMeters: () => 0 },
     'expo-task-manager': { isAvailableAsync: async () => true },
     'expo-location': {
       requestForegroundPermissionsAsync: async () => ({ status: foreground }),
