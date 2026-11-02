@@ -12,10 +12,6 @@ import { createQuestCompletionAdapter } from '@/lib/quest-completion-adapter';
 import { passwordError, studentPayload, validateStudent, type RegistrationEnrollmentOption } from '@/lib/student-validation';
 import { readEnrollmentOptions, requestEnrollmentCatalogue } from '@/lib/enrollment-catalogue';
 import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
-import {
-  startQuestNotificationLifetime,
-  cancelQuestNotifications,
-} from '@/lib/quest-notifications';
 
 export type Category = string;
 export type QuestStatus = 'active' | 'completed' | 'rejected' | 'pending';
@@ -145,7 +141,18 @@ export type StudentProfileUpdates = Pick<
 
 const UserDataContext = createContext<UserDataContextType | undefined>(undefined);
 
-export function UserDataProvider({ children }: { children: React.ReactNode }) {
+/** Supply one stable integration for the provider's lifetime. Startup follows
+ * admission; disposal fences pending work. Cleanup must reject on failure and
+ * settle before Auth credentials are removed. */
+export type StudentNotificationLifecycle = {
+  start: (ownerId: string, isSessionCurrent: () => boolean) => () => void;
+  cleanup: () => Promise<void>;
+};
+
+export function UserDataProvider({ children, notificationLifecycle }: {
+  children: React.ReactNode;
+  notificationLifecycle: StudentNotificationLifecycle;
+}) {
   const requestVersion = useRef(0);
   const [fence] = useState(() => new SessionFence());
   const sessionUser = useRef<User | null>(null);
@@ -225,7 +232,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       // Settle it first, then remove the resulting session before reporting logout.
       await authenticationTask.current?.catch(() => {});
       // Revoke push registration before Auth removes the session.
-      await cancelQuestNotifications().catch(error => console.warn('Push cleanup pending:', error));
+      await notificationLifecycle.cleanup().catch(error => console.warn('Push cleanup pending:', error));
       const results = await Promise.allSettled([
         supabase.auth.signOut({ scope: reason ? 'local' : 'global' }).then(({ error }) => { if (error) throw error; }),
       ]);
@@ -252,7 +259,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     }).finally(() => { logoutTask.current = null; setIsSigningOut(false); });
     logoutTask.current = task;
     return task;
-  }, [clearUserData, fence, workspaceReader]);
+  }, [clearUserData, fence, workspaceReader, notificationLifecycle]);
 
   const beginAuthentication = useCallback(() => {
     if (logoutTask.current || cleanupFailed.current || authenticationTask.current) return false;
@@ -563,7 +570,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       setRegistrationEmail(nextUser?.email ?? null);
       if (changed || !nextUser) clearUserData();
       if (!nextUser) {
-        void cancelQuestNotifications().catch(error => console.warn('Reminder cleanup failed:', error));
+        void notificationLifecycle.cleanup().catch(error => console.warn('Reminder cleanup failed:', error));
         setAccess(current => current === 'blocked' ? current : 'signed_out');
         return;
       }
@@ -617,7 +624,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       timers.forEach(clearTimeout);
       subscription.unsubscribe();
     };
-  }, [clearUserData, fetchUserData, fence, handleAuthCallback, workspaceReader]);
+  }, [clearUserData, fetchUserData, fence, handleAuthCallback, workspaceReader, notificationLifecycle]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -707,8 +714,8 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
   const notificationOwnerId = user?.id;
   useEffect(() => {
     if (!notificationOwnerId) return;
-    return startQuestNotificationLifetime(notificationOwnerId, fence.capture(notificationOwnerId));
-  }, [notificationOwnerId, fence]);
+    return notificationLifecycle.start(notificationOwnerId, fence.capture(notificationOwnerId));
+  }, [notificationOwnerId, fence, notificationLifecycle]);
 
   const deleteQuest = useCallback(async (questId: string): Promise<{ success: boolean; error?: string }> => {
     if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };

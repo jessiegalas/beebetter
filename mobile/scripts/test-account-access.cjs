@@ -15,7 +15,7 @@ const registrationDraft = { version: 1, semesterId: registrationOption.semester_
   student: { name: 'Maria Cruz', student_number: '202311197', goal: 'Build habits', course: 'BSCS', year_level: '4th Year', campus: 'Bacoor', section: '1' } };
 const pendingStudent = id => ({ ...user(id), user_metadata: { signup_intent: 'student_registration', registration_draft: registrationDraft } });
 
-function provider(initialUser = user('a'), initialState = {}) {
+function provider(initialUser = user('a'), initialState = {}, notificationLifecycle) {
   const h = hooks();
   let authCallback;
   const appCallbacks = new Set();
@@ -80,11 +80,11 @@ function provider(initialUser = user('a'), initialState = {}) {
     }) },
   };
   const notifications = {
-    startQuestNotificationLifetime: (ownerId, isCurrent) => {
+    start: (ownerId, isCurrent) => {
       state.notificationLifetimes ??= []; state.notificationLifetimes.push({ ownerId, isCurrent });
       return () => { state.notificationStops = (state.notificationStops || 0) + 1; };
     },
-    cancelQuestNotifications: async () => { state.cancellations++; if (state.cancelWait) await state.cancelWait.promise; if (state.cancelError) throw new Error('Native cleanup failed'); },
+    cleanup: async () => { state.cancellations++; if (state.cancelWait) await state.cancelWait.promise; if (state.cancelError) throw new Error('Native cleanup failed'); },
   };
   const mod = load('src/context/user-data-context.tsx', {
     react: h.react,
@@ -96,9 +96,10 @@ function provider(initialUser = user('a'), initialState = {}) {
     '@/lib/quest-completion-adapter': load('src/lib/quest-completion-adapter.ts', {}, { fetch: async uri => ({ arrayBuffer: async () => state.readProof ? state.readProof(uri) : new ArrayBuffer(2) }) }),
     'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallbacks.add(fn); return { remove() { appCallbacks.delete(fn); } }; } } },
     '@/supabase': { supabase, authRecoveryStorage: { get: async () => state.recoveryMarker, set: async () => { state.recoveryMarker = true; }, clear: async () => { state.recoveryMarker = false; } } }, '@/lib/account-access': access,
-    '@/lib/quest-notifications': notifications,
-  }, { setInterval: (fn, delay) => { if (delay === 60_000) state.poll = fn; return 0; } });
-  h.mount(() => mod.UserDataProvider({ children: null }));
+    // No concrete notification mock: importing it from core fails this harness.
+  }, { console: { warn: (...args) => { state.warnings ??= []; state.warnings.push(args); } },
+    setInterval: (fn, delay) => { if (delay === 60_000) state.poll = fn; return 0; } });
+  h.mount(() => mod.UserDataProvider({ children: null, notificationLifecycle: notificationLifecycle ?? notifications }));
   return { h, state, emit, resume: () => [...appCallbacks].forEach(fn => fn('active')), background: () => [...appCallbacks].forEach(fn => fn('background')), close: () => h.unmount() };
 }
 
@@ -214,7 +215,29 @@ test('logout with no session is safe and notification cleanup failure is indepen
   await p.h.value.signOut(); await flush();
   assert.equal(p.h.value.access, 'signed_out');
   assert.equal(p.h.value.isSigningOut, false);
+  assert(p.state.warnings.some(args => args[0] === 'Push cleanup pending:'));
   p.close();
+});
+test('authentication works with an explicitly disabled notification integration', async () => {
+  const p = provider(null, {}, { start: () => () => {}, cleanup: async () => {} }); await flush();
+  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'session_created'); await flush();
+  assert.equal(p.h.value.access, 'active'); assert.equal(p.h.value.user.id, 'a');
+  assert.equal((await p.h.value.signOut()).status, 'signed_out'); await flush();
+  assert.equal(p.h.value.access, 'signed_out'); assert.equal(p.state.cancellations, 0); p.close();
+});
+test('Auth session loss reports notification cleanup failures', async () => {
+  const p = provider(); await flush(); p.state.cancelError = true;
+  p.emit(null); await flush();
+  assert.equal(p.h.value.access, 'signed_out'); assert.equal(p.h.value.user, null);
+  assert(p.state.warnings.some(args => args[0] === 'Reminder cleanup failed:')); p.close();
+});
+test('account switching replaces the admitted notification owner and fences old work', async () => {
+  const p = provider(); await flush(); const old = p.state.notificationLifetimes[0];
+  p.emit(user('b')); assert.equal(old.isCurrent(), false); await flush();
+  assert.equal(p.state.notificationStops, 1);
+  assert.deepEqual(p.state.notificationLifetimes.map(item => item.ownerId), ['a', 'b']);
+  assert.equal(p.state.notificationLifetimes[1].isCurrent(), true);
+  assert.equal(p.h.value.user.id, 'b'); p.close();
 });
 test('notification lifetime follows admission and stays stable during same-account refresh', async () => {
   const p = provider(); await flush();
@@ -341,6 +364,7 @@ test('all private routes are excluded for every non-active access state', () => 
   const stack = Object.assign(() => null, { Protected: 'Protected', Screen: 'Screen' });
   let currentAccess;
   const pass = ({ children }) => children;
+  const notifications = { startQuestNotificationLifetime() {}, cancelQuestNotifications: async () => {} };
   const features = load('src/constants/features.ts');
   const layout = load('src/app/_layout.tsx', {
     '@/global.css': {}, '@rn-primitives/portal': { PortalHost: 'PortalHost' },
@@ -354,12 +378,17 @@ test('all private routes are excluded for every non-active access state', () => 
     'expo-splash-screen': { preventAutoHideAsync: async () => {} },
     'react-native': { View: 'View', useColorScheme: () => 'light', Platform: { OS: 'android' } },
     '@/components/quest-notification-response': { QuestNotificationResponse: () => null },
+    '@/lib/quest-notifications': notifications,
     '@/components/animated-icon': { AnimatedSplashOverlay: () => null },
     '@/components/hexagon-background': { HexagonBackground: () => null },
     '@/context/user-data-context': { UserDataProvider: pass, useUserData: () => ({ access: currentAccess }) },
     '@/context/location-context': { LocationProvider: pass },
     '@/context/quest-priority-context': { QuestPriorityProvider: pass },
   });
+  const integration = layout.default().props.notificationLifecycle;
+  assert.equal(integration.start, notifications.startQuestNotificationLifetime);
+  assert.equal(integration.cleanup, notifications.cancelQuestNotifications);
+  assert.equal(layout.default().props.notificationLifecycle, integration);
   function routes(element) {
     if (!element) return [];
     if (Array.isArray(element)) return element.flatMap(routes);

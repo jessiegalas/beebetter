@@ -92,6 +92,7 @@ for (const deviceScheme of ['light', 'dark']) {
     '@rn-primitives/portal': { PortalHost: 'PortalHost' },
     '@/constants/features': { MOBILE_WELLNESS_AND_SUPPORT_ENABLED: false },
     '@/components/quest-notification-response': { QuestNotificationResponse: pass },
+    '@/lib/quest-notifications': { startQuestNotificationLifetime: pass, cancelQuestNotifications: async () => {} },
     '@/components/animated-icon': { AnimatedSplashOverlay: pass },
     '@/context/user-data-context': { UserDataProvider: 'UserDataProvider' },
     '@/context/location-context': { LocationProvider: 'LocationProvider' },

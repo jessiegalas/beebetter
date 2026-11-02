@@ -10,11 +10,18 @@ import { useBeePalette } from '@/constants/theme';
 import { QuestNotificationResponse } from '@/components/quest-notification-response';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { HexagonBackground } from '@/components/hexagon-background';
-import { UserDataProvider, useUserData } from '@/context/user-data-context';
+import { UserDataProvider, useUserData, type StudentNotificationLifecycle } from '@/context/user-data-context';
 import { QuestPriorityProvider } from '@/context/quest-priority-context';
 import { LocationProvider } from '@/context/location-context';
 import { NAV_THEME } from '@/lib/theme';
 import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
+// Keep this static import: notification handlers/tasks must exist before React mounts.
+import { startQuestNotificationLifetime, cancelQuestNotifications } from '@/lib/quest-notifications';
+
+const notificationLifecycle: StudentNotificationLifecycle = {
+  start: startQuestNotificationLifetime,
+  cleanup: cancelQuestNotifications,
+};
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -49,7 +56,7 @@ export default function RootLayout() {
   const { scheme } = useAppAppearance();
   useRestoreAppAppearance();
   return (
-    <UserDataProvider>
+    <UserDataProvider notificationLifecycle={notificationLifecycle}>
       <LocationProvider>
         <QuestPriorityProvider>
           <ThemeProvider value={NAV_THEME[scheme]}>
