@@ -1,12 +1,11 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 import * as Linking from 'expo-linking';
-import type { CompletionRecord } from '@/lib/quest-priority';
 import { EMPTY_RECOMMENDATION_DATA, type RecommendationData } from '@/lib/recommendation-facts';
 import { User } from '@supabase/supabase-js';
 import { supabase, authRecoveryStorage } from '@/supabase';
 import { authFailure, parseAuthCallback, readRegistrationDraft, registrationInput, type RegistrationDraft, type AuthenticationResult, type AuthOperationResult, type AuthFailure, type RegistrationInput } from '@/lib/auth-flow';
-import { createStudentWorkspaceReader, type WorkspaceSlice, type WorkspaceErrors } from '@/lib/student-workspace';
+import { createStudentWorkspaceReader, type CompletionRecord, type WorkspaceSlice, type WorkspaceErrors } from '@/lib/student-workspace';
 import { createQuestCompletion, type ProofFile } from '@/lib/quest-completion';
 import { createQuestCompletionAdapter } from '@/lib/quest-completion-adapter';
 import { passwordError, studentPayload, validateStudent, type RegistrationEnrollmentOption } from '@/lib/student-validation';

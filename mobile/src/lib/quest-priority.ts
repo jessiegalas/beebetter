@@ -1,11 +1,11 @@
 import type { Quest } from '../context/user-data-context';
+import type { CompletionRecord } from './student-workspace';
 import { isStoredPreferredTime, timestamp } from './quest-time';
 import { factMatches, isFresh, type RecommendationFact } from './recommendation-facts';
 import { FALLBACK_REASON, formatRecommendationEvidence, meaningfulGoalTerms, type EvidenceCode, type RecommendationEvidence } from './recommendation-reasons';
 import { questPrerequisite, questProximity, type ContextPlace, type Position, type PrerequisiteState } from './quest-context';
 export { distanceMeters, validPosition, hasFreshPosition } from './quest-context';
 export type { ContextPlace, Position, PrerequisiteState } from './quest-context';
-export type CompletionRecord = { id: string; quest_id: string | null; title: string; category: Quest['category']; completed_at: string };
 export type RecommendationContext = {
   checkIn: { check_in_date: string; overall_wellbeing: number; stress_level: number; energy_level: number; motivation_level: number | null } | null;
   reflection: { quest_id: string | null; period_end: string; planning_score: number; follow_through_score: number; confidence_score: number } | null;

@@ -1,8 +1,8 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js';
-import type { CompletionRecord } from './quest-priority';
 import type { RecommendationFact } from './recommendation-facts';
 import type { ProgressSummary, Quest, UserProfile } from '@/context/user-data-context';
 
+export type CompletionRecord = { id: string; quest_id: string | null; title: string; category: Quest['category']; completed_at: string };
 export type WorkspaceSlice = 'profile' | 'streak' | 'progress' | 'quests';
 export type WorkspaceErrors = Partial<Record<WorkspaceSlice, string>>;
 type HistoryRow = CompletionRecord & { total_count: number };
