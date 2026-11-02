@@ -443,6 +443,10 @@ test('Home header, shortcuts and recommendation use existing account and quest d
  find(h.value,n=>n.props?.label==='Open menu').props.onPress();await flush();assert.equal(find(h.value,n=>n.type==='HomeMenu').props.visible,true);
  for(const label of ['Profile','Save Places','Skill Tree'])find(h.value,n=>typeof n.type==='function'&&n.props.label===label).props.onPress();
  assert.deepEqual(routes,['/notifications','/skill-tree','/profile','/manage-locations','/skill-tree']);button(h.value,'View quest').props.onPress();assert.equal(routes.at(-1).params.questId,quest.id);
+ features.MOBILE_NOTIFICATIONS_ENABLED=false;h.render();
+ assert.equal(find(h.value,n=>n.props?.label==='Open notifications'),undefined);
+ assert(find(h.value,n=>n.props?.label==='Open menu'));assert(button(h.value,'View quest'));
+ features.MOBILE_NOTIFICATIONS_ENABLED=true;
  data.user.user_metadata={};data.profile.display_name='';h.render();assert.ok(text(h.value).includes('Hi, fallback!'));assert.equal(find(h.value,n=>n.type==='Avatar'),undefined);assert.equal(find(h.value,n=>n.type==='HomeMenu').props.avatarUri,undefined);h.unmount();
 });
 test('side panel preserves destinations and provider logout, with requested placeholder buttons', () => {
@@ -455,6 +459,10 @@ test('side panel preserves destinations and provider logout, with requested plac
  find(h.value,n=>n.props?.accessibilityLabel==='Open profile for Actual Student, level 3').props.onPress();
  for(const label of ['Save Places','Skill Tree','Notifications','Settings'])find(h.value,n=>typeof n.type==='function'&&n.props.label===label).props.onPress();
  assert.deepEqual(routes,['/profile','/manage-locations','/skill-tree','/notifications','/settings']);assert.equal(closed,5);
+ features.MOBILE_NOTIFICATIONS_ENABLED=false;h.render();
+ assert.equal(find(h.value,n=>n.props?.label==='Notifications'),undefined);
+ assert(find(h.value,n=>n.props?.label==='Save Places'));assert(find(h.value,n=>n.props?.label==='Log Out'));
+ features.MOBILE_NOTIFICATIONS_ENABLED=true;h.render();
  for(const label of ['Help & Support']){const item=find(h.value,n=>typeof n.type==='function'&&n.props.label===label);assert.equal(item.props.disabled,true);assert.equal(item.props.onPress,undefined);}
  find(h.value,n=>typeof n.type==='function'&&n.props.label==='Log Out').props.onPress();assert.equal(signouts,0);alerts[0][2].find(b=>b.style==='destructive').onPress();assert.equal(signouts,1);
  data.isSigningOut=true;h.render();find(h.value,n=>typeof n.type==='function'&&n.props.label==='Log Out').props.onPress();assert.equal(alerts.length,1);h.unmount();

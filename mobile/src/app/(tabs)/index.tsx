@@ -9,7 +9,7 @@ import { Button, IconButton, ScreenFrame, Sheet, StatusMessage, Surface } from '
 import type { RankedQuest } from '@/lib/quest-priority';
 import { HomeMenu } from '@/components/home-menu';
 import { Borders, Controls, Layout, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
-import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
+import { MOBILE_NOTIFICATIONS_ENABLED, MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
 import { useQuestPriority } from '@/context/quest-priority-context';
 import { useLocationContext } from '@/context/location-context';
 import { useUserData } from '@/hooks/use-user-data';
@@ -57,7 +57,7 @@ export default function HomeScreen() {
             </ThemedText>
           </View>
         </View>
-        <IconButton icon="notifications-outline" label="Open notifications" onPress={() => router.push('/notifications')} />
+        {MOBILE_NOTIFICATIONS_ENABLED && <IconButton icon="notifications-outline" label="Open notifications" onPress={() => router.push('/notifications')} />}
       </View>
       {isLoading && !profile ? <StatusMessage loading message="Loading your overview…" /> : <>
         <View style={s.section}>

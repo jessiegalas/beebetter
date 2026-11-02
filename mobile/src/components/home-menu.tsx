@@ -9,6 +9,7 @@ import { ThemedText } from './themed-text';
 import { UserAvatar } from './user-avatar';
 import { Borders, Controls, Layout, Radii, Spacing, States, useBeePalette } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
+import { MOBILE_NOTIFICATIONS_ENABLED } from '@/constants/features';
 
 const SCRIM_OPACITY = 0.36;
 const SCRIM_FADE_DURATION = 140;
@@ -157,7 +158,7 @@ export function HomeMenu({ visible, onClose, displayName, avatarUri }: { visible
             <View style={s.group}>
               <MenuItem icon="settings-outline" label="Settings" onPress={() => open('/settings')} />
               <MenuItem icon="help-circle-outline" label="Help & Support" disabled />
-              <MenuItem icon="notifications-outline" label="Notifications" onPress={() => open('/notifications')} />
+              {MOBILE_NOTIFICATIONS_ENABLED && <MenuItem icon="notifications-outline" label="Notifications" onPress={() => open('/notifications')} />}
               <MenuItem icon="log-out-outline" label="Log Out" danger busy={isSigningOut} onPress={logout} />
             </View>
           </ScrollView>

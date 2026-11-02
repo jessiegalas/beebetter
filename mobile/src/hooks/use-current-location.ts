@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Location from 'expo-location';
-import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 import type { UserLocation } from './use-user-locations';
 import { distanceMeters } from '@/lib/quest-priority';
@@ -40,10 +39,6 @@ export function useCurrentLocation(userLocations: UserLocation[] = [], enabled =
         setPermissionStatus(status);
         if (status !== 'granted') { setCoords(null); setLocationUpdatedAt(null); }
         setError(status === 'granted' ? null : 'Location permission denied');
-      }
-      // Background permission is optional: its denial must not disable foreground location.
-      if (isCurrent() && status === 'granted' && Platform.OS !== 'web' && await TaskManager.isAvailableAsync() && isCurrent()) {
-        try { await Location.requestBackgroundPermissionsAsync(); } catch { /* Foreground still works. */ }
       }
       return status;
     } catch {

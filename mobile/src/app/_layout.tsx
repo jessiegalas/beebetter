@@ -2,26 +2,20 @@ import '@/global.css';
 import { PortalHost } from '@rn-primitives/portal';
 import { ThemeProvider, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { Platform, View } from 'react-native';
+import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useAppAppearance, useRestoreAppAppearance } from '@/hooks/use-app-appearance';
 import { useBeePalette } from '@/constants/theme';
 
-import { QuestNotificationResponse } from '@/components/quest-notification-response';
+import { NotificationFeature, notificationLifecycle } from '@/components/notification-feature';
+import { GeofencingFeature } from '@/components/geofencing-feature';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { HexagonBackground } from '@/components/hexagon-background';
-import { UserDataProvider, useUserData, type StudentNotificationLifecycle } from '@/context/user-data-context';
+import { UserDataProvider, useUserData } from '@/context/user-data-context';
 import { QuestPriorityProvider } from '@/context/quest-priority-context';
 import { LocationProvider } from '@/context/location-context';
 import { NAV_THEME } from '@/lib/theme';
-import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
-// Keep this static import: notification handlers/tasks must exist before React mounts.
-import { startQuestNotificationLifetime, cancelQuestNotifications } from '@/lib/quest-notifications';
-
-const notificationLifecycle: StudentNotificationLifecycle = {
-  start: startQuestNotificationLifetime,
-  cleanup: cancelQuestNotifications,
-};
+import { MOBILE_NOTIFICATIONS_ENABLED, MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -35,7 +29,9 @@ function AppNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={access === 'active'}>
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="notifications" options={{ presentation: 'modal' }} />
+        <Stack.Protected guard={MOBILE_NOTIFICATIONS_ENABLED}>
+          <Stack.Screen name="notifications" options={{ presentation: 'modal' }} />
+        </Stack.Protected>
         <Stack.Screen name="add-quest" options={{ presentation: 'modal' }} />
         <Stack.Screen name="manage-locations" />
         <Stack.Screen name="settings/index" />
@@ -58,6 +54,7 @@ export default function RootLayout() {
   return (
     <UserDataProvider notificationLifecycle={notificationLifecycle}>
       <LocationProvider>
+        <GeofencingFeature />
         <QuestPriorityProvider>
           <ThemeProvider value={NAV_THEME[scheme]}>
             <View style={{ flex: 1, backgroundColor: palette.background }}>
@@ -65,7 +62,7 @@ export default function RootLayout() {
               <HexagonBackground />
               <AnimatedSplashOverlay />
               <AppNavigator />
-              {Platform.OS === 'android' && <QuestNotificationResponse />}
+              <NotificationFeature />
               <PortalHost />
             </View>
           </ThemeProvider>

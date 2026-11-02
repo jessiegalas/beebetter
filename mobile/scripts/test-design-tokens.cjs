@@ -91,16 +91,20 @@ for (const deviceScheme of ['light', 'dark']) {
     'expo-splash-screen': { preventAutoHideAsync: async () => {} },
     '@rn-primitives/portal': { PortalHost: 'PortalHost' },
     '@/constants/features': { MOBILE_WELLNESS_AND_SUPPORT_ENABLED: false },
-    '@/components/quest-notification-response': { QuestNotificationResponse: pass },
-    '@/lib/quest-notifications': { startQuestNotificationLifetime: pass, cancelQuestNotifications: async () => {} },
+    '@/components/notification-feature': { NotificationFeature: pass, notificationLifecycle: { start: pass, cleanup: async () => {} } },
+    '@/components/geofencing-feature': { GeofencingFeature: pass },
     '@/components/animated-icon': { AnimatedSplashOverlay: pass },
     '@/context/user-data-context': { UserDataProvider: 'UserDataProvider' },
     '@/context/location-context': { LocationProvider: 'LocationProvider' },
     '@/context/quest-priority-context': { QuestPriorityProvider: 'QuestPriorityProvider' },
   });
   h.mount(() => layout.default());
-  let element = h.value;
-  while (element.type !== 'ThemeProvider') element = element.props.children[0];
+  const findTheme = element => {
+    if (!element) return;
+    if (Array.isArray(element)) return element.map(findTheme).find(Boolean);
+    return element.type === 'ThemeProvider' ? element : findTheme(element.props?.children);
+  };
+  const element = findTheme(h.value);
   assert.equal(element.props.value.colors.text, theme.useBeePalette().foreground);
   assert.equal(element.props.value.colors.background, theme.useBeePalette().background);
   assert.equal(theme.useAppColorScheme(), deviceScheme);

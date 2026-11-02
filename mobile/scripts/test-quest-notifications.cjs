@@ -112,33 +112,56 @@ async function workerScenario(options = {}) {
 }
 
 async function geofenceScenario() {
-  let task; let owner = 'a'; let active = true; let sends = 0;
+  let task; let active = true, proof = true, queryWait;
   const stored = new Map();
   const query = table => {
     const chain = { select: () => chain, eq: () => chain, order: () => chain, limit: () => chain, maybeSingle: () => chain,
-      then: resolve => Promise.resolve({ error: null, data: table === 'students' ? { status: active ? 'Active' : 'Inactive' }
-        : table === 'user_locations' ? { id: 'place' } : [{ id: 'q', title: 'Read', status: 'active', requires_proof: true }] }).then(resolve) };
+      then: resolve => Promise.resolve(queryWait).then(() => ({ error: null, data: table === 'students' ? { status: active ? 'Active' : 'Inactive' }
+        : table === 'user_locations' ? { id: 'place' } : [{ id: 'q', title: 'Read', status: 'active', requires_proof: proof }] })).then(resolve) };
     return chain;
   };
+  const events = load('src/lib/geofence-events.ts', {
+    '@react-native-async-storage/async-storage': {
+      getItem: async key => stored.get(key), setItem: async (key, value) => { stored.set(key, value); }, removeItem: async key => { stored.delete(key); },
+    },
+  });
+  let registration = await registrationScenario({ eventStore: events, query });
   load('src/hooks/use-geofencing.ts', {
-    '@react-native-async-storage/async-storage': { getItem: async key => stored.get(key), setItem: async (key, value) => { stored.set(key, value); } },
-    'expo-notifications': { SchedulableTriggerInputTypes: { TIME_INTERVAL: 'timeInterval' }, scheduleNotificationAsync: async value => { assert.equal(value.content.categoryIdentifier, 'QUEST_OPEN'); assert.equal(value.content.data.ownerId, 'a'); sends++; } },
-    '@/supabase': { supabase: { auth: { getSession: async () => ({ data: { session: owner ? { user: { id: owner } } : null } }) }, from: query } },
-    '@/lib/quest-notifications': { configureQuestNotifications: async request => { assert.equal(request, false); return true; }, questNeedsOpen: quest => quest.requires_proof,
-      QUEST_CHANNEL_ID: 'quests', QUEST_NOTIFICATION_CATEGORY: 'QUEST_ACTIONS', QUEST_OPEN_CATEGORY: 'QUEST_OPEN' },
-    '@/lib/geofence-events': { recordGeofenceEvent: async () => {} },
+    '@/constants/features': { MOBILE_GEOFENCING_ENABLED: true },
+    '@/lib/geofence-events': events,
     'expo-task-manager': { defineTask: (_, fn) => { task = fn; } },
     'expo-location': { GeofencingEventType: { Enter: 1, Exit: 2 } },
   });
   const event = (eventType, id) => task({ data: { eventType, region: { identifier: id } } });
-  await event(2, 'place'); assert.equal(sends, 0);
-  await event(1, 'place'); await event(1, 'place'); assert.equal(sends, 1);
-  active = false; await event(1, 'another-place'); assert.equal(sends, 1);
-  owner = null; await event(1, 'another-place'); assert.equal(sends, 1);
+  await event(2, 'place'); assert.equal(registration.state.presented.length, 0);
+  await event(1, 'place'); await event(1, 'place'); assert.equal(registration.state.presented.length, 1);
+  assert.equal(registration.state.presented[0].content.categoryIdentifier, 'QUEST_OPEN');
+  assert.equal(registration.state.presented[0].content.data.ownerId, 'a');
+  assert.equal(registration.state.permissionCalls, 0);
+  active = false; await event(1, 'another-place'); assert.equal(registration.state.presented.length, 1);
+  registration.state.owner = null; await event(1, 'another-place'); assert.equal(registration.state.presented.length, 1);
+  // Notification disabling leaves the real native task and the single event store working.
+  registration = await registrationScenario({ enabled: false, eventStore: events, query });
+  await event(1, 'silent-place'); assert.equal((await events.readGeofenceEvents())['silent-place'].inside, true);
+  await event(2, 'silent-place'); assert.equal((await events.readGeofenceEvents())['silent-place'].inside, false);
+  assert.equal(registration.state.presented.length, 0); assert.equal(registration.state.permissionReads, 0);
+  active = true; proof = false;
+  registration = await registrationScenario({ eventStore: events, query });
+  await event(1, 'simple-place'); assert.equal(registration.state.presented[0].content.categoryIdentifier, 'QUEST_ACTIONS');
+  for (const invalidate of ['clear', 'switch']) {
+    registration = await registrationScenario({ eventStore: events, query }); let release;
+    queryWait = new Promise(resolve => { release = resolve; });
+    const pending = event(1, 'pending-' + invalidate); await flush();
+    if (invalidate === 'clear') await events.clearGeofenceEvents(); else registration.state.owner = 'b';
+    release(); await pending; queryWait = null;
+    assert.equal(registration.state.presented.length, 0);
+  }
+  console.log('PASS geofence presentation respects event invalidation, account changes and independent notification disabling');
 }
 
-async function registrationScenario({ storedValue = null, permission = true, permissionStatus, platform = 'android', expoGo = false, tokenTimeout = false, rpcError = false, setupError = false } = {}) {
+async function registrationScenario({ storedValue = null, permission = true, permissionStatus, platform = 'android', expoGo = false, tokenTimeout = false, rpcError = false, setupError = false, enabled = true, eventStore, query } = {}) {
   let stored = storedValue;
+  const otherStorage = new Map();
   const nativeListeners = new Set(), appListeners = new Set(), timers = new Set();
   const appState = { currentState: 'active', addEventListener: (_, fn) => {
     appListeners.add(fn); return { remove() { appListeners.delete(fn); if (state.listenerCleanupError) throw Error('Native removal failed'); } };
@@ -151,16 +174,21 @@ async function registrationScenario({ storedValue = null, permission = true, per
     tick() { [...timers].forEach(fn => fn()); },
   };
   const mod = load('src/lib/quest-notifications.ts', {
+    '@/constants/features': { MOBILE_NOTIFICATIONS_ENABLED: enabled },
+    '@/lib/geofence-events': eventStore ?? { setGeofenceEntryHandler(handler) { state.entryHandler = handler; } },
     'expo-task-manager': { isTaskDefined: () => false, defineTask: (_, fn) => { state.task = fn; }, isTaskRegisteredAsync: async () => false },
     react: { useSyncExternalStore: (_, snapshot) => snapshot() },
     'react-native': { Platform: { OS: platform }, AppState: appState },
     'expo-constants': { executionEnvironment: expoGo ? 'storeClient' : 'standalone', expoConfig: { extra: { eas: { projectId: 'project' } } } },
     '@react-native-async-storage/async-storage': {
-      getItem: async () => stored, setItem: async (_, value) => { stored = value; }, removeItem: async () => { stored = null; },
+      getItem: async key => key === 'beebetter:push-device' ? stored : otherStorage.get(key),
+      setItem: async (key, value) => { if (key === 'beebetter:push-device') stored = value; else otherStorage.set(key, value); },
+      removeItem: async key => { if (key === 'beebetter:push-device') stored = null; else otherStorage.delete(key); },
     },
     '@/supabase': { supabase: {
+      from: query,
       auth: { getSession: async () => ({ data: { session: state.owner ? { user: { id: state.owner } } : null } }) },
-      rpc: (_, args) => ({ abortSignal: async () => { state.rpc.push(args); if (args.enabled_value && state.rpcWait) await state.rpcWait; return { error: state.rpcError && args.enabled_value ? new Error('offline') : null }; } }),
+      rpc: (_, args) => ({ abortSignal: async () => { state.rpc.push(args); if (args.enabled_value && state.rpcWait) await state.rpcWait; return { error: (state.rpcError && args.enabled_value) || (state.cleanupError && !args.enabled_value) ? new Error('offline') : null }; } }),
     } },
     'expo-notifications': {
       addPushTokenListener(fn) {
@@ -168,6 +196,7 @@ async function registrationScenario({ storedValue = null, permission = true, per
         nativeListeners.add(fn); return { remove() { nativeListeners.delete(fn); if (state.listenerCleanupError) throw Error('Native removal failed'); } };
       },
       setNotificationHandler(value) { state.handler = value.handleNotification; }, setNotificationChannelAsync: async () => {},
+      SchedulableTriggerInputTypes: { TIME_INTERVAL: 'timeInterval' },
       registerTaskAsync: async () => {}, scheduleNotificationAsync: async value => { state.presented.push(value); },
       getPermissionsAsync: async () => { state.permissionReads++; if (state.setupWait) await state.setupWait; if (state.setupError) throw Error('Native setup failed'); return { granted: state.permission, status: state.permissionStatus ?? (state.permission ? 'granted' : 'denied'), canAskAgain: state.canAskAgain }; },
       requestPermissionsAsync: async () => { state.permissionCalls++; return { granted: state.permission, status: state.permissionStatus ?? (state.permission ? 'granted' : 'denied') };  },
@@ -178,13 +207,25 @@ async function registrationScenario({ storedValue = null, permission = true, per
   }, {
     setInterval: fn => { timers.add(fn); return fn; }, clearInterval: fn => { timers.delete(fn); },
     ...(tokenTimeout ? { setTimeout: fn => setTimeout(fn, 1) } : {}),
-    console: { ...console, warn() {} },
+    console: { ...console, warn(...args) { state.warnings ??= []; state.warnings.push(args); } },
   });
   return { mod, state };
 }
 
 
 (async () => {
+  for (const enabled of [true, false]) for (const platform of ['android', 'web']) {
+    const start = () => () => {}, cleanup = async () => {}, response = () => null;
+    const feature = load('src/components/notification-feature.tsx', {
+      react: { createElement: type => ({ type }) }, 'react-native': { Platform: { OS: platform } },
+      '@/constants/features': { MOBILE_NOTIFICATIONS_ENABLED: enabled },
+      '@/components/quest-notification-response': { QuestNotificationResponse: response },
+      '@/lib/quest-notifications': { startQuestNotificationLifetime: start, cancelQuestNotifications: cleanup },
+    });
+    assert.equal(feature.notificationLifecycle.start, start); assert.equal(feature.notificationLifecycle.cleanup, cleanup);
+    assert.equal(feature.NotificationFeature()?.type ?? null, enabled && platform === 'android' ? response : null);
+  }
+  console.log('PASS feature entry preserves lifecycle wiring and gates Android responses');
   await geofenceScenario();
   console.log('PASS geofence entry, proof Open action, cooldown, exit and inactive/signed-out suppression');
   let result = await actionScenario();
@@ -258,6 +299,26 @@ async function registrationScenario({ storedValue = null, permission = true, per
   push.state.owner = 'a'; await push.mod.cancelQuestNotifications(); await receive(payload);
   assert.equal(push.state.presented.length, 1);
   console.log('PASS Android task presents guarded action buttons and suppresses foreign/expired/denied/logged-out/replayed payloads');
+  const disabled = await registrationScenario({ enabled: false, storedValue: JSON.stringify({ token: 'ExpoPushToken[cached]', ownerId: 'a', registeredAt: Date.now() }) });
+  // Definitions remain available before any React mount, even when disabled.
+  assert.equal(typeof disabled.state.task, 'function'); assert.equal(typeof disabled.state.handler, 'function');
+  await disabled.state.task({ data: { notification: null, data: { dataString: JSON.stringify(payload) } } });
+  const stopDisabled = disabled.mod.startQuestNotificationLifetime('a', () => true); await flush(); stopDisabled();
+  assert.equal(disabled.state.presented.length, 0); assert.equal(disabled.state.tokens.length, 0);
+  assert.equal(disabled.state.permissionReads, 0);
+  assert.deepEqual(disabled.state.rpc.map(call => [call.owner_id_value, call.enabled_value]), [['a', false]]);
+  assert.equal(disabled.state.stored(), null);
+  assert.equal(disabled.state.nativeListeners.size + disabled.state.appListeners.size + disabled.state.timers.size, 0);
+  // A failed retirement remains visible and retryable, including at sign-out.
+  const failedRetirement = await registrationScenario({ enabled: false, storedValue: JSON.stringify({ token: 'ExpoPushToken[cached]', ownerId: 'a', registeredAt: Date.now() }) });
+  failedRetirement.state.cleanupError = true;
+  failedRetirement.mod.startQuestNotificationLifetime('a', () => true); await flush();
+  assert(failedRetirement.state.warnings.some(args => args[0] === 'Push cleanup pending:'));
+  assert.notEqual(failedRetirement.state.stored(), null);
+  await assert.rejects(failedRetirement.mod.cancelQuestNotifications());
+  failedRetirement.state.cleanupError = false; await failedRetirement.mod.cancelQuestNotifications();
+  assert.equal(failedRetirement.state.stored(), null);
+  console.log('PASS disabled push suppresses delivery/startup, retires tokens and reports cleanup failures');
   // Exercise the admitted lifetime instead of arranging configure/register phases.
   for (const storedValue of ['{broken', JSON.stringify({ token: 42 }), JSON.stringify(null)]) {
     const { mod, state } = await registrationScenario({ storedValue });

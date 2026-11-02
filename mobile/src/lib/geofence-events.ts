@@ -6,11 +6,19 @@ const listeners = new Set<(events: GeofenceEvents) => void>();
 let queue = Promise.resolve();
 let generation = 0;
 
+export type GeofenceEntry = { locationId: string; isCurrent: () => boolean };
+let entryHandler: ((entry: GeofenceEntry) => Promise<void>) | undefined;
+/** Optional presentation integration. Install at module scope for headless tasks. */
+export function setGeofenceEntryHandler(handler: typeof entryHandler) {
+  entryHandler = handler;
+}
+
 export async function readGeofenceEvents(): Promise<GeofenceEvents> {
   try { return JSON.parse(await AsyncStorage.getItem(KEY) || '{}'); } catch { return {}; }
 }
 export function recordGeofenceEvent(id: string, inside: boolean) {
   const version = generation;
+  let recorded = false;
   queue = queue.catch(() => {}).then(async () => {
     const now = Date.now();
     const events = await readGeofenceEvents();
@@ -20,9 +28,14 @@ export function recordGeofenceEvent(id: string, inside: boolean) {
     }
     events[id] = { inside, timestamp: now };
     await AsyncStorage.setItem(KEY, JSON.stringify(events));
-    if (version === generation) listeners.forEach(listener => listener(events));
+    if (version === generation) { recorded = true; listeners.forEach(listener => listener(events)); }
   });
-  return queue;
+  // Presentation does not hold the storage queue or block logout's event clear.
+  return queue.then(() => {
+    if (recorded && inside && version === generation) {
+      return entryHandler?.({ locationId: id, isCurrent: () => version === generation });
+    }
+  });
 }
 export function subscribeGeofenceEvents(listener: (events: GeofenceEvents) => void) {
   listeners.add(listener);

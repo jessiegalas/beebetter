@@ -1,11 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
-import { supabase } from '@/supabase';
-import { configureQuestNotifications, questNeedsOpen, QUEST_CHANNEL_ID, QUEST_NOTIFICATION_CATEGORY, QUEST_OPEN_CATEGORY } from '@/lib/quest-notifications';
+import { MOBILE_GEOFENCING_ENABLED } from '@/constants/features';
 import { recordGeofenceEvent } from '@/lib/geofence-events';
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
-import { UserLocation } from './use-user-locations';
+import type { UserLocation } from './use-user-locations';
 
 export const GEOFENCE_TASK_NAME = 'bee-better-geofence-task';
 
@@ -15,6 +12,7 @@ type GeofenceTaskData = {
 };
 
 TaskManager.defineTask<GeofenceTaskData>(GEOFENCE_TASK_NAME, async ({ data, error }) => {
+  if (!MOBILE_GEOFENCING_ENABLED) return null;
   if (error) {
     console.error('Geofence task error:', error);
     return null;
@@ -24,7 +22,6 @@ TaskManager.defineTask<GeofenceTaskData>(GEOFENCE_TASK_NAME, async ({ data, erro
   try {
     if (region?.identifier) {
       await recordGeofenceEvent(region.identifier, eventType === Location.GeofencingEventType.Enter);
-      if (eventType === Location.GeofencingEventType.Enter) await notifyGeofenceEntry(region.identifier);
     }
   } catch (error) { console.warn('Could not record geofence event:', error); }
   return null;
@@ -36,6 +33,7 @@ let generation = 0;
 let syncQueue: Promise<unknown> = Promise.resolve();
 
 export function registerGeofences(locations: UserLocation[]): Promise<{ success: boolean; error?: string }> {
+  if (!MOBILE_GEOFENCING_ENABLED) return unregisterAllGeofences().then(() => ({ success: true }));
   const version = ++generation;
   const task = syncQueue.catch(() => {}).then(() => registerCurrentGeofences(locations, () => version === generation));
   syncQueue = task;
@@ -121,40 +119,4 @@ export async function syncGeofences(locations: UserLocation[]): Promise<void> {
   if (!result.success && result.error !== 'Background geofencing is unavailable in this app environment') {
     console.warn('Geofence sync skipped:', result.error);
   }
-}
-
-let entryQueue: Promise<void> = Promise.resolve();
-function notifyGeofenceEntry(locationId: string): Promise<void> {
-  entryQueue = entryQueue.catch(() => {}).then(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-    const ownerId = session.user.id;
-    const key = 'beebetter:geofence-notice:' + ownerId + ':' + locationId;
-    const last = Number(await AsyncStorage.getItem(key));
-    if (last && Date.now() - last < 60 * 60_000) return;
-    // Fresh owner-scoped data avoids reminding for completed/deleted quests.
-    // Offline entry is skipped instead of showing stale cached quest details.
-    const [student, place, quests] = await Promise.all([
-      supabase.from('students').select('status').eq('id', ownerId).maybeSingle(),
-      supabase.from('user_locations').select('id').eq('id', locationId).eq('owner_id', ownerId).eq('is_active', true).maybeSingle(),
-      supabase.from('quests').select('id,title,status,requires_proof,prerequisite_quest_id')
-        .eq('owner_id', ownerId).eq('location_id', locationId).eq('status', 'active').order('created_at').limit(1),
-    ]);
-    if (student.error || place.error || quests.error || student.data?.status !== 'Active' || !place.data || !quests.data?.length) return;
-    if (!(await configureQuestNotifications(false))) return;
-    const { data: current } = await supabase.auth.getSession();
-    if (current.session?.user.id !== ownerId) return;
-    const quest = quests.data[0];
-    await Notifications.scheduleNotificationAsync({
-      identifier: 'geofence-' + ownerId + '-' + locationId,
-      content: {
-        title: 'A quest is nearby', body: quest.title, sound: 'default',
-        categoryIdentifier: questNeedsOpen(quest) ? QUEST_OPEN_CATEGORY : QUEST_NOTIFICATION_CATEGORY,
-        data: { questId: quest.id, ownerId, kind: 'geofence', notificationId: 'geofence-' + quest.id + '-' + Date.now() },
-      },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: QUEST_CHANNEL_ID },
-    });
-    await AsyncStorage.setItem(key, String(Date.now()));
-  });
-  return entryQueue;
 }

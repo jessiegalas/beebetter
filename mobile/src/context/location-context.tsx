@@ -3,7 +3,6 @@ import { clearGeofenceEvents, readGeofenceEvents, subscribeGeofenceEvents, type 
 import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { useCurrentLocation } from '@/hooks/use-current-location';
-import { syncGeofences, unregisterAllGeofences } from '@/hooks/use-geofencing';
 import { useUserLocations, type UserLocation } from '@/hooks/use-user-locations';
 
 interface LocationContextType {
@@ -70,8 +69,6 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   } = useCurrentLocation(activeLocations, Boolean(user));
 
   const initialization = useMemo(() => ({ user }), [user]);
-  const [initializedFor, setInitializedFor] = useState<object | null>(null);
-  const hasInitialized = initializedFor === initialization;
   const [eventSnapshot, setEventSnapshot] = useState<{ lifetime: object; events: GeofenceEvents } | null>(null);
   const geofenceEvents = useMemo(() => eventSnapshot?.lifetime === initialization ? eventSnapshot.events : {}, [eventSnapshot, initialization]);
 
@@ -102,7 +99,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     const cleanup = async () => {
       const results = await Promise.allSettled([
-        stopTracking(), unregisterAllGeofences(), clearGeofenceEvents(),
+        stopTracking(), clearGeofenceEvents(),
       ]);
       results.forEach(result => { if (result.status === 'rejected') console.warn('Location cleanup failed:', result.reason); });
     };
@@ -112,17 +109,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       await refreshLocations();
       if (!mounted || !user) return;
       await startTracking();
-      if (mounted) setInitializedFor(initialization);
     }
     void initialize().catch(error => console.warn('Location initialization failed:', error));
     return () => { mounted = false; void cleanup(); };
   }, [user, refreshLocations, startTracking, stopTracking, initialization]);
-
-  // Register the latest regions after locations load or change.
-  useEffect(() => {
-    if (!hasInitialized || !user) return;
-    void syncGeofences(activeLocations).catch(error => console.warn('Geofence sync failed:', error));
-  }, [activeLocations, hasInitialized, user]);
 
   // A stationary device may not emit watch events. Refresh on resume and while visible.
   useEffect(() => {

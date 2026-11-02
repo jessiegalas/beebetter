@@ -6,6 +6,8 @@ import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/supabase';
 import type { Quest } from '@/context/user-data-context';
+import { MOBILE_NOTIFICATIONS_ENABLED } from '@/constants/features';
+import { setGeofenceEntryHandler, type GeofenceEntry } from '@/lib/geofence-events';
 
 export const QUEST_NOTIFICATION_CATEGORY = 'QUEST_ACTIONS';
 export const QUEST_OPEN_CATEGORY = 'QUEST_OPEN';
@@ -45,7 +47,7 @@ Notifications.setNotificationHandler({ handleNotification: async notification =>
 } });
 if (Platform.OS === 'android' && !TaskManager.isTaskDefined(PUSH_TASK)) {
   TaskManager.defineTask<Notifications.NotificationTaskPayload>(PUSH_TASK, async ({ data, error }) => {
-    if (error || !data || 'actionIdentifier' in data) return;
+    if (!MOBILE_NOTIFICATIONS_ENABLED || error || !data || 'actionIdentifier' in data) return;
     const version = generation;
     try {
       const raw = data.data.dataString ?? data.data.body;
@@ -211,6 +213,11 @@ function registerQuestPushDevice(registrationOwnerId: string, isSessionCurrent: 
  * pending work; token revocation remains the provider's awaited logout operation. */
 export function startQuestNotificationLifetime(ownerId: string, isSessionCurrent: () => boolean): () => void {
   if (!isSessionCurrent()) return () => {};
+  if (!MOBILE_NOTIFICATIONS_ENABLED) {
+    // Retire a previous enabled installation's registration while Auth is usable.
+    void cancelQuestNotifications().catch(error => console.warn('Push cleanup pending:', error));
+    return () => {};
+  }
   lifetime?.stop();
   let stopped = false;
   let tokenSubscription: ReturnType<typeof Notifications.addPushTokenListener> | undefined;
@@ -273,4 +280,42 @@ export function startQuestNotificationLifetime(ownerId: string, isSessionCurrent
 /** Retry setup for the currently admitted owner; stale screen callbacks are inert. */
 export function retryQuestNotifications(ownerId: string): Promise<void> {
   return lifetime?.ownerId === ownerId ? lifetime.refresh(true, true) : Promise.resolve();
+}
+
+// Installed before React mounts, including when a geofence launches the bundle.
+setGeofenceEntryHandler(notifyGeofenceEntry);
+let entryQueue: Promise<void> = Promise.resolve();
+function notifyGeofenceEntry({ locationId, isCurrent }: GeofenceEntry): Promise<void> {
+  entryQueue = entryQueue.catch(() => {}).then(async () => {
+    if (!MOBILE_NOTIFICATIONS_ENABLED || !isCurrent()) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session || !isCurrent()) return;
+    const ownerId = session.user.id;
+    const key = 'beebetter:geofence-notice:' + ownerId + ':' + locationId;
+    const last = Number(await AsyncStorage.getItem(key));
+    if (!isCurrent() || (last && Date.now() - last < 60 * 60_000)) return;
+    // Preserve fresh owner-scoped checks and skip offline/stale quest details.
+    const [student, place, quests] = await Promise.all([
+      supabase.from('students').select('status').eq('id', ownerId).maybeSingle(),
+      supabase.from('user_locations').select('id').eq('id', locationId).eq('owner_id', ownerId).eq('is_active', true).maybeSingle(),
+      supabase.from('quests').select('id,title,status,requires_proof,prerequisite_quest_id')
+        .eq('owner_id', ownerId).eq('location_id', locationId).eq('status', 'active').order('created_at').limit(1),
+    ]);
+    if (!isCurrent() || student.error || place.error || quests.error || student.data?.status !== 'Active' || !place.data || !quests.data?.length) return;
+    if (!(await configureQuestNotifications(false)) || !isCurrent()) return;
+    const { data: current } = await supabase.auth.getSession();
+    if (!isCurrent() || current.session?.user.id !== ownerId) return;
+    const quest = quests.data[0];
+    await Notifications.scheduleNotificationAsync({
+      identifier: 'geofence-' + ownerId + '-' + locationId,
+      content: {
+        title: 'A quest is nearby', body: quest.title, sound: 'default',
+        categoryIdentifier: questNeedsOpen(quest) ? QUEST_OPEN_CATEGORY : QUEST_NOTIFICATION_CATEGORY,
+        data: { questId: quest.id, ownerId, kind: 'geofence', notificationId: 'geofence-' + quest.id + '-' + Date.now() },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: QUEST_CHANNEL_ID },
+    });
+    await AsyncStorage.setItem(key, String(Date.now()));
+  });
+  return entryQueue;
 }

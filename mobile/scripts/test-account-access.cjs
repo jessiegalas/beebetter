@@ -365,6 +365,12 @@ test('all private routes are excluded for every non-active access state', () => 
   let currentAccess;
   const pass = ({ children }) => children;
   const notifications = { startQuestNotificationLifetime() {}, cancelQuestNotifications: async () => {} };
+  const notificationFeature = load('src/components/notification-feature.tsx', {
+    react, 'react-native': { Platform: { OS: 'android' } },
+    '@/constants/features': load('src/constants/features.ts'),
+    '@/components/quest-notification-response': { QuestNotificationResponse: () => null },
+    '@/lib/quest-notifications': notifications,
+  });
   const features = load('src/constants/features.ts');
   const layout = load('src/app/_layout.tsx', {
     '@/global.css': {}, '@rn-primitives/portal': { PortalHost: 'PortalHost' },
@@ -377,8 +383,8 @@ test('all private routes are excluded for every non-active access state', () => 
     react, 'expo-router': { Stack: stack, ThemeProvider: pass },
     'expo-splash-screen': { preventAutoHideAsync: async () => {} },
     'react-native': { View: 'View', useColorScheme: () => 'light', Platform: { OS: 'android' } },
-    '@/components/quest-notification-response': { QuestNotificationResponse: () => null },
-    '@/lib/quest-notifications': notifications,
+    '@/components/notification-feature': notificationFeature,
+    '@/components/geofencing-feature': { GeofencingFeature: () => null },
     '@/components/animated-icon': { AnimatedSplashOverlay: () => null },
     '@/components/hexagon-background': { HexagonBackground: () => null },
     '@/context/user-data-context': { UserDataProvider: pass, useUserData: () => ({ access: currentAccess }) },
@@ -404,6 +410,9 @@ test('all private routes are excluded for every non-active access state', () => 
   assert(privateRoutes.includes('(tabs)')); assert(privateRoutes.includes('add-quest'));
   assert(!privateRoutes.includes('auth'));
   assert.deepEqual(privateRoutes, ['(tabs)', 'notifications', 'add-quest', 'manage-locations', 'settings/index', 'settings/general']);
+  features.MOBILE_NOTIFICATIONS_ENABLED = false;
+  assert.deepEqual(routes(layout.default()), privateRoutes.filter(route => route !== 'notifications'));
+  features.MOBILE_NOTIFICATIONS_ENABLED = true;
   // Retained screens can return after a product decision, still behind admission.
   features.MOBILE_WELLNESS_AND_SUPPORT_ENABLED = true;
   assert(routes(layout.default()).includes('support-requests'));
@@ -414,6 +423,8 @@ test('all private routes are excluded for every non-active access state', () => 
 test('logout revokes a push registration already in flight', async () => {
   const wait = deferred(); let stored = null; const calls = [];
   const notifications = load('src/lib/quest-notifications.ts', {
+    '@/lib/geofence-events': { setGeofenceEntryHandler() {} },
+    '@/constants/features': { MOBILE_NOTIFICATIONS_ENABLED: true },
     'expo-task-manager': { isTaskDefined: () => false, defineTask() {}, isTaskRegisteredAsync: async () => false },
     react: { useSyncExternalStore() {} },
     'expo-constants': { expoConfig: { extra: { eas: { projectId: 'project' } } } },
@@ -442,7 +453,7 @@ test('logout revokes a push registration already in flight', async () => {
 test('queued geofence registration cannot restart tracking after logout', async () => {
   const wait = deferred(); let starts = 0, running = false;
   const geofencing = load('src/hooks/use-geofencing.ts', {
-    '@react-native-async-storage/async-storage': {}, 'expo-notifications': {}, '@/supabase': {}, '@/lib/quest-notifications': {},
+    '@/constants/features': { MOBILE_GEOFENCING_ENABLED: true },
     '@/lib/geofence-events': { recordGeofenceEvent: async () => {} },
     'expo-task-manager': { defineTask() {}, isAvailableAsync: () => wait.promise },
     'expo-location': {
@@ -538,7 +549,7 @@ test('a delayed location read cannot leak old places after switching accounts', 
 });
 test('location initialization cannot start tracking after logout, even if cleanup fails', async () => {
   const h = hooks(); const wait = deferred(); let currentUser = user('a');
-  let starts = 0, stops = 0, unregisters = 0, clears = 0;
+  let starts = 0, stops = 0, clears = 0;
   const refresh = () => currentUser ? wait.promise : Promise.resolve();
   const start = async () => { starts++; };
   const stop = async () => { stops++; throw new Error('Native removal failure'); };
@@ -547,12 +558,11 @@ test('location initialization cannot start tracking after logout, even if cleanu
     'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'background', addEventListener: () => ({ remove() {} }) } },
     '@/hooks/use-user-locations': { useUserLocations: () => ({ user: currentUser, locations: [], activeLocations: [], fetchLocations: refresh }) },
     '@/hooks/use-current-location': { useCurrentLocation: () => ({ startTracking: start, stopTracking: stop }) },
-    '@/hooks/use-geofencing': { unregisterAllGeofences: async () => { unregisters++; }, syncGeofences: async () => {} },
     '@/lib/geofence-events': { clearGeofenceEvents: async () => { clears++; throw new Error('Storage unavailable'); }, readGeofenceEvents: async () => ({}), subscribeGeofenceEvents: () => () => {} },
   });
   h.mount(() => mod.LocationProvider({ children: null })); await flush();
   currentUser = null; h.render(); wait.resolve(); await flush();
-  assert.equal(starts, 0); assert(stops > 0); assert(unregisters > 0); assert(clears > 0); h.unmount();
+  assert.equal(starts, 0); assert(stops > 0); assert(clears > 0); h.unmount();
 });
 test('shared geofence context rejects delayed reads and retired subscriptions across accounts', async () => {
   const h = hooks(), wait = deferred(); let currentUser = user('a'), listener; const retired = [];
@@ -562,7 +572,6 @@ test('shared geofence context rejects delayed reads and retired subscriptions ac
     'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'background', addEventListener: () => ({ remove() {} }) } },
     '@/hooks/use-user-locations': { useUserLocations: () => ({ user: currentUser, locations: [], activeLocations: [], fetchLocations: noWork }) },
     '@/hooks/use-current-location': { useCurrentLocation: () => ({ startTracking: noWork, stopTracking: noWork }) },
-    '@/hooks/use-geofencing': { unregisterAllGeofences: noWork, syncGeofences: noWork },
     '@/lib/geofence-events': { clearGeofenceEvents: noWork,
       readGeofenceEvents: () => currentUser.id === 'a' ? wait.promise : Promise.resolve({ b: { inside: true, timestamp: 2 } }),
       subscribeGeofenceEvents: callback => { listener = callback; return () => retired.push(callback); } },
