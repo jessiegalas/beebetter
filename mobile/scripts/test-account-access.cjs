@@ -90,6 +90,7 @@ function provider(initialUser = user('a'), initialState = {}, notificationLifecy
     react: h.react,
     'expo-linking': { createURL: (path, options) => 'beebetter://' + path + (options.queryParams ? '?flow=recovery' : ''), getInitialURL: async () => state.initialUrl || null, addEventListener: (_, fn) => { state.link = fn; return { remove() {} }; } },
     '@/lib/auth-flow': authFlow, '@/lib/enrollment-catalogue': catalogue, '@/lib/student-validation': validation,
+    '@/lib/progression': load('src/lib/progression.ts'),
     '@/lib/recommendation-facts': load('src/lib/recommendation-facts.ts'),
     '@/lib/student-workspace': load('src/lib/student-workspace.ts', {}),
     '@/lib/quest-completion': load('src/lib/quest-completion.ts'),

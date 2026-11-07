@@ -4,8 +4,14 @@ import Svg, { Line } from 'react-native-svg';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenFrame, Surface } from '@/components/mobile-ui';
 import { useBeePalette } from '@/constants/theme';
-import { useUserData, type Category } from '@/hooks/use-user-data';
-import { countReachedMilestones, milestoneWindow } from '@/lib/progression';
+import { useUserData } from '@/hooks/use-user-data';
+import { branchProgressList, countReachedMilestones, milestoneWindow } from '@/lib/progression';
+const branchIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
+    Academics: 'book-outline',
+    Habits: 'checkmark-done-outline',
+    Social: 'people-outline',
+    Health: 'heart-outline',
+};
 const nodePositions = [
     { x: 70, y: 65 },
     { x: 230, y: 65 },
@@ -19,12 +25,9 @@ export default function SkillTreeScreen() {
     const c = useBeePalette(), { width, fontScale } = useWindowDimensions();
     const { profile, progressSummary, isRefreshing, refresh } = useUserData();
     const totalXp = profile?.total_xp ?? 0, milestones = milestoneWindow(totalXp), reached = countReachedMilestones(totalXp);
+    const branches = branchProgressList(progressSummary.byCategoryXp ?? {}, progressSummary.byCategory);
     const canvas = Math.min(420, width - (width >= 600 ? 48 : 40) - 40), ratio = canvas / 300;
     const rows = canvas < 300 || fontScale > 1.2;
-    const categories: {
-        title: Category;
-        icon: keyof typeof Ionicons.glyphMap;
-    }[] = [{ title: 'Academics', icon: 'book-outline' }, { title: 'Habits', icon: 'checkmark-done-outline' }, { title: 'Social', icon: 'people-outline' }, { title: 'Health', icon: 'heart-outline' }];
     return <ScreenFrame tab refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={c.honeyDark}/>}>
    <View style={{ gap: 8 }}>
     <ThemedText type="title">Skill Tree</ThemedText>
@@ -33,14 +36,18 @@ export default function SkillTreeScreen() {
     <ThemedText type="small" style={{ color: c.muted }}>XP reflects quest activity, not verified mastery.</ThemedText>
     </View>
    <View style={{ gap: 20 }}>
-    <ThemedText type="subtitle">Quest activity</ThemedText>
-        {categories.map(category => <View key={category.title} style={s.row}>
-        <Ionicons name={category.icon} size={20} color={c.muted}/>
-        <ThemedText style={{ flex: 1 }}>
-        {category.title}
+    <ThemedText type="subtitle">Branch progress</ThemedText>
+        {branches.map(branch => <View key={branch.category} style={s.row}>
+        <Ionicons name={branchIcons[branch.category] ?? 'pricetag-outline'} size={20} color={c.muted}/>
+        <View style={{ flex: 1 }}>
+        <ThemedText>
+        {branch.category}
         </ThemedText>
         <ThemedText type="small" style={{ color: c.muted }}>
-        {progressSummary.byCategory[category.title] ?? 0} completed</ThemedText>
+        {branch.completed} completed</ThemedText>
+        </View>
+        <ThemedText type="small" style={{ color: c.muted }}>
+        Level {branch.level} · {branch.xp} XP</ThemedText>
         </View>)}
     </View>
    <View style={{ gap: 16 }}>

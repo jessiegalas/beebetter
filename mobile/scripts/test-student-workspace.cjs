@@ -31,7 +31,7 @@ function adapter() {
 }
 test('all independent reads start together and map Student/legacy profile fallbacks', async () => {
   const { state, reader } = adapter(); const wait = deferred(); state.handler = () => wait.promise;
-  const task = reader.read(input()); await flush(); assert.equal(state.calls.length, 5);
+  const task = reader.read(input()); await flush(); assert.equal(state.calls.length, 6);
   assert(state.calls.every(call => call.signal instanceof AbortSignal)); wait.resolve(ok(null));
   const result = await task; const profile = result.updateProfile(null);
   assert.equal(profile.id, 'a'); assert.equal(profile.name, 'Student'); assert.equal(profile.student_number, '2026-1');
@@ -54,11 +54,34 @@ test('returned and thrown profile errors preserve prior XP while unrelated slice
 test('a successful summary overrides stale profile XP/streak and retains category/history contracts', async () => {
   const { state, reader } = adapter(); state.handler = call => call.name === 'student_progress_summary'
     ? ok([{ total_completed: '8', academics_completed: '2', habits_completed: '3', social_completed: '1', health_completed: '2', total_xp: '800', level: '9', current_streak: '6' }])
-    : call.name === 'student_list_completion_history' ? ok([{ id: 'history', total_count: 201 }]) : undefined;
+    : call.name === 'student_list_completion_history' ? ok([{ id: 'history', total_count: 201 }])
+    : call.name === 'student_branch_progress' ? ok([
+      { category: 'Academics', xp: '120', completed: '2' },
+      { category: 'Habits', xp: '75', completed: '3' },
+      { category: 'Reading', xp: '40', completed: '1' },
+    ]) : undefined;
   const result = await reader.read(input()); const profile = result.updateProfile(null);
   assert.equal(profile.total_xp, 800); assert.equal(profile.current_streak, 6); assert.equal(profile.level, 9);
   assert.equal(result.history.hasMore, true); assert.equal(result.progressSummary.byCategory.Academics, 2);
   assert.equal(result.progressSummary.totalCompleted, 8);
+  assert.equal(result.progressSummary.byCategoryXp.Academics, 120);
+  assert.equal(result.progressSummary.byCategoryXp.Habits, 75);
+  assert.equal(result.progressSummary.byCategoryXp.Reading, 40);
+  assert.equal(Object.keys(result.progressSummary.byCategoryXp).length, 3);
+  assert.equal(result.progressSummary.byCategory.Reading, 1);
+  assert.equal(result.progressSummary.byCategory.Social, 1);
+});
+test('failed branch XP keeps summary completion counts but reports a progress error', async () => {
+  const { state, reader } = adapter(); state.handler = call => call.name === 'student_branch_progress'
+    ? Promise.reject(Error('offline'))
+    : call.name === 'student_progress_summary'
+      ? ok([{ total_completed: 3, academics_completed: 2, habits_completed: 1, social_completed: 0, health_completed: 0, total_xp: 300, level: 4, current_streak: 2 }])
+      : undefined;
+  const result = await reader.read(input());
+  assert(result.errors.progress);
+  assert.equal(result.progressSummary.totalCompleted, 3);
+  assert.equal(result.progressSummary.byCategory.Academics, 2);
+  assert.equal(Object.keys(result.progressSummary.byCategoryXp).length, 0);
 });
 test('failed history does not discard a successful summary, and failed summary does not discard history', async () => {
   for (const failed of ['student_list_completion_history', 'student_progress_summary']) {
@@ -82,7 +105,7 @@ test('candidate pagination loads facts atomically without completed candidates',
 test('overlapping full and scoped reads coalesce at each slice', async () => {
   const { state, reader } = adapter(); const wait = deferred(); state.handler = () => wait.promise;
   const first = reader.read(input()), second = reader.read(input(), 'quests'), third = reader.read(input());
-  await flush(); assert.equal(state.calls.length, 5); wait.resolve(ok(null));
+  await flush(); assert.equal(state.calls.length, 6); wait.resolve(ok(null));
   const results = await Promise.all([first, second, third]); assert(results.every(result => result !== null));
 });
 test('a scoped retry reads only that slice and preserves unrelated profile fields', async () => {
@@ -100,7 +123,7 @@ test('account switch cancels old queries without overwriting the replacement acc
   const { state, reader } = adapter(); const wait = deferred(); state.handler = () => wait.promise;
   const old = reader.read(input('a')); await flush(); state.handler = null;
   const next = await reader.read(input('b')); assert.equal(next.updateProfile(null).id, 'b');
-  assert(state.calls.slice(0, 5).every(call => call.signal.aborted)); wait.resolve(ok([])); assert.equal(await old, null);
+  assert(state.calls.slice(0, 6).every(call => call.signal.aborted)); wait.resolve(ok([])); assert.equal(await old, null);
 });
 test('an invalid admission fence prevents reads and stops additional candidate pages', async () => {
   const { state, reader } = adapter(); let current = false;

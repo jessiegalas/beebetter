@@ -7,6 +7,7 @@ export type WorkspaceSlice = 'profile' | 'streak' | 'progress' | 'quests';
 export type WorkspaceErrors = Partial<Record<WorkspaceSlice, string>>;
 type HistoryRow = CompletionRecord & { total_count: number };
 type SummaryRow = { total_completed: number; academics_completed: number; habits_completed: number; social_completed: number; health_completed: number; total_xp: number; level: number; current_streak: number };
+type BranchRow = { category: string; xp: number; completed: number };
 type ReadResult<T> = { data: T | null; failed: boolean };
 type WorkspaceInput = { user: Pick<User, 'id' | 'email'>; student: Partial<UserProfile>; isCurrent: () => boolean };
 export type WorkspaceRead = {
@@ -62,11 +63,12 @@ export function createStudentWorkspaceReader(client: Pick<SupabaseClient, 'from'
         readSlice<Partial<UserProfile>>('profile', signal => client.from('profiles').select('*').eq('id', input.user.id).abortSignal(signal).maybeSingle()),
         readSlice<number>('streak', signal => client.rpc('student_get_current_streak').abortSignal(signal)),
         readSlice('progress', async signal => {
-          const [history, summary] = await Promise.all([
+          const [history, summary, branches] = await Promise.all([
             safeRead<HistoryRow[]>(() => client.rpc('student_list_completion_history', { page_size: 100, page_offset: 0 }).abortSignal(signal)),
             safeRead<SummaryRow[]>(() => client.rpc('student_progress_summary').abortSignal(signal)),
+            safeRead<BranchRow[]>(() => client.rpc('student_branch_progress').abortSignal(signal)),
           ]);
-          return { data: { history, summary }, error: null };
+          return { data: { history, summary, branches }, error: null };
         }),
         readSlice('quests', async signal => {
           const load = async (attempt: number): Promise<{ data: { rows: Quest[]; facts: RecommendationFact[]; factsUpdatedAt: number | null; error: string | null }; error: null }> => {
@@ -103,11 +105,13 @@ export function createStudentWorkspaceReader(client: Pick<SupabaseClient, 'from'
       const errors: WorkspaceErrors = {};
       if (profile?.failed) errors.profile = messages.profile;
       if (streak?.failed) errors.streak = messages.streak;
-      if (progress?.failed || progress?.data?.history.failed || progress?.data?.summary.failed) errors.progress = messages.progress;
+      if (progress?.failed || progress?.data?.history.failed || progress?.data?.summary.failed || progress?.data?.branches.failed) errors.progress = messages.progress;
       if (quests?.failed) errors.quests = messages.quests;
       const summary = progress?.data?.summary;
       const summaryRow = !summary?.failed ? summary?.data?.[0] : undefined;
       const history = progress?.data?.history;
+      const branches = progress?.data?.branches;
+      const branchRows = !branches?.failed ? branches?.data ?? [] : [];
       const profileRow = !profile?.failed ? profile?.data : null;
       const student = input.student;
       return {
@@ -139,9 +143,20 @@ export function createStudentWorkspaceReader(client: Pick<SupabaseClient, 'from'
           facts: quests.data.facts, candidatesUpdatedAt: Date.now(), factsUpdatedAt: quests.data.factsUpdatedAt, error: quests.data.error,
         } } : {}),
         ...(history && !history.failed ? { history: { rows: history.data ?? [], hasMore: Number(history.data?.[0]?.total_count ?? 0) > (history.data?.length ?? 0) } } : {}),
-        ...(summaryRow ? { progressSummary: { totalCompleted: Number(summaryRow.total_completed), byCategory: {
-          Academics: Number(summaryRow.academics_completed), Habits: Number(summaryRow.habits_completed), Social: Number(summaryRow.social_completed), Health: Number(summaryRow.health_completed),
-        } } } : {}),
+        ...(summaryRow ? (() => {
+          const byCategory: Record<string, number> = {
+            Academics: Number(summaryRow.academics_completed), Habits: Number(summaryRow.habits_completed),
+            Social: Number(summaryRow.social_completed), Health: Number(summaryRow.health_completed),
+          };
+          for (const branch of branchRows) {
+            if (branch.category && byCategory[branch.category] == null) byCategory[branch.category] = Number(branch.completed);
+          }
+          return { progressSummary: {
+            totalCompleted: Number(summaryRow.total_completed),
+            byCategory,
+            byCategoryXp: Object.fromEntries(branchRows.filter(branch => branch.category).map(branch => [branch.category, Number(branch.xp)])),
+          } };
+        })() : {}),
       };
     },
   };

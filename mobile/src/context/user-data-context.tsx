@@ -72,7 +72,11 @@ export type UserProfile = {
 };
 
 export type { WorkspaceErrors, WorkspaceSlice } from '@/lib/student-workspace';
-export type ProgressSummary = { totalCompleted: number; byCategory: Record<string, number> };
+export type ProgressSummary = {
+  totalCompleted: number;
+  byCategory: Record<string, number>;
+  byCategoryXp: Record<string, number>;
+};
 
 export type AuthOperation = 'sign_in' | 'sign_up' | 'resend_confirmation' | 'password_reset' | 'password_update' | 'callback' | 'registration';
 
@@ -173,7 +177,7 @@ export function UserDataProvider({ children, notificationLifecycle }: {
   const [recommendationData, setRecommendationData] = useState<RecommendationData>(EMPTY_RECOMMENDATION_DATA);
   const [completionHistory, setCompletionHistory] = useState<CompletionRecord[]>([]);
   const [completionHistoryHasMore, setCompletionHistoryHasMore] = useState(false);
-  const [progressSummary, setProgressSummary] = useState<ProgressSummary>({ totalCompleted: 0, byCategory: {} });
+  const [progressSummary, setProgressSummary] = useState<ProgressSummary>({ totalCompleted: 0, byCategory: {}, byCategoryXp: {} });
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [workspaceFailure, setError] = useState<string | null>(null);
@@ -192,7 +196,7 @@ export function UserDataProvider({ children, notificationLifecycle }: {
     setRecommendationData(EMPTY_RECOMMENDATION_DATA);
     setCompletionHistory([]);
     setCompletionHistoryHasMore(false);
-    setProgressSummary({ totalCompleted: 0, byCategory: {} });
+    setProgressSummary({ totalCompleted: 0, byCategory: {}, byCategoryXp: {} });
     setIsLoading(false);
     setIsRefreshing(false);
     setError(null);

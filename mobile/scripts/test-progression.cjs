@@ -10,6 +10,8 @@ const mod = { exports: {} };
 vm.runInThisContext('(function(exports){' + source + '\n})')(mod.exports);
 const {
   ACHIEVEMENTS,
+  CORE_BRANCHES,
+  branchProgressList,
   calculateLevel,
   countReachedMilestones,
   evaluateAchievements,
@@ -98,6 +100,46 @@ test('achievement evaluation returns status copies without mutating definitions'
   assert.equal(typeof ACHIEVEMENTS[0].unlocked, 'function');
   assert.notEqual(result[0], ACHIEVEMENTS[0]);
   assert.deepEqual(ACHIEVEMENTS.map(item => item.id), before);
+});
+
+test('branch progress always renders the four core branches in order', () => {
+  assert.deepEqual([...CORE_BRANCHES], ['Academics', 'Habits', 'Social', 'Health']);
+  const branches = branchProgressList();
+  assert.deepEqual(branches.map(item => item.category), ['Academics', 'Habits', 'Social', 'Health']);
+  assert(branches.every(item => item.xp === 0 && item.completed === 0 && item.level === 1));
+});
+
+test('branch progress merges attributed XP with completion counts and derives levels', () => {
+  const branches = branchProgressList(
+    { Academics: 250, Habits: 75, Social: -10 },
+    { Academics: 3, Habits: 2, Social: 1, Health: 4 },
+  );
+  const byCategory = Object.fromEntries(branches.map(item => [item.category, item]));
+  assert.equal(byCategory.Academics.xp, 250);
+  assert.equal(byCategory.Academics.completed, 3);
+  assert.equal(byCategory.Academics.level, 3);
+  assert.equal(byCategory.Academics.category, 'Academics');
+  assert.equal(byCategory.Academics.currentLevelXp, 50);
+  assert.equal(byCategory.Academics.progressPercent, 50);
+  assert.equal(byCategory.Habits.level, 1);
+  assert.equal(byCategory.Social.xp, 0);
+  assert.equal(byCategory.Social.completed, 1);
+  assert.equal(byCategory.Health.xp, 0);
+  assert.equal(byCategory.Health.completed, 4);
+});
+
+test('custom branches are first-class, sorted after the core branches, and appear once used', () => {
+  const branches = branchProgressList(
+    { Reading: 40, Fitness: 120, Unused: 0 },
+    { Reading: 1, Cooking: 2, Fitness: 1 },
+  );
+  assert.deepEqual(branches.map(item => item.category), ['Academics', 'Habits', 'Social', 'Health', 'Cooking', 'Fitness', 'Reading']);
+  const reading = branches.at(-1);
+  assert.equal(reading.xp, 40);
+  assert.equal(reading.completed, 1);
+  assert.equal(reading.level, 1);
+  assert.equal(branches.find(item => item.category === 'Fitness').level, 2);
+  assert.equal(branches.some(item => item.category === 'Unused'), false);
 });
 
 console.log(count + ' progression tests passed.');

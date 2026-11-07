@@ -20,6 +20,7 @@ Read for quest creation/editing, proof Storage, completion, XP/levels/streaks, o
 - Streaks count consecutive institutional calendar completion days ending today or yesterday (default Asia/Manila). SQL recalculates on reads because cached streaks age.
 - Preserve completion/lifecycle snapshots after mutable records change or quests are deleted. FK nulling/cascades do not authorize ad hoc historical cleanup.
 - All-time totals/category summaries use a summary RPC; newest 100 completion events are a separate read. Candidates page all non-completed quests in batches of 200; they do not include completion history. See [known limitations](known-limitations.md) before changing filters or prerequisite ranking.
+- Branch XP attribution uses `student_branch_progress()` (migration 040), which sums immutable completed-event `xp` snapshots from `quest_lifecycle_events` per category for the authenticated student. Overall XP remains `profiles.total_xp`; the four core branches always render and custom categories appear once used. Branch levels are derived client-side with the shared `calculateLevel` and are not persisted. Legacy completions without a lifecycle snapshot cannot be attributed by category.
 
 ## Proof retention
 

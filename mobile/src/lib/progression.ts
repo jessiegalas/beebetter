@@ -62,6 +62,37 @@ export function milestoneWindow(totalXp: number, size = 6): Milestone[] {
   return Array.from({ length: windowSize }, (_, offset) => milestoneAt(start + offset));
 }
 
+export const CORE_BRANCHES = ['Academics', 'Habits', 'Social', 'Health'] as const;
+export type CoreBranch = (typeof CORE_BRANCHES)[number];
+
+export type BranchProgress = LevelProgress & {
+  category: string;
+  xp: number;
+  completed: number;
+};
+
+/** Merge database-attributed category XP with completion counts. Core branches
+ * always render; custom branches remain first-class and appear only once used. */
+export function branchProgressList(
+  xpByCategory: Record<string, number> = {},
+  completedByCategory: Record<string, number> = {},
+): BranchProgress[] {
+  const core: readonly string[] = CORE_BRANCHES;
+  const custom = Array.from(new Set([...Object.keys(xpByCategory), ...Object.keys(completedByCategory)]))
+    .filter(category => !core.includes(category)
+      && ((xpByCategory[category] ?? 0) > 0 || (completedByCategory[category] ?? 0) > 0))
+    .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+  return [...CORE_BRANCHES, ...custom].map(category => {
+    const xp = Math.max(0, xpByCategory[category] ?? 0);
+    return {
+      category,
+      xp,
+      completed: Math.max(0, completedByCategory[category] ?? 0),
+      ...calculateLevel(xp),
+    };
+  });
+}
+
 export type AchievementIcon = 'sparkles' | 'trophy' | 'star' | 'flame' | 'ribbon';
 
 export type AchievementStats = {

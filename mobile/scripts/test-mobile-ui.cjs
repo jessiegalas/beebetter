@@ -449,6 +449,23 @@ test('Home header, shortcuts and recommendation use existing account and quest d
  features.MOBILE_NOTIFICATIONS_ENABLED=true;
  data.user.user_metadata={};data.profile.display_name='';h.render();assert.ok(text(h.value).includes('Hi, fallback!'));assert.equal(find(h.value,n=>n.type==='Avatar'),undefined);assert.equal(find(h.value,n=>n.type==='HomeMenu').props.avatarUri,undefined);h.unmount();
 });
+test('Skill Tree renders database-backed branch XP, levels and custom categories', () => {
+ const h=hooks();
+ const data={profile:{total_xp:250},progressSummary:{totalCompleted:9,byCategory:{Academics:2,Habits:3,Social:1,Health:2,Reading:1},byCategoryXp:{Academics:120,Habits:75,Reading:40}},levelProgress:{},workspaceErrors:{},isLoading:false,isRefreshing:false,refresh(){},retryWorkspace(){}};
+ const mod=load('src/app/(tabs)/skill-tree.tsx',{...basics(h),'react-native-svg':{__esModule:true,default:'Svg',Line:'Line'},'@/lib/progression':rawLoad('src/lib/progression.ts'),'@/hooks/use-user-data':{useUserData:()=>data}});
+ h.mount(()=>mod.default());
+ const content=text(h.value);
+ assert.ok(content.includes('Branch progress'));
+ for(const label of ['Academics','Habits','Social','Health','Reading'])assert.ok(content.includes(label));
+ assert.ok(content.includes('Level 2 · 120 XP'));
+ assert.ok(content.includes('Level 1 · 75 XP'));
+ assert.ok(content.includes('Level 1 · 40 XP'));
+ assert.ok(content.includes('3 completed'));
+ assert.ok(content.includes('Level 1 · 0 XP'));
+ const icons=nodes(h.value).filter(n=>n.type==='Icon'&&n.props.size===20).map(n=>n.props.name);
+ assert.ok(icons.includes('book-outline'));assert.ok(icons.includes('pricetag-outline'));
+ h.unmount();
+});
 test('side panel preserves destinations and provider logout, with requested placeholder buttons', () => {
  const h=hooks(),routes=[],alerts=[];let closed=0,signouts=0;
  const data={levelProgress:{level:3,currentLevelXp:40,xpForNextLevel:100,progressPercent:40},isSigningOut:false,signOut:()=>signouts++};
