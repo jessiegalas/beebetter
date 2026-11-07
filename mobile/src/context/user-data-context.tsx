@@ -11,6 +11,10 @@ import { createQuestCompletionAdapter } from '@/lib/quest-completion-adapter';
 import { passwordError, studentPayload, validateStudent, type RegistrationEnrollmentOption } from '@/lib/student-validation';
 import { readEnrollmentOptions, requestEnrollmentCatalogue } from '@/lib/enrollment-catalogue';
 import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
+import { calculateLevel, type LevelProgress } from '@/lib/progression';
+
+export { calculateLevel } from '@/lib/progression';
+export type { LevelProgress } from '@/lib/progression';
 
 export type Category = string;
 export type QuestStatus = 'active' | 'completed' | 'rejected' | 'pending';
@@ -67,23 +71,8 @@ export type UserProfile = {
   updated_at: string;
 };
 
-export type LevelProgress = {
-  level: number;
-  currentLevelXp: number;
-  xpForNextLevel: number;
-  progressPercent: number;
-};
 export type { WorkspaceErrors, WorkspaceSlice } from '@/lib/student-workspace';
 export type ProgressSummary = { totalCompleted: number; byCategory: Record<string, number> };
-
-export function calculateLevel(totalXp: number): LevelProgress {
-  const XP_PER_LEVEL = 100;
-  const level = Math.max(1, Math.floor(totalXp / XP_PER_LEVEL) + 1);
-  const currentLevelXp = Math.max(0, totalXp % XP_PER_LEVEL);
-  const xpForNextLevel = XP_PER_LEVEL;
-  const progressPercent = Math.min(100, Math.round((currentLevelXp / xpForNextLevel) * 100));
-  return { level, currentLevelXp, xpForNextLevel, progressPercent };
-}
 
 export type AuthOperation = 'sign_in' | 'sign_up' | 'resend_confirmation' | 'password_reset' | 'password_update' | 'callback' | 'registration';
 

@@ -10,6 +10,7 @@ import { StudentInformationFields } from '@/components/student-information-field
 import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 import { validateStudent, studentPayload } from '@/lib/student-validation';
 import { useUserData, StudentProfileUpdates } from '@/hooks/use-user-data';
+import { evaluateAchievements } from '@/lib/progression';
 export default function ProfileScreen() {
     const COLORS = useBeePalette();
     const { width, fontScale } = useWindowDimensions();
@@ -63,13 +64,11 @@ export default function ProfileScreen() {
         setEditing(false);
         setDraft(null);
     };
-    const badges = [
-        { id: 'first_quest', title: 'First Flight', desc: 'Complete 1 quest', unlocked: questsDone >= 1, icon: 'sparkles' as const },
-        { id: 'five_quests', title: 'Busy Worker', desc: 'Complete 5 quests', unlocked: questsDone >= 5, icon: 'trophy' as const },
-        { id: 'level_2', title: 'Hive Rising', desc: 'Reach Level 2', unlocked: levelProgress.level >= 2, icon: 'star' as const },
-        { id: 'streak_3', title: 'On A Roll', desc: 'Reach a 3-day streak', unlocked: streakDays >= 3, icon: 'flame' as const },
-        { id: 'level_5', title: 'Master Pollinator', desc: 'Reach Level 5', unlocked: levelProgress.level >= 5, icon: 'ribbon' as const },
-    ];
+    const badges = evaluateAchievements({
+        questsCompleted: questsDone,
+        level: levelProgress.level,
+        currentStreak: streakDays,
+    });
     const unlockedBadgesCount = badges.filter((b) => b.unlocked).length;
     const stats = [
         { id: 1, label: 'Quests Done', value: String(questsDone), icon: 'checkmark-circle-outline' as const },
@@ -150,7 +149,7 @@ export default function ProfileScreen() {
         {badge.title}
         </ThemedText>
         <ThemedText type="small" style={{ color: COLORS.muted }}>
-        {badge.desc} · {badge.unlocked ? 'Unlocked' : 'Not yet reached'}
+        {badge.description} · {badge.unlocked ? 'Unlocked' : 'Not yet reached'}
         </ThemedText>
         </View>
         </View>)}
