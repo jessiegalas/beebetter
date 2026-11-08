@@ -1,0 +1,359 @@
+{
+  "asset": "pixel-button",
+  "version": "0.4.0",
+  "themes_available": [
+    "light",
+    "dark"
+  ],
+  "assumptions": {
+    "light_theme": "all tokens confirmed (background/cream #F8F7DE, focus #854D0D)",
+    "dark_theme": "fills, outlines, labels, focus ring and page background are real BeeBetter dark tokens. DERIVED (no token, my pick): the highlight/shade lip colors, the dark accent pressed fill (#BE8B27), and the dark disabled outline/highlight/shade",
+    "accent_dark": "regenerated on-token (#D29D30); no longer reuses the light PNGs",
+    "quiet_family": "outlined interpretation kept for quiet and accent-quiet (not borderless). Update tokens to match, or request transparent borderless versions"
+  },
+  "grid": {
+    "base_art_px": 16,
+    "scales": [
+      1,
+      2,
+      3
+    ],
+    "display_scale_default": 3,
+    "scaling": "integer only, nearest-neighbor, no smoothing",
+    "dp_formula": "dp = art_px * display_scale"
+  },
+  "slice_insets_art_px": {
+    "left": 4,
+    "top": 4,
+    "right": 4,
+    "bottom": 4
+  },
+  "sizes": {
+    "default": {
+      "height_art_px": 16,
+      "height_dp": 48
+    },
+    "compact": {
+      "height_art_px": 14,
+      "height_dp": 42,
+      "note": "same 16px sprite 9-sliced to 14 art px tall, drawn at 3x: corners stay 12dp, only the stretchable middle shrinks (8 -> 6 art px). No fractional scaling. Still use a 48dp hit target (hitSlop)"
+    },
+    "wide": "any width >= 16 art px",
+    "min_art_size_px": {
+      "w": 8,
+      "h": 8
+    },
+    "touch_target_dp": {
+      "w": 48,
+      "h": 48
+    }
+  },
+  "content_insets_dp_at_default_scale": {
+    "unit": "dp (not art px)",
+    "how_to_use": "centre the real text label inside this clear zone; pressed zone is lower, so the label sinks automatically (no separate offset)",
+    "min_horizontal_text_padding_dp": 16,
+    "normal": {
+      "left": 12,
+      "right": 12,
+      "top": 6,
+      "bottom": 9,
+      "clear_height_at_48dp": 33
+    },
+    "pressed": {
+      "left": 12,
+      "right": 12,
+      "top": 9,
+      "bottom": 3,
+      "clear_height_at_48dp": 36
+    }
+  },
+  "disabled": {
+    "file": "button-disabled",
+    "label_color": "#4F4840",
+    "shared_by_all_variants": true
+  },
+  "variants": {
+    "primary": {
+      "normal": "button-primary-normal",
+      "pressed": "button-primary-pressed",
+      "disabled": "button-disabled",
+      "loading": {
+        "face": "button-primary-pressed",
+        "spinner": "spinner-hex-cream"
+      },
+      "label_color": "#F8F7DE",
+      "palette": {
+        "outline": "#3B2410",
+        "fill": "#854D0D",
+        "highlight": "#A8681E",
+        "shade": "#5E3508",
+        "press_fill": "#6F3F08",
+        "press_shade": "#5E3508"
+      }
+    },
+    "secondary": {
+      "normal": "button-secondary-normal",
+      "pressed": "button-secondary-pressed",
+      "disabled": "button-disabled",
+      "loading": {
+        "face": "button-secondary-pressed",
+        "spinner": "spinner-hex-dark"
+      },
+      "label_color": "#3B2410",
+      "palette": {
+        "outline": "#3B2410",
+        "fill": "#F3E3C0",
+        "highlight": "#FFF8E6",
+        "shade": "#D9C28F",
+        "press_fill": "#E6D3A8",
+        "press_shade": "#D9C28F"
+      }
+    },
+    "quiet": {
+      "normal": "button-quiet-normal",
+      "pressed": "button-quiet-pressed",
+      "disabled": "button-disabled",
+      "loading": {
+        "face": "button-quiet-pressed",
+        "spinner": "spinner-hex-dark"
+      },
+      "label_color": "#3B2410",
+      "palette": {
+        "outline": "#6B4A26",
+        "fill": null,
+        "highlight": null,
+        "shade": "#D8C7A1",
+        "press_fill": "#EAD9B5",
+        "press_shade": "#D8C7A1"
+      }
+    },
+    "destructive": {
+      "normal": "button-destructive-normal",
+      "pressed": "button-destructive-pressed",
+      "disabled": "button-disabled",
+      "loading": {
+        "face": "button-destructive-pressed",
+        "spinner": "spinner-hex-cream"
+      },
+      "label_color": "#F8F7DE",
+      "palette": {
+        "outline": "#4A140F",
+        "fill": "#B8322A",
+        "highlight": "#D9584E",
+        "shade": "#8A221B",
+        "press_fill": "#9C2A23",
+        "press_shade": "#8A221B"
+      }
+    },
+    "accent": {
+      "normal": "button-accent-normal",
+      "pressed": "button-accent-pressed",
+      "disabled": "button-disabled",
+      "loading": {
+        "face": "button-accent-pressed",
+        "spinner": "spinner-hex-dark"
+      },
+      "label_color": "#3B2410",
+      "palette": {
+        "outline": "#3B2410",
+        "fill": "#F5B83D",
+        "highlight": "#FFE08A",
+        "shade": "#C98410",
+        "press_fill": "#E3A12B",
+        "press_shade": "#C98410"
+      }
+    },
+    "accent-quiet": {
+      "normal": "button-accent-quiet-normal",
+      "pressed": "button-accent-quiet-pressed",
+      "disabled": "button-disabled",
+      "loading": {
+        "face": "button-accent-quiet-pressed",
+        "spinner": "spinner-hex-dark"
+      },
+      "label_color": "#3B2410",
+      "palette": {
+        "outline": "#A8700F",
+        "fill": "#FFF0C2",
+        "highlight": "#FFF9E0",
+        "shade": "#F2D88A",
+        "press_fill": "#F8DD8E",
+        "press_shade": "#E8C766"
+      }
+    }
+  },
+  "focus_ring": {
+    "file": "button-focus-ring",
+    "color": "#854D0D",
+    "size_art_px": 22,
+    "slice_insets_art_px": {
+      "left": 7,
+      "top": 7,
+      "right": 7,
+      "bottom": 7
+    },
+    "margin_art_px": 3,
+    "margin_dp_at_default_scale": 9,
+    "usage": "overlay drawn on top, sized (button + 2*margin); extends outside the button layout box, so the wrapper must allow overflow (overflow: visible / padding), or it will clip"
+  },
+  "dark": {
+    "variants": {
+      "primary": {
+        "normal": "dark/button-primary-normal",
+        "pressed": "dark/button-primary-pressed",
+        "disabled": "dark/button-disabled",
+        "loading": {
+          "face": "dark/button-primary-pressed",
+          "spinner": "spinner-hex-ink"
+        },
+        "label_color": "#3A200C",
+        "palette": {
+          "outline": "#3A200C",
+          "fill": "#F7EA87",
+          "highlight": "#FFF7BF",
+          "shade": "#C9BC63",
+          "press_fill": "#E1D373",
+          "press_shade": "#C9BC63"
+        }
+      },
+      "secondary": {
+        "normal": "dark/button-secondary-normal",
+        "pressed": "dark/button-secondary-pressed",
+        "disabled": "dark/button-disabled",
+        "loading": {
+          "face": "dark/button-secondary-pressed",
+          "spinner": "spinner-hex-cream"
+        },
+        "label_color": "#F8F7DE",
+        "palette": {
+          "outline": "#A59473",
+          "fill": "#30261A",
+          "highlight": "#403424",
+          "shade": "#221A10",
+          "press_fill": "#493D2A",
+          "press_shade": "#30261A"
+        }
+      },
+      "quiet": {
+        "normal": "dark/button-quiet-normal",
+        "pressed": "dark/button-quiet-pressed",
+        "disabled": "dark/button-disabled",
+        "loading": {
+          "face": "dark/button-quiet-pressed",
+          "spinner": "spinner-hex-cream"
+        },
+        "label_color": "#F8F7DE",
+        "palette": {
+          "outline": "#A59473",
+          "fill": null,
+          "highlight": null,
+          "shade": "#30261A",
+          "press_fill": "#493D2A",
+          "press_shade": "#30261A"
+        }
+      },
+      "destructive": {
+        "normal": "dark/button-destructive-normal",
+        "pressed": "dark/button-destructive-pressed",
+        "disabled": "dark/button-disabled",
+        "loading": {
+          "face": "dark/button-destructive-pressed",
+          "spinner": "spinner-hex-ink"
+        },
+        "label_color": "#21190F",
+        "palette": {
+          "outline": "#48271F",
+          "fill": "#FFB4A8",
+          "highlight": "#FFD3CB",
+          "shade": "#D98C80",
+          "press_fill": "#F09E91",
+          "press_shade": "#D98C80"
+        }
+      },
+      "accent": {
+        "normal": "dark/button-accent-normal",
+        "pressed": "dark/button-accent-pressed",
+        "disabled": "dark/button-disabled",
+        "loading": {
+          "face": "dark/button-accent-pressed",
+          "spinner": "spinner-hex-ink"
+        },
+        "label_color": "#3A200C",
+        "palette": {
+          "outline": "#3A200C",
+          "fill": "#D29D30",
+          "highlight": "#E8B957",
+          "shade": "#9A6F1A",
+          "press_fill": "#BE8B27",
+          "press_shade": "#9A6F1A"
+        }
+      },
+      "accent-quiet": {
+        "normal": "dark/button-accent-quiet-normal",
+        "pressed": "dark/button-accent-quiet-pressed",
+        "disabled": "dark/button-disabled",
+        "loading": {
+          "face": "dark/button-accent-quiet-pressed",
+          "spinner": "spinner-hex-cream"
+        },
+        "label_color": "#F8F7DE",
+        "palette": {
+          "outline": "#D29D30",
+          "fill": "#40351B",
+          "highlight": "#504223",
+          "shade": "#2E2613",
+          "press_fill": "#493D2A",
+          "press_shade": "#40351B"
+        }
+      }
+    },
+    "disabled": {
+      "file": "dark/button-disabled",
+      "label_color": "#D1C4A6",
+      "shared_by_all_variants": true
+    },
+    "focus_ring": {
+      "file": "button-focus-ring-dark",
+      "color": "#F7EA87"
+    },
+    "page_background": "#21190F",
+    "note": "file paths are relative to button/ (dark faces live in button/dark/)"
+  },
+  "loading": {
+    "face": "pressed face of the variant",
+    "interactive": false,
+    "spinner": {
+      "files": {
+        "dark": "spinner-hex-dark",
+        "cream": "spinner-hex-cream",
+        "ink": "spinner-hex-ink"
+      },
+      "frame_art_px": [
+        10,
+        10
+      ],
+      "frames_animated": 6,
+      "fps": 10,
+      "loop": true,
+      "pivot": "center",
+      "reduced_motion_frame_index": 6,
+      "display": {
+        "default_scale": 3,
+        "size_dp": 30,
+        "use_when_button_width_dp_at_least": 54,
+        "narrower_buttons_scale": 2,
+        "size_dp_at_2x": 20,
+        "note": "30dp = 10 art px x 3; needs 12dp text padding each side so 54dp min width; icon-only 48dp buttons use 2x (20dp)"
+      },
+      "sheet": "7 frames in a row: 0-5 animation, 6 = all dots lit (static fallback)"
+    },
+    "label": "hide the label while loading, spinner centred in the pressed clear zone"
+  },
+  "naming_note": "plain .png (not .9.png) so Android tooling does not treat them as nine-patch files; insets live in this JSON",
+  "follow_up": [
+    "Selected state for chips/tabs/toggle buttons: belongs with the chip and tab assets, not built yet",
+    "Light accent is #F5B83D but the accent token is #D29D30: decide whether to regenerate the light accent on-token",
+    "Decide quiet/accent-quiet: keep the outlined look (update tokens) or ask for borderless transparent versions",
+    "PixelButton wrapper must allow overflow for the focus ring"
+  ]
+}

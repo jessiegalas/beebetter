@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUserData } from '@/hooks/use-user-data';
-import { Button, Field, IconButton } from '@/components/mobile-ui';
+import { Field, IconButton } from '@/components/mobile-ui';
+import { PixelButton } from '@/components/pixel/pixel-button';
 import { ThemedText } from '@/components/themed-text';
 import { BeeMark } from '@/components/bee-visuals';
 import { StudentInformationFields } from '@/components/student-information-fields';
@@ -122,7 +123,7 @@ export default function AuthScreen() {
         {accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>}
         {feedback && <ThemedText accessibilityRole={success ? undefined : 'alert'} accessibilityLiveRegion="polite" style={[styles.feedback, success && styles.successFeedback]}>{feedback}</ThemedText>}
         {!recovery && mode === 'sign-in' && confirmationEmail && <View style={styles.confirmationCard}><View style={styles.confirmationCopy}><ThemedText style={styles.confirmationTitle}>Confirm {confirmationEmail}</ThemedText><ThemedText style={styles.confirmationText}>Check spam or request another email.</ThemedText></View><TouchableOpacity style={styles.modeButton} accessibilityRole="button" disabled={busy || remaining > 0} onPress={() => void resend()}><ThemedText style={styles.resendText}>{remaining > 0 ? remaining + 's' : 'Resend confirmation'}</ThemedText></TouchableOpacity></View>}
-        <Button label={recovery ? 'Update password' : mode === 'forgot' ? 'Send reset instructions' : mode === 'sign-up' ? 'Create account' : 'Sign in'} loading={busy} disabled={signup && (!form.ready || form.selectionChanged)} onPress={() => void submit()} />
+        <PixelButton label={recovery ? 'Update password' : mode === 'forgot' ? 'Send reset instructions' : mode === 'sign-up' ? 'Create account' : 'Sign in'} loading={busy} disabled={signup && (!form.ready || form.selectionChanged)} onPress={() => void submit()} />
         {!recovery && <TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.modeButton} onPress={() => { if (submitting.current || busy) return; setMode(mode === 'forgot' ? 'sign-in' : 'forgot'); setFeedback(null); setPassword(''); }}><ThemedText style={styles.modeText}>{mode === 'forgot' ? 'Back to sign in' : 'Forgot your password?'}</ThemedText></TouchableOpacity>}
         {(recovery || access === 'blocked') && <TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.modeButton} onPress={() => void signOut()}><ThemedText style={styles.modeText}>{isSigningOut ? 'Signing out...' : 'Sign out'}</ThemedText></TouchableOpacity>}
       </ScrollView>

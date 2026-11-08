@@ -722,6 +722,7 @@ function screen(relative, context, options = []) {
     '@/hooks/use-enrollment-options': { useEnrollmentOptions: () => enrollment }, '@/lib/student-validation': validation,
     '@/constants/theme': { ...require('../src/constants/design-tokens.json'), Borders: { focus: 2 }, Controls: { minHeight: 48 }, Typography: require('../src/constants/design-tokens.json').typography, Fonts: { sans: 'sans-serif' }, Radii: {}, useBeePalette: () => require('../src/constants/design-tokens.json').light, useBeeStyles: factory => factory(require('../src/constants/design-tokens.json').light) },
     '@/components/mobile-ui': { Button: 'ActionButton', Field: 'Field', IconButton: 'IconButton' },
+    '@/components/pixel/pixel-button': { PixelButton: 'ActionButton' },
     '@/components/bee-visuals': { BeeMark: 'BeeMark' },
   });
   h.mount(() => relative.endsWith('auth.tsx') ? mod.default() : mod.StudentOnboarding());
