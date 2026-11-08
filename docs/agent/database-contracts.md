@@ -6,7 +6,7 @@ Read for schema, RLS, grants, RPCs, triggers, backfills, or migration operations
 
 [db-schema.sql](db-schema.sql) is the current deployed `public` schema snapshot from the hosted Supabase database. Inspect relevant definitions only when a task involves database structure, tables, columns, relationships, RPCs/functions, triggers, RLS policies, grants, indexes, or other PostgreSQL/Supabase schema details. Do not preload the entire file or read it for unrelated tasks.
 
-The snapshot was regenerated from the hosted database on 2026-10-10 using a schema-only `public` export, retaining functions, policies, grants, and RLS declarations. It contains no table data and retains UTF-16LE encoding. It records deployed definitions, not migration history or Auth configuration. Do not hand-edit the snapshot.
+The snapshot was regenerated from the hosted database on 2026-11-08 using a schema-only `public` export, retaining functions, policies, grants, and RLS declarations. It contains no table data and retains UTF-16LE encoding. It records deployed definitions, not migration history or Auth configuration. Do not hand-edit the snapshot.
 
 Prefer the snapshot over older documentation when determining deployed `public` structure. Numbered SQL in `supabase/migrations/` remains the source of historical change intent and rollout order, and the snapshot does not replace migrations. Before changing behavior, inspect the relevant migrations and replacement definitions in numeric order, including grants, callers, constraints, and triggers.
 
