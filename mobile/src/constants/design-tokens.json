@@ -129,7 +129,13 @@
       "cloudShade": "#CDE7F3",
       "grassBase": "#2F8E3F",
       "grassShade": "#236B35",
-      "grassHighlight": "#78C94D"
+      "grassHighlight": "#78C94D",
+      "soilBand": "#452713",
+      "soilFleck": "#58371D",
+      "soilPebble": "#805A38",
+      "rockBase": "#77786C",
+      "rockShade": "#51564C",
+      "rockHighlight": "#A6A68D"
     },
     "spacing": {
       "px1": 3,

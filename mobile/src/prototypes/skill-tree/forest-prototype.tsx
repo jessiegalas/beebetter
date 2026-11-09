@@ -7,6 +7,7 @@ import { Pixel, PixelSpacing, TypographyRoles, artPixelsToDp } from '@/constants
 import { DOMAINS, TREE_SIZE, overviewCanopyTargets, treeSceneLayout, type DomainId } from './forest-model';
 import { TREE_PALETTE, WorldTreeArt, WorldTreeGround, WorldTreeName, WorldTreeSky } from './world-tree-art';
 import { WorldTreeClouds, WorldTreeGrass, WorldTreeSun } from './world-tree-scenery';
+import { WorldTreeSoilDetails } from './world-tree-soil';
 
 /** One scrolling world: tree overview above, reserved soil content below. */
 export default function ForestPrototype() {
@@ -15,6 +16,7 @@ export default function ForestPrototype() {
   const reducedMotion = useReducedMotion();
   const scroll = useRef<ScrollView>(null);
   const [viewport, setViewport] = useState({ width, height: 0 });
+  const [soilContentHeight, setSoilContentHeight] = useState(0);
   const [selected, setSelected] = useState<DomainId | null>(null);
   const [focused, setFocused] = useState<DomainId | null>(null);
   const [hovered, setHovered] = useState<DomainId | null>(null);
@@ -27,6 +29,10 @@ export default function ForestPrototype() {
   };
   const layout = treeSceneLayout(viewport.width, viewport.height);
   const groundTop = layout.rootLine - artPixelsToDp(24);
+  const soilStart = groundTop + artPixelsToDp(12);
+  const soilOverviewHeight = Math.max(0, viewport.height - soilStart);
+  const deepSoilHeight = Math.max(viewport.height, soilContentHeight);
+  const soilWorldHeight = soilOverviewHeight + deepSoilHeight;
   const largeText = fontScale > 1.3;
 
   return <SafeAreaView edges={['left', 'right']} style={s.root}>
@@ -41,6 +47,9 @@ export default function ForestPrototype() {
         <View testID="world-tree-soil-fill" pointerEvents="none" style={[s.soilFill, { top: groundTop + artPixelsToDp(12) }]} />
         <View testID="world-tree-root-soil" pointerEvents="none" style={[s.ground, { top: groundTop }]}>
           <WorldTreeGround width={viewport.width} />
+        </View>
+        <View testID="world-tree-soil-details" pointerEvents="none" style={[s.soilDetails, { top: soilStart }]}>
+          <WorldTreeSoilDetails width={viewport.width} height={soilOverviewHeight} worldHeight={soilWorldHeight} />
         </View>
         <View testID="world-tree-grass-layer" pointerEvents="none" style={[s.grass, { top: groundTop - PixelSpacing.px3 }]}>
           <WorldTreeGrass width={viewport.width} />
@@ -70,9 +79,13 @@ export default function ForestPrototype() {
         </ScrollView>}
       </>}
     </View>
-    {viewport.height > 0 && <View testID="world-tree-soil-content" style={[s.futureContent, {
+    {viewport.height > 0 && <View testID="world-tree-soil-content"
+      onLayout={({ nativeEvent: { layout: measured } }) => setSoilContentHeight(previous => previous === measured.height ? previous : measured.height)} style={[s.futureContent, {
       minHeight: viewport.height, paddingBottom: insets.bottom + PixelSpacing.px6,
     }]}>
+      <View testID="world-tree-deep-soil-details" pointerEvents="none" style={s.soilDetails}>
+        <WorldTreeSoilDetails width={viewport.width} height={deepSoilHeight} worldHeight={soilWorldHeight} offsetY={soilOverviewHeight} />
+      </View>
       <PixelButtonSvg label="Back to tree" intent="secondary" style={s.back}
         onPress={() => scroll.current?.scrollTo({ x: 0, y: 0, animated: !reducedMotion })} />
       <Text accessibilityRole="header" style={[TypographyRoles.heading, s.soilText]}>{DOMAINS.find(domain => domain.id === selected)?.name ?? 'Your branches'}</Text>
@@ -88,6 +101,7 @@ const s = StyleSheet.create({
   scene: { overflow: 'hidden', backgroundColor: Pixel.worldTree.skyTop },
   sky: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   soilFill: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: TREE_PALETTE.foreground },
+  soilDetails: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' },
   ground: { position: 'absolute', left: 0, right: 0, height: artPixelsToDp(12) },
   grass: { position: 'absolute', left: 0, right: 0, height: artPixelsToDp(16) },
   art: { position: 'absolute', width: TREE_SIZE.width, height: TREE_SIZE.height },

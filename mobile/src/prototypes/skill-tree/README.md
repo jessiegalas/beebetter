@@ -24,6 +24,10 @@ near the bottom. Appearance changes remain in Settings.
   `pixel.worldTree`; other screens' semantic palettes remain unchanged.
 - Permanent stepped soil sits behind the full root fan, then joins a solid fill
   through the screen bottom. It has no handle, drag behavior or expandable panel.
+- Soil has an uneven, manually composed arrangement of rock clusters, pebbles,
+  moss/grass tufts, edge roots and broken sediment pockets. Both scroll sections
+  crop the same composition, keeping details continuous without repeated tiles.
+  Decorations remain behind content, ignore touches and use batched token paths.
 - Domain names use VT323 SVG text: one stroke pass and one fill pass with identical
   coordinates and metrics. This replaces the misaligned native Text copies.
 - Transparent canopy targets stay at least 48dp and do not overlap. Names are

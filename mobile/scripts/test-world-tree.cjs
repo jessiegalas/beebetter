@@ -87,6 +87,36 @@ assert.equal(tree.props.width, model.TREE_SIZE.width);
 assert.equal(tree.props.height, model.TREE_SIZE.height);
 assert.equal(nodes(tree).find(node => node.type === 'G').props.scale, 3);
 const colors = source.pixel.worldTree;
+const soilArt = load('src/prototypes/skill-tree/world-tree-soil.tsx', {
+  react: { ...hooks().react, memo: component => component, useMemo: compute => compute() },
+  'react-native-svg': svg, '@/constants/tokens': tokens,
+});
+for (const width of [320, 360, 360.5, 393, 412, 600]) {
+  const worldHeight = 903;
+  const upper = soilArt.WorldTreeSoilDetails({ width, height: 231, worldHeight });
+  const lower = soilArt.WorldTreeSoilDetails({ width, height: 672, worldHeight, offsetY: 231 });
+  assert.equal(upper.props.width, Math.ceil(width / 3) * 3);
+  assert.equal(lower.props.viewBox, '0 231 ' + upper.props.width + ' 672');
+  assert.equal(lower.props.pointerEvents, 'none');
+  assert.equal(lower.props.accessible, false);
+  assert.equal(lower.props['aria-hidden'], true);
+  const upperPaths = nodes(upper).filter(node => node.type === 'Path');
+  const lowerPaths = nodes(lower).filter(node => node.type === 'Path');
+  assert.deepEqual(upperPaths.map(node => node.props.d), lowerPaths.map(node => node.props.d), 'both sections crop the same world-coordinate artwork, preventing seams');
+  assert.ok(upperPaths.length <= 11, 'soil batches sprites into a bounded number of native SVG paths');
+  const rectangleY = [];
+  for (const part of upperPaths) {
+    assert.ok(Object.values(colors).includes(part.props.fill));
+    const runs = [...part.props.d.matchAll(/M(\d+) (\d+)h(\d+)v(\d+)h-(\d+)Z/g)];
+    assert.equal(runs.map(run => run[0]).join(''), part.props.d);
+    for (const [, x, y, w, h, reverse] of runs) {
+      assert.equal(w, reverse);
+      assert.ok([x, y, w, h].map(Number).every(tokens.isOnPixelGrid));
+      rectangleY.push(Number(y));
+    }
+  }
+  assert.ok(rectangleY.some(y => y < 231) && rectangleY.some(y => y > 700), 'details continue through the lower scrolling soil');
+}
 const scenery = load('src/prototypes/skill-tree/world-tree-scenery.tsx', {
   react: hooks().react, 'react-native-svg': svg, '@/constants/tokens': tokens,
 });
@@ -166,6 +196,7 @@ for (const fontScale of [0.85, 1, 1.3, 2]) {
       '@/constants/tokens': tokens, './forest-model': model,
       './world-tree-art': { TREE_PALETTE: source.light, WorldTreeArt: 'TreeArt', WorldTreeSky: 'SkyArt', WorldTreeGround: 'GroundArt', WorldTreeName: 'NameArt' },
       './world-tree-scenery': { WorldTreeSun: 'SunArt', WorldTreeClouds: 'CloudArt', WorldTreeGrass: 'GrassArt' },
+      './world-tree-soil': { WorldTreeSoilDetails: 'SoilArt' },
     }).default;
     h.mount(Screen);
     const scene = () => nodes(h.value).find(node => node.props?.testID === 'world-tree-overview');
@@ -205,6 +236,20 @@ for (const fontScale of [0.85, 1, 1.3, 2]) {
     const future = findId('world-tree-soil-content');
     assert.equal(flatten(future.props.style).minHeight, 672, 'reserved soil spans another viewport');
     assert.equal(flatten(future.props.style).backgroundColor, source.light.foreground, 'soil has no color seam');
+    const soilDetails = findId('world-tree-soil-details'), deepSoilDetails = findId('world-tree-deep-soil-details');
+    assert.equal(soilDetails.props.pointerEvents, 'none');
+    assert.equal(deepSoilDetails.props.pointerEvents, 'none');
+    assert.ok(drawn.indexOf(soilDetails) < drawn.indexOf(artNode()), 'buried details remain behind the tree roots');
+    const soilSlices = drawn.filter(node => node.type === 'SoilArt');
+    assert.equal(soilSlices.length, 2);
+    assert.equal(flatten(soilDetails.props.style).top + soilSlices[0].props.height, 672);
+    assert.equal(soilSlices[1].props.offsetY, soilSlices[0].props.height);
+    assert.equal(soilSlices[0].props.worldHeight, soilSlices[1].props.worldHeight);
+    future.props.onLayout({ nativeEvent: { layout: { height: 900 } } });
+    await Promise.resolve();
+    const grownSlices = nodes(h.value).filter(node => node.type === 'SoilArt');
+    assert.equal(grownSlices[1].props.height, 900, 'scenery covers taller content and enlarged text');
+    assert.equal(grownSlices[0].props.worldHeight, grownSlices[0].props.height + 900);
     const canopies = drawn.filter(node => node.props?.testID?.startsWith('domain-canopy-'));
     assert.equal(canopies.length, 4);
     for (const canopy of canopies) {
@@ -251,4 +296,5 @@ for (const fontScale of [0.85, 1, 1.3, 2]) {
   console.log('PASS captions centered on leaf-pixel centroids; hover/focus/press/click brighten active canopy and darken peers with selection restored on exit');
   console.log('PASS domain tap scrolls to reserved soil viewport; no scroll on hover/focus/cancel; return to tree and reduced-motion scrolling');
   console.log('PASS separate decorative sun/cloud/grass layers, integer pixel scale, unobstructed controls and full-width grass across 320–600dp viewports');
+  console.log('PASS continuous soil composition across scroll sections, grid-aligned token sprites, bounded native paths and taller-content coverage');
 })().catch(error => { console.error(error); process.exitCode = 1; });
