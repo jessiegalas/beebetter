@@ -1,4 +1,5 @@
-import { RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line } from 'react-native-svg';
 import { ThemedText } from '@/components/themed-text';
@@ -34,6 +35,13 @@ export default function SkillTreeScreen() {
     <ThemedText style={{ color: c.muted }}>
     {reached} milestones reached · {totalXp} XP</ThemedText>
     <ThemedText type="small" style={{ color: c.muted }}>XP reflects quest activity, not verified mastery.</ThemedText>
+    <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel="Open interactive skill tree prototype"
+      onPress={() => router.push('/skill-tree-prototype')}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, opacity: pressed ? 0.7 : 1 })}>
+      <Ionicons name="leaf-outline" size={20} color={c.primary} />
+      <ThemedText style={{ color: c.primary, fontWeight: '600' }}>Open prototype</ThemedText>
+      <Ionicons name="arrow-forward" size={18} color={c.primary} />
+    </Pressable>
     </View>
    <View style={{ gap: 20 }}>
     <ThemedText type="subtitle">Branch progress</ThemedText>

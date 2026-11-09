@@ -1,6 +1,7 @@
 import '@/global.css';
 import { PortalHost } from '@rn-primitives/portal';
 import { ThemeProvider, Stack } from 'expo-router';
+import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -34,6 +35,7 @@ function AppNavigator() {
         </Stack.Protected>
         <Stack.Screen name="add-quest" options={{ presentation: 'modal' }} />
         <Stack.Screen name="manage-locations" />
+        <Stack.Screen name="skill-tree-prototype" options={{ headerShown: true, title: 'Skill Tree Prototype', gestureEnabled: false }} />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/general" />
         <Stack.Protected guard={MOBILE_WELLNESS_AND_SUPPORT_ENABLED}>
@@ -48,9 +50,13 @@ function AppNavigator() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    'VT323-Regular': require('@/assets/fonts/VT323/VT323-Regular.ttf'),
+  });
   const palette = useBeePalette();
   const { scheme } = useAppAppearance();
   useRestoreAppAppearance();
+  if (!fontsLoaded && !fontError) return null;
   return (
     <UserDataProvider notificationLifecycle={notificationLifecycle}>
       <LocationProvider>
