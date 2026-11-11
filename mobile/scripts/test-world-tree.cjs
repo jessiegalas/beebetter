@@ -10,6 +10,205 @@ const model = load('src/prototypes/skill-tree/forest-model.ts', { '@/constants/t
 const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)];
 const flatten = styles => Object.assign({}, ...[styles].flat(Infinity).filter(Boolean));
 const overlaps = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+const generated = load('src/prototypes/skill-tree/generated-tree-layout.ts');
+const { layoutGeneratedTree, treeScene, treeArtwork, GRAPHIC_TARGET_CAP } = generated;
+const { generatedTreeFixtures } = load('src/prototypes/skill-tree/generated-tree-fixtures.ts');
+function assertQuestSpacing(world) {
+  const quests = world.nodes.filter(node => node.kind === 'quest');
+  for (const [index, node] of quests.entries()) {
+    for (const other of quests.slice(index + 1)) {
+      assert.ok(Math.abs(node.x - other.x) >= 10 || Math.abs(node.y - other.y) >= 10,
+        `${node.id} and ${other.id} have room for the bud or leaf silhouette`);
+    }
+  }
+}
+for (const { data } of generatedTreeFixtures) {
+  const world = layoutGeneratedTree(data);
+  const reversed = Object.fromEntries(Object.entries(data).map(([key, rows]) => [key, [...rows].reverse()]));
+  assert.deepEqual(layoutGeneratedTree(reversed), world);
+  assert.equal(world.nodes.length, data.domains.length + data.lines.length + data.quests.length);
+  assertQuestSpacing(world);
+  for (const node of world.nodes) {
+    assert.ok(Number.isInteger(node.x) && Number.isInteger(node.y));
+    assert.ok(node.x >= 0 && node.x <= world.width && node.y >= 0 && node.y <= world.height);
+    assert.match(node.edge, /^M\d+ \d+(?:H\d+V\d+)+$/);
+  }
+  const focuses = [{}, ...data.domains.map(({ id }) => ({ domainId: id })),
+    ...data.lines.map(({ domainId, id }) => ({ domainId, lineId: id }))];
+  for (const focus of focuses) for (const width of [192, 272, 312, 420]) {
+    const scene = treeScene(world, data, focus, width, 440);
+    assert.ok(scene.targets.length <= GRAPHIC_TARGET_CAP);
+    const boxes = scene.targets.map(target => {
+      assert.equal(target.x, world.byId.get(target.id).x);
+      assert.equal(target.y, world.byId.get(target.id).y);
+      assert.ok(target.width >= 48 && target.height >= 48);
+      return { x: target.x * scene.camera.scale + scene.camera.x - target.width / 2,
+        y: target.y * scene.camera.scale + scene.camera.y + target.topOffset, width: target.width, height: target.height };
+    });
+    for (const [i, box] of boxes.entries()) {
+      assert.ok(box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 440);
+      assert.ok(boxes.slice(i + 1).every(other => !overlaps(box, other)));
+    }
+    assert.ok(scene.camera.x % 3 === 0 && scene.camera.y % 3 === 0);
+    if (focus.domainId && !focus.lineId) {
+      const trunkX = world.center * scene.camera.scale + scene.camera.x;
+      assert.ok(trunkX > 0 && trunkX < width, 'focused framing retains the trunk');
+      for (const line of data.lines.filter(line => line.domainId === focus.domainId)) {
+        const node = world.byId.get(line.id);
+        assert.ok(node.x * scene.camera.scale + scene.camera.x > 0);
+        assert.ok(node.y * scene.camera.scale + scene.camera.y < 440);
+      }
+    }
+    const paint = treeArtwork(world, data, focus);
+    const glyphs = Object.entries(paint).filter(([key]) => key.startsWith('glyph-'))
+      .reduce((total, [, path]) => total + (path.match(/M/g)?.length ?? 0), 0);
+    assert.equal(glyphs, data.quests.length, 'every quest keeps its silhouette at every focus');
+    assert.ok(!Object.keys(paint).some(key => key.startsWith('mass-')), 'foliage stays separate from branches');
+    if (focus.domainId && data.domains.length > 1) {
+      assert.ok(paint['branch:dim'] && paint['branch:highlight'], 'siblings stay drawn while the active path is highlighted');
+    }
+  }
+}
+const mixed = generatedTreeFixtures[2].data;
+const world = layoutGeneratedTree(mixed);
+const midterms = { domainId: 'academics', lineId: 'midterms' };
+const before = treeScene(world, mixed, midterms, 312, 440);
+const completed = { ...mixed, quests: mixed.quests.map(quest =>
+  quest.id === 'review' ? { ...quest, state: 'completed' }
+    : quest.id === 'quiz' ? { ...quest, state: 'active' } : quest) };
+const after = treeScene(world, completed, midterms, 312, 440);
+const root = treeScene(world, mixed, {}, 312, 440);
+const domainAnchor = world.byId.get('academics');
+const lineAnchor = world.byId.get('midterms');
+const centerOn = (anchor, zoom) => {
+  const scale = root.rootScale * zoom;
+  return { x: 156 - anchor.x * scale, y: 220 - anchor.y * scale, scale };
+};
+const { clampTreeCamera, semanticTreeFocus, canTapTree, zoomTreeAt } = generated;
+const bounded = clampTreeCamera({ x: -99999, y: 99999, scale: 100 }, 312, 440, world.width, world.height, root.rootScale, true);
+assert.equal(bounded.scale, root.rootScale * 4.8);
+assert.ok(bounded.x >= 312 - world.width * bounded.scale && bounded.y <= 0);
+assert.ok(bounded.x % 3 === 0 && bounded.y % 3 === 0);
+assert.equal(clampTreeCamera({ x: 900, y: 900, scale: 0 }, 312, 440, world.width, world.height, root.rootScale).scale, root.rootScale);
+const anchored = zoomTreeAt(root.camera, root.camera.scale * 2, 100, 130);
+assert.equal((100 - root.camera.x) / root.camera.scale, (100 - anchored.x) / anchored.scale);
+assert.equal((130 - root.camera.y) / root.camera.scale, (130 - anchored.y) / anchored.scale);
+const focusAt = (focus, anchor, zoom) => semanticTreeFocus(world, focus, centerOn(anchor, zoom), root.rootScale, 312, 440);
+assert.equal(focusAt({}, domainAnchor, 1.4).domainId, undefined);
+assert.equal(focusAt({}, domainAnchor, 1.6).domainId, 'academics');
+assert.equal(focusAt({ domainId: 'academics' }, domainAnchor, 1.4).domainId, 'academics');
+assert.equal(focusAt({ domainId: 'academics' }, domainAnchor, 1.2).domainId, undefined);
+assert.equal(focusAt({ domainId: 'academics' }, lineAnchor, 2.3).lineId, undefined);
+assert.equal(focusAt({ domainId: 'academics' }, lineAnchor, 2.4).lineId, 'midterms');
+assert.equal(focusAt(midterms, lineAnchor, 2.1).lineId, 'midterms');
+assert.equal(focusAt(midterms, lineAnchor, 1.9).lineId, undefined);
+assert.equal(canTapTree(0), true);
+assert.equal(canTapTree(generated.PAN_THRESHOLD), false, 'an activated drag cannot open a target');
+assert.equal(canTapTree(90), false);
+const denseData = generatedTreeFixtures[3].data;
+const denseWorld = layoutGeneratedTree(denseData);
+assert.ok(denseWorld.forks.length < denseWorld.nodes.filter(node => node.kind === 'quest').length / 3,
+  'crowded nodes share cluster forks');
+const withMoreThesisQuests = (count) => ({
+  ...denseData,
+  quests: [...denseData.quests, ...Array.from({ length: count }, (_, index) => ({
+    id: 'extra-' + String(index).padStart(2, '0'), domainId: 'academics', lineId: 'thesis',
+    title: 'Extra practice', state: 'active', createdAt: '2026-11-12T00:00:00Z',
+  }))],
+});
+for (const added of [1, 3]) {
+  const grown = layoutGeneratedTree(withMoreThesisQuests(added));
+  for (const { id, x, y } of denseWorld.nodes.filter(node => node.kind === 'quest')) {
+    const after = grown.byId.get(id);
+    assert.deepEqual([after.x, after.y], [x, y], `${id} keeps its slot at ${57 + added} Thesis quests`);
+  }
+}
+for (const added of [13, 24]) {
+  const grown = layoutGeneratedTree(withMoreThesisQuests(added));
+  assert.equal(grown.forks.filter(item => item.parentId === 'thesis').length, Math.ceil((57 + added) / 16));
+  assert.equal(grown.nodes.filter(item => item.parentId === 'thesis').length, 57 + added);
+  assertQuestSpacing(grown);
+}
+assert.deepEqual(layoutGeneratedTree(completed), world, 'completion does not change any world position or edge');
+assert.deepEqual(after.targets.map(({ id, x, y, width, height }) => ({ id, x, y, width, height })),
+  before.targets.map(({ id, x, y, width, height }) => ({ id, x, y, width, height })));
+assert.notDeepEqual(treeArtwork(world, completed, midterms), treeArtwork(world, mixed, midterms));
+assert.ok(before.entries.findIndex(target => target.id === 'review') < before.entries.findIndex(target => target.id === 'quiz'));
+assert.match(treeScene(world, mixed, { domainId: 'academics', lineId: 'thesis' }, 312, 440)
+  .entries.find(target => target.id === 'rehearse').prerequisiteLabel, /Academics \/ Midterm prep/);
+assert.match(treeScene(world, mixed, { domainId: 'creative', lineId: 'studio' }, 312, 440)
+  .entries[0].prerequisiteLabel, /Academics \/ Thesis/);
+console.log('PASS one generated world, stable slots, camera bounds, dimmed context and uncapped art');
+{
+  const h = hooks();
+  let fontScale = 1;
+  let reduced = false;
+  const timers = [];
+  const renderer = 'GeneratedTreeSvg';
+  const { default: Preview } = load('src/app/generated-tree-preview.tsx', {
+    react: h.react,
+    'react-native': { View: 'View', StyleSheet: { create: styles => styles },
+      BackHandler: { addEventListener: () => ({ remove() {} }) },
+      useWindowDimensions: () => ({ width: 360, height: 780, fontScale }) },
+    'expo-router': { Redirect: 'Redirect', useFocusEffect: effect => h.react.useEffect(effect, [effect]) },
+    'react-native-gesture-handler': { GestureHandlerRootView: 'GestureHandlerRootView' },
+    '@/components/mobile-ui': { Button: 'Button', IconButton: 'IconButton', ScreenFrame: 'ScreenFrame',
+      Sheet: 'Sheet', useReducedMotion: () => reduced },
+    '@/components/themed-text': { ThemedText: 'Text' },
+    '@/constants/tokens': tokens,
+    '@/prototypes/skill-tree/generated-tree-layout': generated,
+    '@/prototypes/skill-tree/generated-tree-fixtures': { generatedTreeFixtures },
+    '@/prototypes/skill-tree/generated-tree-svg': { GeneratedTreeSvg: renderer, targetLabel: item => item.title + ' · ' + item.state },
+  }, { __DEV__: true, setTimeout: (run, ms) => { timers.push({ run, ms }); return timers.length; }, clearTimeout() {} });
+  h.mount(() => Preview().type());
+  const canvas = () => nodes(h.value).find(node => node.type === renderer);
+  const button = label => nodes(h.value).find(node => (node.type === 'Button' || node.type === 'IconButton') && node.props.label === label);
+  const select = id => { canvas().props.onTarget(canvas().props.scene.entries.find(entry => entry.id === id)); h.render(); };
+  const initialWorld = canvas().props.world;
+  const rootCamera = canvas().props.scene.camera;
+  select('academics');
+  const domainCamera = canvas().props.scene.camera;
+  assert.notDeepEqual(domainCamera, rootCamera);
+  select('midterms');
+  assert.equal(canvas().props.world, initialWorld);
+  button('Back').props.onPress(); h.render();
+  assert.deepEqual(canvas().props.scene.camera, domainCamera);
+  select('midterms'); select('review');
+  assert.ok(nodes(h.value).some(node => node.type === 'Sheet'));
+  button('Simulate completion').props.onPress(); h.render();
+  assert.equal(canvas().props.scene.focusedId, 'review');
+  assert.equal(canvas().props.grownId, undefined);
+  assert.ok(timers[0].ms >= generated.CAMERA_MS);
+  timers.shift().run(); h.render();
+  assert.equal(canvas().props.grownId, 'review');
+  assert.equal(canvas().props.world, initialWorld);
+  assert.equal(canvas().props.scene.entries.find(entry => entry.id === 'quiz').state, 'active');
+  timers.shift().run(); h.render();
+  assert.deepEqual(canvas().props.scene.camera, rootCamera);
+  button('Fixtures · Mixed tree').props.onPress(); h.render();
+  button('Crowded domain').props.onPress(); h.render();
+  select('academics');
+  select('thesis');
+  assert.ok(canvas().props.scene.targets.length <= GRAPHIC_TARGET_CAP);
+  assert.ok(canvas().props.scene.targets.length > 0 && canvas().props.scene.targets.every(target => !target.showTitle));
+  assert.ok(canvas().props.scene.entries.length > 50);
+  button('More quests').props.onPress(); h.render();
+  assert.equal(canvas(), undefined);
+  assert.ok(button('Practice exercise 54 · active'));
+  button('Show graphic').props.onPress(); reduced = true; h.render();
+  assert.equal(canvas().props.reducedMotion, true);
+  button('Zoom in').props.onPress(); h.render();
+  assert.ok(canvas().props.scene.camera.scale > canvas().props.scene.rootScale);
+  button('Reset view').props.onPress(); h.render();
+  assert.equal(canvas().props.scene.focusedId, undefined);
+  select('academics');
+  select('thesis');
+  fontScale = 1.5; h.render();
+  assert.equal(canvas(), undefined);
+  assert.ok(button('Practice exercise 54 · active'));
+  h.unmount();
+}
+console.log('PASS camera drill-down/back, on-tree reveal, overflow and enlarged-text fallback');
 const compiledAgain = compileTree(fs.readFileSync(path.join(__dirname, '../assets/skill-tree', compiled.source)));
 assert.deepEqual(compiledAgain, compiled, 'runtime paths match the approved source and current tokens');
 assert.equal(compiled.width * tokens.ArtPixelDp, model.TREE_SIZE.width);
