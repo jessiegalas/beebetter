@@ -1,13 +1,21 @@
 # World tree prototype
 
-Open **Home → Skill Tree → Open prototype** in the native app.
+The legacy proof-only prototype remains at `/skill-tree-prototype` and in
+the developer gallery. **Home → Skill Tree** opens the completion-based pilot.
 
-Tap a canopy to scroll smoothly down into its reserved soil area on the same
-page. The soil content is a placeholder for future work, with no progression
-or unlock rules. **Back to tree** scrolls to the overview and preserves the
-selected highlight. Hover/focus do not scroll. System reduced motion disables
-the automatic scroll animation. Both areas stay mounted in one native
-ScrollView, with a continuous soil fill and no navigation or bottom sheet.
+Tap a canopy to scroll to the category's root on the same page. Each node
+shows a completed quest with a saved photo or video proof. The latest
+completions appear nearest the surface. Use **Load older completions** to
+extend the root and **Back to tree** to return while keeping the selected
+highlight. Hover and focus alone do not scroll. System reduced motion disables
+the automatic scroll animation.
+
+Open a node to view its photo or play its video. Optional notes stay in memory
+for the current visit and clear when the prototype is reopened. This
+read-only prototype uses the signed-in student's completed quest records
+and the private proof bucket. The standalone gallery uses synthetic data.
+PDFs, proof-free completions and deleted quest records are outside the
+prototype. Video uses the SDK-compatible development build with expo-video.
 
 The selected tree silhouette stays on a 96 × 128 art grid, rendered at 3dp per
 cell (288 × 384dp). The tree is centered horizontally with its root end near the
@@ -25,8 +33,8 @@ near the bottom. Appearance changes remain in Settings.
 - Permanent stepped soil sits behind the full root fan, then joins a solid fill
   through the screen bottom. It has no handle, drag behavior or expandable panel.
 - Soil has an uneven, manually composed arrangement of rock clusters, pebbles,
-  moss/grass tufts, edge roots and broken sediment pockets. Both scroll sections
-  crop the same composition, keeping details continuous without repeated tiles.
+  moss/grass tufts, edge roots and broken sediment pockets. The overview and underground header crop the same composition. Root nodes
+  continue into the same soil fill.
   Decorations remain behind content, ignore touches and use batched token paths.
 - Domain names use VT323 SVG text: one stroke pass and one fill pass with identical
   coordinates and metrics. This replaces the misaligned native Text copies.

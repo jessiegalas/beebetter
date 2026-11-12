@@ -10,9 +10,9 @@ export type TreeFocus = { domainId?: string; lineId?: string };
 export type TreeTarget = {
   id: string; kind: 'domain' | 'line' | 'quest'; title: string;
   count?: number; state?: QuestState; prerequisiteLabel?: string;
-  x: number; y: number; width: number; height: number; topOffset: number; showTitle: boolean;
+  x: number; y: number; width: number; height: number; leftOffset: number; topOffset: number; showTitle: boolean;
 };
-type Entry = Omit<TreeTarget, 'x' | 'y' | 'width' | 'height' | 'topOffset' | 'showTitle'>;
+type Entry = Omit<TreeTarget, 'x' | 'y' | 'width' | 'height' | 'leftOffset' | 'topOffset' | 'showTitle'>;
 
 export const GRAPHIC_TARGET_CAP = 8;
 const compareText = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
@@ -216,16 +216,19 @@ export const canTapTree = (distance: number) => {
   return distance < PAN_THRESHOLD;
 };
 
-export function clampTreeCamera(camera: Camera, width: number, height: number, worldWidth: number, worldHeight: number, minScale: number, resting = false): Camera {
+export function clampTreeCamera(camera: Camera, width: number, height: number, worldWidth: number, worldHeight: number,
+  minScale: number, resting = false, verticalPanRange = 0): Camera {
   'worklet';
   const scale = Math.min(minScale * 4.8, Math.max(minScale, camera.scale));
-  const axis = (offset: number, view: number, world: number) => {
+  const axis = (offset: number, view: number, world: number, extra: number) => {
     const remaining = view - world * scale;
-    if (remaining >= 0) return resting ? Math.round(remaining / 6) * 3 : remaining / 2;
+    if (remaining >= 0 && !extra) return resting ? Math.round(remaining / 6) * 3 : remaining / 2;
+    const lower = Math.min(remaining, remaining / 2) - extra;
+    const upper = Math.max(0, remaining / 2) + extra;
     const position = resting ? Math.round(offset / 3) * 3 : offset;
-    return Math.max(resting ? Math.ceil(remaining / 3) * 3 : remaining, Math.min(0, position));
+    return Math.max(resting ? Math.ceil(lower / 3) * 3 : lower, Math.min(resting ? Math.floor(upper / 3) * 3 : upper, position));
   };
-  return { x: axis(camera.x, width, worldWidth), y: axis(camera.y, height, worldHeight), scale };
+  return { x: axis(camera.x, width, worldWidth, 0), y: axis(camera.y, height, worldHeight, verticalPanRange), scale };
 }
 
 export function zoomTreeAt(camera: Camera, scale: number, x: number, y: number): Camera {
@@ -253,7 +256,106 @@ export function semanticTreeFocus(world: TreeWorld, focus: TreeFocus, camera: Ca
   return line ? { domainId, lineId: line.id } : { domainId };
 }
 
-export function treeScene(world: TreeWorld, data: TreeData, focus: TreeFocus, width: number, height: number, revealId?: string, manual?: Camera) {
+export function projectTreeTarget(target: TreeTarget, camera: Camera) {
+  'worklet';
+  return { left: target.x * camera.scale + camera.x + target.leftOffset,
+    top: target.y * camera.scale + camera.y + target.topOffset, width: target.width, height: target.height };
+}
+
+export function treeTargetAt(targets: TreeTarget[], camera: Camera, x: number, y: number, world?: TreeWorld) {
+  if (world && targets.length && targets[0].kind !== 'domain') {
+    const worldX = (x - camera.x) / camera.scale;
+    const worldY = (y - camera.y) / camera.scale;
+    let glyph: WorldNode | undefined;
+    let nearestDistance = Infinity;
+    for (const node of world.nodes) {
+      if (node.kind !== 'quest' || Math.abs(worldX - node.x) > 5 || Math.abs(worldY - node.y) > 5) continue;
+      const distance = Math.hypot(worldX - node.x, worldY - node.y);
+      if (distance < nearestDistance) {
+        glyph = node;
+        nearestDistance = distance;
+      }
+    }
+    // A visible glyph can sit inside another quest's larger touch area.
+    if (glyph) return targets.find(target => target.id === glyph.id);
+  }
+  const hit = targets.find(target => {
+    const box = projectTreeTarget(target, camera);
+    return x >= box.left && x < box.left + box.width && y >= box.top && y < box.top + box.height;
+  });
+  if (hit || !world || targets[0]?.kind !== 'domain') return hit;
+
+  // The overview's foliage can extend well beyond its category label.
+  // A tap near that artwork opens the same category as the label.
+  const categories = new Map(targets.map(target => [target.id, target]));
+  let closest: TreeTarget | undefined;
+  let nearestDistance = 24;
+  for (const node of world.nodes) {
+    const distance = Math.hypot(x - (node.x * camera.scale + camera.x), y - (node.y * camera.scale + camera.y));
+    if (distance >= nearestDistance) continue;
+    const parent = node.parentId ? world.byId.get(node.parentId) : undefined;
+    const categoryId = node.kind === 'domain' ? node.id : parent?.kind === 'domain' ? parent.id : parent?.parentId;
+    const category = categoryId ? categories.get(categoryId) : undefined;
+    if (category) { closest = category; nearestDistance = distance; }
+  }
+  return closest;
+}
+
+export function treeCameraAtRest(camera: Camera, destination: Camera) {
+  'worklet';
+  return Math.abs(camera.x - destination.x) < 1 && Math.abs(camera.y - destination.y) < 1 &&
+    Math.abs(camera.scale - destination.scale) < 0.005;
+}
+
+const coreDomains = new Set(['academics', 'habits', 'health', 'social']);
+const targetSize = 48;
+const targetSteps = [0, -12, 12, -24, 24, -36, 36, -48, 48];
+
+function canPlaceTarget(target: TreeTarget, targets: TreeTarget[], camera: Camera, width: number, height: number) {
+  const box = projectTreeTarget(target, camera);
+  const epsilon = 1e-6;
+  return box.left >= -epsilon && box.top >= -epsilon && box.left + box.width <= width + epsilon &&
+    box.top + box.height <= height + epsilon && !targets.some(other => {
+      const existing = projectTreeTarget(other, camera);
+      return box.left < existing.left + existing.width - epsilon && box.left + box.width > existing.left + epsilon &&
+        box.top < existing.top + existing.height - epsilon && box.top + box.height > existing.top + epsilon;
+    });
+}
+
+function placeOverviewTarget(target: TreeTarget, targets: TreeTarget[], camera: Camera, width: number, height: number) {
+  if (width < targetSize || height < targetSize) return;
+  const x = target.x * camera.scale + camera.x, y = target.y * camera.scale + camera.y;
+  const widths = new Set([Math.min(target.width, width), targetSize]);
+  for (const shift of targetSteps) {
+    for (const size of widths) {
+      const left = clamp(x - size / 2, 0, width - size);
+      const top = clamp(y + target.topOffset + shift, 0, height - targetSize);
+      const candidate = { ...target, width: size, leftOffset: left - x, topOffset: top - y };
+      if (canPlaceTarget(candidate, targets, camera, width, height)) return candidate;
+    }
+  }
+}
+
+function placeCompactOverviewTarget(target: TreeTarget, targets: TreeTarget[], camera: Camera, width: number, height: number) {
+  const x = target.x * camera.scale + camera.x, y = target.y * camera.scale + camera.y;
+  let nearest: TreeTarget | undefined;
+  let distance = Infinity;
+  for (let top = 0; top + targetSize <= height; top += targetSize) {
+    for (let left = 0; left + targetSize <= width; left += targetSize) {
+      const offset = Math.hypot(left + targetSize / 2 - x, top + targetSize / 2 - y);
+      if (offset >= distance) continue;
+      const candidate = { ...target, width: targetSize, leftOffset: left - x, topOffset: top - y };
+      if (canPlaceTarget(candidate, targets, camera, width, height)) {
+        nearest = candidate;
+        distance = offset;
+      }
+    }
+  }
+  return nearest;
+}
+
+export function treeScene(world: TreeWorld, data: TreeData, focus: TreeFocus, width: number, height: number,
+  revealId?: string, manual?: Camera, verticalPanRange = 0) {
   const entries = treeEntries(data, focus);
   const rootScale = Math.min((width - 18) / world.width, (height - 18) / world.height);
   const focused = world.byId.get(revealId ?? focus.lineId ?? focus.domainId ?? '');
@@ -280,28 +382,59 @@ export function treeScene(world: TreeWorld, data: TreeData, focus: TreeFocus, wi
     x: snap(width / 2 - aimX * scale),
     y: snap(height / 2 - aimY * scale), scale,
   };
-  const camera = manual ? clampTreeCamera(manual, width, height, world.width, world.height, rootScale, true) : destination;
+  const camera = manual ? clampTreeCamera(manual, width, height, world.width, world.height, rootScale, true, verticalPanRange) : destination;
   const targets: TreeTarget[] = [];
   // At the fitted view of a long line, titles would sit on adjacent twigs.
   // Keep the glyphs readable and reserve titles for a closer zoom or the list.
-  const showTitle = !focus.lineId || entries.length <= QUESTS_PER_BRANCHLET || camera.scale / rootScale >= 3.4;
-  const topOffset = showTitle ? -9 : -24;
-  const labelWidth = !showTitle ? 48 : focus.domainId ? clamp(Math.floor(width / 3), 48, 102)
+  const zoomRatio = camera.scale / rootScale;
+  const directQuestBranch = !!focus.domainId && !focus.lineId && entries.every(entry => entry.kind === 'quest');
+  const showTitles = focus.lineId ? entries.length <= QUESTS_PER_BRANCHLET || zoomRatio >= 3.4
+    : !directQuestBranch || zoomRatio >= 1.65;
+  const labelWidth = focus.domainId ? clamp(Math.floor(width / 3), 48, 102)
     : clamp(Math.floor(108 * camera.scale) - 2, 48, 102);
-  if (!revealId) for (const entry of entries) {
+  const overview = !focus.domainId && !revealId;
+  const fittedOverview = overview && !manual;
+  const coreTargets: TreeTarget[] = [];
+  const makeTarget = (entry: Entry) => {
     const node = world.byId.get(entry.id);
-    if (!node || targets.length >= GRAPHIC_TARGET_CAP) continue;
-    if (entry.kind === 'quest' && !focus.lineId && camera.scale / rootScale < 1.65) continue;
-    const left = node.x * camera.scale + camera.x - labelWidth / 2;
-    const top = node.y * camera.scale + camera.y + topOffset;
-    if (left < 0 || left + labelWidth > width || top < 0 || top + 48 > height) continue;
-    if (targets.some(other => {
-      const otherLeft = other.x * camera.scale + camera.x - other.width / 2;
-      const otherTop = other.y * camera.scale + camera.y + other.topOffset;
-      return left < otherLeft + other.width && left + labelWidth > otherLeft &&
-        top < otherTop + other.height && top + 48 > otherTop;
-    })) continue;
-    targets.push({ ...entry, x: node.x, y: node.y, width: labelWidth, height: 48, topOffset, showTitle });
+    if (!node) return;
+    const screenX = node.x * camera.scale + camera.x;
+    const targetWidth = !showTitles ? 48 : directQuestBranch
+      ? clamp(Math.floor(2 * Math.min(screenX, width - screenX)), 48, labelWidth) : labelWidth;
+    return { ...entry, x: node.x, y: node.y, width: targetWidth, height: targetSize,
+      leftOffset: -targetWidth / 2, topOffset: showTitles ? -9 : -24, showTitle: showTitles };
+  };
+  if (fittedOverview) {
+    for (const entry of entries) {
+      if (!coreDomains.has(entry.id)) continue;
+      const target = makeTarget(entry);
+      if (!target) continue;
+      coreTargets.push(target);
+      const placed = placeOverviewTarget(target, targets, camera, width, height) ??
+        placeCompactOverviewTarget(target, targets, camera, width, height);
+      if (placed) targets.push(placed);
+    }
+    // Wide labels can use the last free cell. Reserve one compact cell per
+    // core category before considering custom categories in that case.
+    if (targets.length < coreTargets.length) {
+      targets.length = 0;
+      for (const target of coreTargets) {
+        const placed = placeCompactOverviewTarget(target, targets, camera, width, height);
+        if (placed) targets.push(placed);
+      }
+    }
+  }
+  if (!revealId) for (const entry of entries) {
+    if (targets.length >= GRAPHIC_TARGET_CAP) break;
+    if (fittedOverview && coreDomains.has(entry.id)) continue;
+    if (entry.kind === 'quest' && !focus.lineId && !directQuestBranch && zoomRatio < 1.65) continue;
+    const target = makeTarget(entry);
+    if (!target) continue;
+    const onCanvas = target.x * camera.scale + camera.x >= 0 && target.x * camera.scale + camera.x <= width &&
+      target.y * camera.scale + camera.y >= 0 && target.y * camera.scale + camera.y <= height;
+    const placed = overview && onCanvas ? placeOverviewTarget(target, targets, camera, width, height)
+      : canPlaceTarget(target, targets, camera, width, height) ? target : undefined;
+    if (placed) targets.push(placed);
   }
   return { camera, rootScale, entries, targets, focusedId: focused?.id };
 }
@@ -315,11 +448,13 @@ export function questGlyph(node: WorldNode, state: QuestState) {
   return `M${x - 2} ${y + 4}v-1h-2v-5h1v-1h1v-1h4v1h1v1h1v5h-2v1Z`;
 }
 
-export function treeArtwork(world: TreeWorld, data: TreeData, focus: TreeFocus, revealId?: string, grownId?: string) {
+export function treeArtwork(world: TreeWorld, data: TreeData, focus: TreeFocus, revealId?: string, grownId?: string,
+  targets?: readonly TreeTarget[]) {
   const focusId = revealId ?? focus.lineId ?? focus.domainId;
   const ancestors = new Set<string>();
   for (let id = focusId; id; id = world.byId.get(id)?.parentId) ancestors.add(id);
   const quests = new Map(data.quests.map(quest => [quest.id, quest]));
+  const tappableQuests = targets && new Set(targets.filter(target => target.kind === 'quest').map(target => target.id));
   const batches: Record<string, string> = {};
   const append = (key: string, path: string) => { batches[key] = (batches[key] ?? '') + path; };
   const toneFor = (node: WorldNode) => {
@@ -338,12 +473,13 @@ export function treeArtwork(world: TreeWorld, data: TreeData, focus: TreeFocus, 
     if (node.kind !== 'quest') continue;
     const state = quests.get(node.id)?.state;
     if (!state || node.id === grownId) continue;
-    append(`glyph-${state}:${tone}`, questGlyph(node, state));
+    const glyphTone = tappableQuests && !tappableQuests.has(node.id) ? 'dim' : tone;
+    append(`glyph-${state}:${glyphTone}`, questGlyph(node, state));
     const { x, y } = node;
-    if (state === 'locked') append(`wrap:${tone}`, `M${x - 4} ${y - 1}h8v2h-8Z`);
+    if (state === 'locked') append(`wrap:${glyphTone}`, `M${x - 4} ${y - 1}h8v2h-8Z`);
     if (state === 'completed') {
       const side = hash(node.id) % 2 ? -1 : 1;
-      append(`vein:${tone}`, `M${x - 3 * side} ${y + 3}h${3 * side}v-2h${2 * side}v-2h${side}`);
+      append(`vein:${glyphTone}`, `M${x - 3 * side} ${y + 3}h${3 * side}v-2h${2 * side}v-2h${side}`);
     }
   }
   return batches;

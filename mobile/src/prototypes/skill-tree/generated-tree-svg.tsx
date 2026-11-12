@@ -7,7 +7,8 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { ThemedText } from '@/components/themed-text';
 import { useBeePalette } from '@/constants/theme';
 import { Pixel, TypographyRoles } from '@/constants/tokens';
-import { CAMERA_MS, GROWTH_MS, PAN_THRESHOLD, canTapTree, clampTreeCamera, questGlyph, zoomTreeAt, type Camera, type TreeWorld, type TreeTarget } from './generated-tree-layout';
+import { CAMERA_MS, GROWTH_MS, PAN_THRESHOLD, canTapTree, clampTreeCamera, projectTreeTarget,
+  questGlyph, treeCameraAtRest, treeTargetAt, zoomTreeAt, type Camera, type TreeWorld, type TreeTarget } from './generated-tree-layout';
 
 const AnimatedGroup = Animated.createAnimatedComponent(G);
 const bark = Pixel.worldTree;
@@ -25,7 +26,8 @@ export function targetLabel(target: Pick<TreeTarget, 'title' | 'count' | 'state'
   }
 }
 
-export function GeneratedTreeSvg({ world, scene, artwork, width, height, grownId, reducedMotion, interactive, onTarget, onCameraChange }: {
+export function GeneratedTreeSvg({ world, scene, artwork, width, height, grownId, reducedMotion, interactive, singleTap = false,
+  verticalPanRange = 0, onTarget, onCameraChange }: {
   world: TreeWorld;
   scene: { camera: Camera; rootScale: number; targets: TreeTarget[]; focusedId?: string };
   artwork: Record<string, string>;
@@ -34,6 +36,8 @@ export function GeneratedTreeSvg({ world, scene, artwork, width, height, grownId
   grownId?: string;
   reducedMotion: boolean;
   interactive: boolean;
+  singleTap?: boolean;
+  verticalPanRange?: number;
   onTarget: (target: TreeTarget) => void;
   onCameraChange: (camera: Camera) => void;
 }) {
@@ -71,7 +75,7 @@ export function GeneratedTreeSvg({ world, scene, artwork, width, height, grownId
   const batches = Object.entries(artwork);
   const applyCamera = (next: Camera) => {
     'worklet';
-    const bounded = clampTreeCamera(next, width, height, worldWidth, worldHeight, rootScale);
+    const bounded = clampTreeCamera(next, width, height, worldWidth, worldHeight, rootScale, false, verticalPanRange);
     cameraX.set(bounded.x);
     cameraY.set(bounded.y);
     cameraScale.set(bounded.scale);
@@ -83,7 +87,7 @@ export function GeneratedTreeSvg({ world, scene, artwork, width, height, grownId
   const settle = () => {
     'worklet';
     const rest = clampTreeCamera({ x: cameraX.value, y: cameraY.value, scale: cameraScale.value },
-      width, height, worldWidth, worldHeight, rootScale, true);
+      width, height, worldWidth, worldHeight, rootScale, true, verticalPanRange);
     scheduleOnRN(onCameraChange, rest);
   };
   const pan = Gesture.Pan().enabled(interactive).maxPointers(1).minDistance(PAN_THRESHOLD)
@@ -103,20 +107,19 @@ export function GeneratedTreeSvg({ world, scene, artwork, width, height, grownId
       applyCamera({ x: anchored.x + event.focalX - start.focalX, y: anchored.y + event.focalY - start.focalY, scale: zoom });
     }).onFinalize(() => { if (pinching.value) { pinching.value = false; settle(); } });
   const hit = (px: number, py: number, pose: Camera, double: boolean) => {
-    const target = scene.targets.find(item => {
-      const left = item.x * pose.scale + pose.x - item.width / 2;
-      const top = item.y * pose.scale + pose.y + item.topOffset;
-      return px >= left && px <= left + item.width && py >= top && py <= top + item.height;
-    });
+    const target = treeTargetAt(scene.targets, pose, px, py, singleTap ? world : undefined);
     if (target && (!double || target.kind !== 'quest')) onTarget(target);
   };
-  const tap = (count: number) => Gesture.Tap().enabled(interactive).numberOfTaps(count).maxDistance(PAN_THRESHOLD)
+  const tap = (count: number) => Gesture.Tap().enabled(interactive).numberOfTaps(count).maxDistance(PAN_THRESHOLD - 1)
     .onBegin(() => { travel.value = 0; })
+    .onTouchesDown((event, manager) => { if (event.numberOfTouches > 1) manager.fail(); })
     .onEnd((event, success) => {
-      if (success && canTapTree(travel.value)) scheduleOnRN(hit, event.x, event.y,
-        { x: cameraX.value, y: cameraY.value, scale: cameraScale.value }, count === 2);
+      const pose = { x: cameraX.value, y: cameraY.value, scale: cameraScale.value };
+      if (success && canTapTree(travel.value) && treeCameraAtRest(pose, { x, y, scale })) {
+        scheduleOnRN(hit, event.x, event.y, pose, count === 2);
+      }
     });
-  const gestures = Gesture.Race(Gesture.Simultaneous(pan, pinch), Gesture.Exclusive(tap(2), tap(1)));
+  const gestures = Gesture.Race(Gesture.Simultaneous(pan, pinch), singleTap ? tap(1) : Gesture.Exclusive(tap(2), tap(1)));
   const draw = (path: string, key: string) => {
     const [kind, tone] = key.split(':');
     const isEdge = kind === 'fork' || kind === 'detail' || kind === 'vein';
@@ -155,33 +158,43 @@ export function GeneratedTreeSvg({ world, scene, artwork, width, height, grownId
       </Animated.View>
     </View>
     {scene.targets.map(target => <CameraTarget key={target.kind + ':' + target.id}
-      target={target} camera={{ x: cameraX, y: cameraY, scale: cameraScale }} destination={scene.camera} onTarget={onTarget} />)}
+      target={target} camera={{ x: cameraX, y: cameraY, scale: cameraScale }} destination={scene.camera}
+      interactive={interactive} onTarget={onTarget} />)}
   </View></GestureDetector>;
 }
 
-function CameraTarget({ target, camera, destination, onTarget }: {
+function CameraTarget({ target, camera, destination, interactive, onTarget }: {
   target: TreeTarget; camera: CameraValues; destination: Camera;
+  interactive: boolean;
   onTarget: (target: TreeTarget) => void;
 }) {
   const colors = useBeePalette();
   const position = useAnimatedStyle(() => {
-    const x = target.x * camera.scale.value + camera.x.value;
-    const y = target.y * camera.scale.value + camera.y.value;
-    const distance = Math.max(Math.abs(camera.x.value - destination.x), Math.abs(camera.y.value - destination.y),
-      Math.abs(camera.scale.value - destination.scale) * 80);
-    return { opacity: Math.max(0, 1 - distance / 48),
-      transform: [{ translateX: x - target.width / 2 }, { translateY: y + target.topOffset }] };
+    const pose = { x: camera.x.value, y: camera.y.value, scale: camera.scale.value };
+    const box = projectTreeTarget(target, pose);
+    return { opacity: interactive && treeCameraAtRest(pose, destination) ? 1 : 0,
+      transform: [{ translateX: box.left }, { translateY: box.top }] };
   });
+  const anchorX = -target.leftOffset, anchorY = -target.topOffset;
+  const edgeX = Math.max(0, Math.min(target.width, anchorX)), edgeY = Math.max(0, Math.min(target.height, anchorY));
+  const leader = Math.hypot(anchorX - edgeX, anchorY - edgeY) >= 1;
+  const leaderLeft = Math.min(anchorX, edgeX) - 2, leaderTop = Math.min(anchorY, edgeY) - 2;
+  const leaderWidth = Math.abs(anchorX - edgeX) + 4, leaderHeight = Math.abs(anchorY - edgeY) + 4;
   return <Animated.View pointerEvents="none" style={[styles.target, { width: target.width, height: target.height }, position]}>
+    {leader && <Svg width={leaderWidth} height={leaderHeight}
+      viewBox={`${leaderLeft} ${leaderTop} ${leaderWidth} ${leaderHeight}`}
+      accessible={false} style={[styles.leader, { left: leaderLeft, top: leaderTop }]}>
+      <Path d={`M${anchorX} ${anchorY}L${edgeX} ${edgeY}`} stroke={colors.primary} strokeWidth={1.5} />
+    </Svg>}
     <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={targetLabel(target)}
-      accessibilityHint={target.prerequisiteLabel} onPress={() => {
-        if (Math.abs(camera.scale.value - destination.scale) < 0.03 &&
-          Math.abs(camera.x.value - destination.x) < 3 && Math.abs(camera.y.value - destination.y) < 3) onTarget(target);
+      accessibilityHint={target.prerequisiteLabel} disabled={!interactive} onPress={() => {
+        if (treeCameraAtRest({ x: camera.x.value, y: camera.y.value, scale: camera.scale.value }, destination)) onTarget(target);
       }} style={styles.pressable}>
       {target.showTitle && <ThemedText numberOfLines={2} style={[TypographyRoles.metadata, styles.label, {
         color: colors.foreground, textShadowColor: colors.background,
         textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 3,
-      }]}>{target.count === undefined ? target.title : targetLabel(target)}</ThemedText>}
+        paddingHorizontal: target.width < 64 ? 2 : 3,
+      }]}>{target.count === undefined || target.width < 64 ? target.title : targetLabel(target)}</ThemedText>}
     </Pressable>
   </Animated.View>;
 }
@@ -191,6 +204,7 @@ const styles = StyleSheet.create({
   world: { position: 'absolute', top: 0, left: 0, transformOrigin: 'top left' },
   reveal: { position: 'absolute' },
   target: { position: 'absolute', top: 0, left: 0 },
+  leader: { position: 'absolute' },
   pressable: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
-  label: { paddingHorizontal: 3, textAlign: 'center' },
+  label: { textAlign: 'center' },
 });

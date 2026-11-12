@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image, Pressable, StyleSheet, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { useReducedMotion } from '@/components/mobile-ui';
 import { useAppColorScheme, useBeePalette } from '@/constants/theme';
@@ -50,13 +50,15 @@ function PixelSpinner({ tone }: { tone: keyof typeof SPINNERS }) {
   </View>;
 }
 
-export function PixelButton({ label, onPress, intent = 'primary', disabled = false, loading = false, style }: {
+export function PixelButton({ label, accessibilityLabel = label, onPress, intent = 'primary', disabled = false, loading = false, style, labelStyle }: {
   label: string;
+  accessibilityLabel?: string;
   onPress: () => void;
   intent?: PixelButtonIntent;
   disabled?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
+  labelStyle?: StyleProp<TextStyle>;
 }) {
   const c = useBeePalette();
   const theme = useAppColorScheme() === 'dark' ? 'dark' : 'light';
@@ -77,7 +79,7 @@ export function PixelButton({ label, onPress, intent = 'primary', disabled = fal
   return <Pressable
     cssInterop={false}
     accessibilityRole="button"
-    accessibilityLabel={label}
+    accessibilityLabel={accessibilityLabel}
     accessibilityState={{ disabled: blocked, busy: loading }}
     disabled={blocked}
     onPress={onPress}
@@ -101,7 +103,7 @@ export function PixelButton({ label, onPress, intent = 'primary', disabled = fal
         type="label"
         numberOfLines={1}
         ellipsizeMode="tail"
-        style={[s.label, { color: labelColor }]}>{label}</ThemedText>}
+        style={[s.label, { color: labelColor }, labelStyle]}>{label}</ThemedText>}
     </View>
   </Pressable>;
 }

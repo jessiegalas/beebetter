@@ -7,11 +7,11 @@ const source = require('../src/constants/design-tokens.json');
 const compiled = require('../assets/skill-tree/world-tree-art.json');
 const tokens = load('src/constants/tokens.ts', { './design-tokens.json': source });
 const model = load('src/prototypes/skill-tree/forest-model.ts', { '@/constants/tokens': tokens });
-const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)];
+const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children), ...nodes(value.props?.ListHeaderComponent), ...nodes(value.props?.ListFooterComponent)];
 const flatten = styles => Object.assign({}, ...[styles].flat(Infinity).filter(Boolean));
 const overlaps = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 const generated = load('src/prototypes/skill-tree/generated-tree-layout.ts');
-const { layoutGeneratedTree, treeScene, treeArtwork, GRAPHIC_TARGET_CAP } = generated;
+const { layoutGeneratedTree, projectTreeTarget, treeTargetAt, treeCameraAtRest, treeScene, treeArtwork, GRAPHIC_TARGET_CAP } = generated;
 const { generatedTreeFixtures } = load('src/prototypes/skill-tree/generated-tree-fixtures.ts');
 function assertQuestSpacing(world) {
   const quests = world.nodes.filter(node => node.kind === 'quest');
@@ -42,8 +42,8 @@ for (const { data } of generatedTreeFixtures) {
       assert.equal(target.x, world.byId.get(target.id).x);
       assert.equal(target.y, world.byId.get(target.id).y);
       assert.ok(target.width >= 48 && target.height >= 48);
-      return { x: target.x * scene.camera.scale + scene.camera.x - target.width / 2,
-        y: target.y * scene.camera.scale + scene.camera.y + target.topOffset, width: target.width, height: target.height };
+      const box = projectTreeTarget(target, scene.camera);
+      return { x: box.left, y: box.top, width: box.width, height: box.height };
     });
     for (const [i, box] of boxes.entries()) {
       assert.ok(box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 440);
@@ -69,6 +69,68 @@ for (const { data } of generatedTreeFixtures) {
     }
   }
 }
+{
+  const core = model.DOMAINS.map(domain => ({ id: domain.id, title: domain.name }));
+  const domains = [...core, ...Array.from({ length: 8 }, (_, i) => ({ id: 'category:' + i, title: 'Custom ' + i }))];
+  const counts = { academics: 1, habits: 1, health: 11, social: 1 };
+  const data = { domains, lines: [], quests: domains.flatMap(domain => Array.from(
+    { length: counts[domain.id] ?? 10 }, (_, i) => ({ id: domain.id + ':' + i, title: 'Quest ' + i,
+      domainId: domain.id, state: 'completed', createdAt: '' }),
+  )) };
+  const world = layoutGeneratedTree(data);
+  for (const width of [192, 240, 272, 300, 320, 360]) for (const height of [112, 160, 390]) {
+    const scene = treeScene(world, data, {}, width, height);
+    assert.ok(core.every(domain => scene.targets.some(target => target.id === domain.id)), `core targets at ${width}×${height}`);
+    assert.equal(scene.entries.length, domains.length, 'the list includes categories without a graphic target');
+    assert.ok(scene.targets.length <= GRAPHIC_TARGET_CAP);
+    assert.ok(treeCameraAtRest(scene.camera, scene.camera));
+    assert.ok(!treeCameraAtRest({ ...scene.camera, x: scene.camera.x + 2 }, scene.camera));
+    const boxes = scene.targets.map(target => projectTreeTarget(target, scene.camera));
+    for (const [i, box] of boxes.entries()) {
+      assert.ok(box.left >= -1e-6 && box.top >= -1e-6);
+      assert.ok(box.left + box.width <= width + 1e-6 && box.top + box.height <= height + 1e-6);
+      assert.equal(treeTargetAt(scene.targets, scene.camera, box.left + 1, box.top + 1)?.id, scene.targets[i].id);
+      assert.equal(treeTargetAt(scene.targets, scene.camera, box.left + box.width - 1, box.top + box.height - 1)?.id,
+        scene.targets[i].id);
+      for (const other of boxes.slice(i + 1)) {
+        assert.ok(!overlaps({ ...box, x: box.left + 1e-6, y: box.top + 1e-6, width: box.width - 2e-6, height: box.height - 2e-6 },
+          { ...other, x: other.left, y: other.top }));
+      }
+    }
+  }
+  const localData = { ...data, domains: core, quests: data.quests.filter(quest => quest.domainId in counts) };
+  const narrow = treeScene(layoutGeneratedTree(localData), localData, {}, 240, 390);
+  assert.equal(narrow.targets.length, 4, 'Health and Social remain tappable in the previously failing fitted view');
+  const localWorld = layoutGeneratedTree(localData);
+  const overview = treeScene(localWorld, localData, {}, 320, 440);
+  const healthArt = localWorld.nodes.filter(node => node.parentId === 'health').map(node => ({
+    x: node.x * overview.camera.scale + overview.camera.x, y: node.y * overview.camera.scale + overview.camera.y,
+  })).find(point => !treeTargetAt(overview.targets, overview.camera, point.x, point.y));
+  assert.ok(healthArt, 'some Health leaves extend past the label');
+  assert.equal(treeTargetAt(overview.targets, overview.camera, healthArt.x, healthArt.y, localWorld)?.id, 'health');
+  assert.equal(treeTargetAt(overview.targets, overview.camera, 1, 1, localWorld), undefined);
+  console.log('PASS fitted core targets, overflow categories, and exact hit rectangle edges');
+
+  const health = treeScene(localWorld, localData, { domainId: 'health' }, 320, 432);
+  const actionable = new Set(health.targets.map(target => target.id));
+  assert.ok(actionable.size > 0 && actionable.size < health.entries.length);
+  assert.equal(health.entries.length, 11, 'More quests includes every Health quest');
+  const healthPaint = treeArtwork(localWorld, localData, { domainId: 'health' }, undefined, undefined, health.targets);
+  const overviewPaint = treeArtwork(localWorld, localData, {}, undefined, undefined, overview.targets);
+  assert.equal(overviewPaint['glyph-completed:normal'], undefined, 'overview taps open categories');
+  assert.equal(healthPaint['branch:highlight'], treeArtwork(localWorld, localData, { domainId: 'health' })['branch:highlight']);
+  for (const entry of health.entries) {
+    const node = localWorld.byId.get(entry.id);
+    const x = node.x * health.camera.scale + health.camera.x;
+    const y = node.y * health.camera.scale + health.camera.y;
+    assert.equal(treeTargetAt(health.targets, health.camera, x, y, localWorld)?.id,
+      actionable.has(entry.id) ? entry.id : undefined, `tapping ${entry.id} cannot open a neighboring quest`);
+    const glyph = generated.questGlyph(node, 'completed');
+    assert.ok(healthPaint[actionable.has(entry.id) ? 'glyph-completed:normal' : 'glyph-completed:dim'].includes(glyph),
+      `${entry.id} is drawn at the opacity that matches its tap action`);
+  }
+  console.log('PASS untappable Health leaves are dim and cannot open neighboring quests');
+}
 const mixed = generatedTreeFixtures[2].data;
 const world = layoutGeneratedTree(mixed);
 const midterms = { domainId: 'academics', lineId: 'midterms' };
@@ -90,6 +152,17 @@ assert.equal(bounded.scale, root.rootScale * 4.8);
 assert.ok(bounded.x >= 312 - world.width * bounded.scale && bounded.y <= 0);
 assert.ok(bounded.x % 3 === 0 && bounded.y % 3 === 0);
 assert.equal(clampTreeCamera({ x: 900, y: 900, scale: 0 }, 312, 440, world.width, world.height, root.rootScale).scale, root.rootScale);
+const panRange = 132;
+const raised = { ...root.camera, y: root.camera.y - 90 };
+const panned = treeScene(world, mixed, {}, 312, 440, undefined, raised, panRange);
+assert.equal(panned.camera.scale, root.rootScale);
+assert.equal(panned.camera.y, raised.y, 'panning up at fit stays put when the gesture settles');
+assert.equal(panned.camera.x, root.camera.x);
+const raisedLimit = clampTreeCamera({ ...raised, y: -9999 }, 312, 440, world.width, world.height, root.rootScale, true, panRange);
+assert.ok(raisedLimit.y < raised.y && raisedLimit.y >= root.camera.y - panRange - 3);
+const loweredLimit = clampTreeCamera({ ...raised, y: 9999 }, 312, 440, world.width, world.height, root.rootScale, true, panRange);
+assert.ok(loweredLimit.y > root.camera.y && loweredLimit.y <= root.camera.y + panRange + 3);
+assert.equal(treeScene(world, mixed, {}, 312, 440, undefined, raised).camera.y, root.camera.y, 'the preview retains its original camera range');
 const anchored = zoomTreeAt(root.camera, root.camera.scale * 2, 100, 130);
 assert.equal((100 - root.camera.x) / root.camera.scale, (100 - anchored.x) / anchored.scale);
 assert.equal((130 - root.camera.y) / root.camera.scale, (130 - anchored.y) / anchored.scale);
@@ -275,7 +348,7 @@ for (const height of [480, 600, 672, 800]) {
 }
 assert.equal(model.soilSheetSnaps, undefined, 'canceled sheet state removed');
 assert.equal(model.settleSoilSheet, undefined);
-const native = { StyleSheet: { create: s => s }, View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView' };
+const native = { StyleSheet: { create: s => s }, View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', FlatList: 'FlatList' };
 const svg = { __esModule: true, default: 'Svg', G: 'G', Path: 'Path', Defs: 'Defs', LinearGradient: 'LinearGradient', Stop: 'Stop', Rect: 'Rect', Text: 'SvgText' };
 const art = load('src/prototypes/skill-tree/world-tree-art.tsx', {
   react: hooks().react, 'react-native-svg': svg, '@/constants/tokens': tokens, './forest-model': model,
@@ -383,25 +456,167 @@ for (const fontScale of [0.85, 1, 1.3, 2]) {
   assert.equal(glyphs[1].props.fontFamily, tokens.TypographyRoles.label.fontFamily);
 }
 
+const proofData = load('src/prototypes/skill-tree/proof-roots-data.ts', { './forest-model': model });
+
+async function checkProofRoots() {
+  const rootArt = load('src/prototypes/skill-tree/world-tree-root-art.tsx', {
+    react: hooks().react, 'react-native': native, 'react-native-svg': svg, '@/constants/tokens': tokens,
+  });
+  for (const width of [320, 360, 360.5, 393, 600]) {
+    const left = rootArt.rootNodeLayout(width, 0, false);
+    const right = rootArt.rootNodeLayout(width, 1, false);
+    const centered = rootArt.rootNodeLayout(width, 1, true);
+    assert.ok(left.left >= 0 && right.left + right.nodeWidth <= width);
+    assert.ok([left.left, left.axis, left.nodeWidth, right.left, centered.left].every(tokens.isOnPixelGrid));
+    assert.equal(left.axis, right.axis, 'all root segments and pages share one axis');
+    assert.equal(centered.left + centered.nodeWidth / 2, left.axis);
+    assert.equal(flatten(rootArt.RootStem({ axis: left.axis }).props.style).bottom, 0, 'intermediate rows connect to the next row');
+    assert.equal(flatten(rootArt.RootStem({ axis: left.axis, end: true }).props.style).bottom, 12);
+  }
+
+  const makeNode = (id, owner = 'owner') => ({
+    id, title: id, completed_at: '2026-11-11T10:30:00+00:00',
+    proof_path: owner + '/' + id + '/proof.jpg', proof_mime_type: 'image/jpeg',
+  });
+  const rows = Array.from({ length: 21 }, (_, i) => makeNode(String(100 - i)));
+  const calls = [];
+  let missing = false;
+  let rowsToReturn = rows;
+  const query = {};
+  for (const method of ['select', 'eq', 'ilike', 'not', 'in', 'order', 'limit', 'or', 'is', 'lt']) {
+    query[method] = (...args) => { calls.push([method, ...args]); return query; };
+  }
+  query.abortSignal = async () => ({ data: rowsToReturn });
+  const client = {
+    from: table => { assert.equal(table, 'quests'); return query; },
+    storage: { from: bucket => {
+      assert.equal(bucket, 'quest-proofs');
+      return { createSignedUrl: async (path, expires) => {
+        calls.push(['sign', path, expires]);
+        return missing ? { error: new Error('missing') } : { data: { signedUrl: 'signed' } };
+      } };
+    } },
+  };
+  const source = proofData.createProofSource(client, 'owner');
+  const signal = new AbortController().signal;
+  const page = await source.page('academics', null, signal);
+  assert.equal(page.nodes.length, 20);
+  assert.equal(page.next.id, '81', 'cursor is the last consumed row, not the lookahead');
+  assert.ok(calls.some(call => call.join('/') === 'eq/owner_id/owner'));
+  assert.ok(calls.some(call => call.join('/') === 'eq/status/completed'));
+  assert.ok(calls.some(call => call.join('/') === 'ilike/category/Academics'));
+  assert.ok(calls.some(call => call.join('/') === 'not/proof_path/is/'));
+  assert.deepEqual(Array.from(calls.find(call => call[0] === 'in')[2]), ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']);
+  assert.equal(calls.find(call => call[0] === 'order')[2].nullsFirst, false);
+  assert.equal(calls.filter(call => call[0] === 'order')[1][1], 'id');
+  rowsToReturn = [rows[20], makeNode('foreign', 'another-owner')];
+  const older = await source.page('academics', page.next, signal);
+  assert.deepEqual(Array.from(older.nodes, node => node.id), ['80']);
+  assert.equal(older.next, null);
+  assert.ok(calls.some(call => call[0] === 'or' && call[1].includes('id.lt.81') && call[1].includes('completed_at.is.null')));
+  await source.page('health', { ...rows[20], completed_at: null }, signal);
+  assert.ok(calls.some(call => call.join('/') === 'is/completed_at/'));
+  assert.ok(calls.some(call => call.join('/') === 'lt/id/80'));
+  await assert.rejects(() => source.sign(makeNode('foreign', 'another-owner')), /Invalid proof/);
+  await assert.rejects(() => source.sign({ ...rows[0], proof_mime_type: 'application/pdf' }), /Invalid proof/);
+  assert.equal(await source.sign(rows[0]), 'signed');
+  assert.equal(calls.at(-1)[2], 300);
+  missing = true;
+  await assert.rejects(() => source.sign(rows[0]), /missing/);
+
+  const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+  const h = hooks();
+  const pending = [];
+  const fakeSource = { page: (domain, after, abort) => new Promise((resolve, reject) => pending.push({ domain, after, abort, resolve, reject })) };
+  const otherAccount = { ...fakeSource };
+  const { useProofRoots } = load('src/prototypes/skill-tree/use-proof-roots.ts', { react: h.react });
+  let currentSource = fakeSource;
+  let domain = 'academics';
+  h.mount(() => useProofRoots(currentSource, domain));
+  domain = 'health';
+  h.render();
+  assert.equal(pending[0].abort.aborted, true);
+  pending[0].resolve(page);
+  pending[1].resolve({ nodes: [rows[0]], next: rows[0] });
+  await flush();
+  assert.deepEqual(Array.from(h.value.nodes, node => node.id), ['100']);
+  h.value.load();
+  h.value.load();
+  assert.equal(pending.length, 3);
+  assert.equal(pending[2].after.id, '100');
+  pending[2].reject(new Error('network'));
+  await flush();
+  assert.equal(h.value.error, true);
+  assert.equal(h.value.nodes.length, 1, 'failed next page preserves current root');
+  h.value.load();
+  currentSource = otherAccount;
+  h.render();
+  assert.equal(pending[3].abort.aborted, true);
+  assert.equal(h.value.nodes.length, 0);
+  pending[3].resolve(page);
+  pending[4].resolve({ nodes: [], next: null });
+  await flush();
+  assert.equal(h.value.nodes.length, 0);
+  h.unmount();
+
+  const media = hooks();
+  const urlCalls = [];
+  const sign = () => new Promise(resolve => urlCalls.push(resolve));
+  const a = { sign }, b = { sign };
+  let signer = a;
+  const mediaHooks = load('src/prototypes/skill-tree/use-proof-roots.ts', { react: media.react });
+  media.mount(() => mediaHooks.useProofUrl(signer, rows[0]));
+  signer = b;
+  media.render();
+  urlCalls[0]('previous owner');
+  urlCalls[1]('first URL');
+  await flush();
+  assert.equal(media.value.url, 'first URL');
+  media.value.fail();
+  await flush();
+  assert.equal(media.value.error, true);
+  media.value.retry();
+  await flush();
+  assert.equal(media.value.url, undefined);
+  urlCalls[2]('fresh URL');
+  await flush();
+  assert.equal(media.value.url, 'fresh URL');
+  media.unmount();
+
+  const visit = new Map();
+  const saved = proofData.withProofNote(visit, '100', ' My note ');
+  assert.equal(saved.get('100'), 'My note');
+  assert.equal(visit.size, 0, 'a fresh visit starts without saved notes');
+  assert.equal(proofData.withProofNote(saved, '100', ' ').has('100'), false);
+  console.log('PASS root geometry, eligible private proof paging, stale requests, media retry and visit-only notes');
+}
+
 (async () => {
+  await checkProofRoots();
   for (const { fontScale, reduced } of [{ fontScale: 1, reduced: false }, { fontScale: 1, reduced: true }, { fontScale: 1.5, reduced: false }, { fontScale: 2, reduced: true }]) {
     const h = hooks();
     const scrollCalls = [];
     const Screen = load('src/prototypes/skill-tree/forest-prototype.tsx', {
       react: h.react, 'react-native': { ...native, useWindowDimensions: () => ({ width: 360, fontScale }) },
       'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView', useSafeAreaInsets: () => ({ bottom: 24 }) },
-      '@/components/mobile-ui': { useReducedMotion: () => reduced },
+      '@/components/mobile-ui': { useReducedMotion: () => reduced, StatusMessage: 'StatusMessage' },
       '@/components/pixel/pixel-button-svg': { PixelButtonSvg: 'Button' },
       '@/constants/tokens': tokens, './forest-model': model,
+      '@/constants/theme': { useBeePalette: () => source.light },
       './world-tree-art': { TREE_PALETTE: source.light, WorldTreeArt: 'TreeArt', WorldTreeSky: 'SkyArt', WorldTreeGround: 'GroundArt', WorldTreeName: 'NameArt' },
       './world-tree-scenery': { WorldTreeSun: 'SunArt', WorldTreeClouds: 'CloudArt', WorldTreeGrass: 'GrassArt' },
       './world-tree-soil': { WorldTreeSoilDetails: 'SoilArt' },
+      './world-tree-root-art': { RootStem: 'RootStem', RootKnot: 'RootKnot', rootNodeLayout: width => ({ axis: width / 2 }) },
+      './proof-root-content': { ProofRootNode: 'ProofNode', ProofViewer: 'ProofViewer' },
+      './proof-roots-data': load('src/prototypes/skill-tree/proof-roots-data.ts', { './forest-model': model }),
+      './use-proof-roots': load('src/prototypes/skill-tree/use-proof-roots.ts', { react: h.react }),
     }).default;
-    h.mount(Screen);
+    const demoSource = { page: async domain => ({ nodes: [{ id: domain, title: 'Proof' }], next: null }) };
+    h.mount(() => Screen({ source: demoSource }));
     const scene = () => nodes(h.value).find(node => node.props?.testID === 'world-tree-overview');
     const scroller = nodes(h.value).find(node => node.props?.testID === 'world-tree-scroll');
     assert.equal(scroller.props.removeClippedSubviews, false, 'tree stays attached throughout the scroll');
-    scroller.props.ref.current = { scrollTo: options => scrollCalls.push(options) };
+    scroller.props.ref.current = { scrollToOffset: options => scrollCalls.push(options) };
     scroller.props.onLayout({ nativeEvent: { layout: { width: 360, height: 672 } } });
     await Promise.resolve();
     const findId = id => nodes(h.value).find(node => node.props?.testID === id);
@@ -430,10 +645,11 @@ for (const fontScale of [0.85, 1, 1.3, 2]) {
     assert.equal(drawn.filter(node => node.type === 'SkyArt').length, 1);
     assert.equal(drawn.filter(node => node.type === 'SoilSheet' || node.type === 'GestureDetector').length, 0);
     assert.equal(drawn.filter(node => node.type === 'Button').length, 1, 'only the return-to-tree control is added');
-    assert.equal(drawn.filter(node => node.type === 'ScrollView').length, fontScale > 1.3 ? 2 : 1);
+    assert.equal(drawn.filter(node => node.type === 'ScrollView').length, fontScale > 1.3 ? 1 : 0);
     assert.equal(flatten(scene().props.style).height, 672);
     const future = findId('world-tree-soil-content');
-    assert.equal(flatten(future.props.style).minHeight, 672, 'reserved soil spans another viewport');
+    assert.equal(scroller.props.contentContainerStyle.minHeight, 0, 'initial list waits for layout');
+    assert.equal(findId('world-tree-scroll').props.contentContainerStyle.minHeight, 1344, 'world allows scrolling a full overview even when empty');
     assert.equal(flatten(future.props.style).backgroundColor, source.light.foreground, 'soil has no color seam');
     const soilDetails = findId('world-tree-soil-details'), deepSoilDetails = findId('world-tree-deep-soil-details');
     assert.equal(soilDetails.props.pointerEvents, 'none');
@@ -473,7 +689,28 @@ for (const fontScale of [0.85, 1, 1.3, 2]) {
     await Promise.resolve();
     assert.equal(findId('domain-canopy-academics').props.accessibilityState.selected, true);
     assert.equal(active(), 'academics');
-    assert.deepEqual({ ...scrollCalls[0] }, { x: 0, y: 672, animated: !reduced }, 'click scrolls to soil with system motion preference');
+    assert.deepEqual({ ...scrollCalls[0] }, { offset: 672, animated: !reduced }, 'click scrolls to soil with system motion preference');
+    await new Promise(setImmediate);
+    const openFirst = () => {
+      const list = findId('world-tree-scroll');
+      const [item] = list.props.data;
+      list.props.renderItem({ item, index: 0 }).props.onOpen(item);
+    };
+    const viewer = () => nodes(h.value).find(node => node.type === 'ProofViewer');
+    openFirst();
+    await Promise.resolve();
+    assert.equal(viewer().props.note, '');
+    viewer().props.onSave('academics', 'Study notes');
+    await Promise.resolve();
+    viewer().props.onClose();
+    await Promise.resolve();
+    assert.equal(viewer(), undefined);
+    assert.equal(scrollCalls.length, 1, 'closing the viewer preserves scroll offset');
+    openFirst();
+    await Promise.resolve();
+    assert.equal(viewer().props.note, 'Study notes', 'opening the same node restores this visit’s saved note');
+    viewer().props.onClose();
+    await Promise.resolve();
     canopies[1].props.onHoverIn(); await Promise.resolve(); assert.equal(active(), 'habits');
     canopies[1].props.onHoverOut(); await Promise.resolve(); assert.equal(active(), 'academics', 'hover-out restores clicked branch');
     canopies[2].props.onFocus(); await Promise.resolve(); assert.equal(active(), 'social');
@@ -483,8 +720,11 @@ for (const fontScale of [0.85, 1, 1.3, 2]) {
     assert.equal(scrollCalls.length, 1, 'hover/focus/canceled touches never start a scroll');
     canopies[3].props.onPress(); await Promise.resolve(); assert.equal(active(), 'health', 'tap persists highlight');
     assert.equal(scrollCalls.length, 2);
-    nodes(h.value).find(node => node.type === 'Button' && node.props.label === 'Back to tree').props.onPress();
-    assert.deepEqual({ ...scrollCalls.at(-1) }, { x: 0, y: 0, animated: !reduced });
+    await new Promise(setImmediate);
+    const returnButtons = nodes(h.value).filter(node => node.type === 'Button' && node.props.label === 'Back to tree');
+    assert.equal(returnButtons.length, 1, 'a populated root keeps one return button');
+    returnButtons[0].props.onPress();
+    assert.deepEqual({ ...scrollCalls.at(-1) }, { offset: 0, animated: !reduced });
     assert.equal(active(), 'health', 'return preserves the selected canopy');
     assert.deepEqual(flatten(artNode().props.style), before, 'native scrolling preserves scene geometry');
     h.unmount();
@@ -493,7 +733,7 @@ for (const fontScale of [0.85, 1, 1.3, 2]) {
   console.log('PASS permanent full-width soil behind roots with matching bottom fill; no sheet, gesture handlers or theme toolbar');
   console.log('PASS aligned SVG text stroke/fill, VT323/scaling, separate >=48dp canopy regions and large-text legend');
   console.log('PASS captions centered on leaf-pixel centroids; hover/focus/press/click brighten active canopy and darken peers with selection restored on exit');
-  console.log('PASS domain tap scrolls to reserved soil viewport; no scroll on hover/focus/cancel; return to tree and reduced-motion scrolling');
+  console.log('PASS domain tap scrolls to the selected root; no scroll on hover/focus/cancel; return to tree and reduced-motion scrolling');
   console.log('PASS separate decorative sun/cloud/grass layers, integer pixel scale, unobstructed controls and full-width grass across 320–600dp viewports');
   console.log('PASS continuous soil composition across scroll sections, grid-aligned token sprites, bounded native paths and taller-content coverage');
 })().catch(error => { console.error(error); process.exitCode = 1; });

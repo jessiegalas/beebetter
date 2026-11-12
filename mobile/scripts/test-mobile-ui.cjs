@@ -6,6 +6,7 @@ function priorityFixture(state) {
  return {snoozesReady:true,snoozedCount:0,contextError:null,retryContext(){},snoozeQuest(){},undoSnooze(){},restoreSnoozes(){},lastSnoozedId:null,recordEvent(){},...state,ranked,recommendations:state.recommendations??discovery.recommendedQuests(ranked)};
 }
 function load(relative,mocks={},globals={}) {
+ if(relative==='src/components/xp-visuals.tsx') mocks={...mocks,'react-native-reanimated':{},'react-native-svg':{}};
  if(mocks['@/context/quest-priority-context']) { const original=mocks['@/context/quest-priority-context']; mocks={...mocks,'@/context/quest-priority-context':{...original,useQuestPriority:()=>priorityFixture(original.useQuestPriority())}}; }
  if(relative==='src/app/(tabs)/quests.tsx'||relative==='src/app/notifications.tsx') mocks={...mocks,'@/hooks/use-quest-browsing':rawLoad('src/hooks/use-quest-browsing.ts',{
   react:mocks.react,'react-native':{AppState:{currentState:'active',addEventListener:()=>({remove(){}})}},
@@ -449,23 +450,80 @@ test('Home header, shortcuts and recommendation use existing account and quest d
  features.MOBILE_NOTIFICATIONS_ENABLED=true;
  data.user.user_metadata={};data.profile.display_name='';h.render();assert.ok(text(h.value).includes('Hi, fallback!'));assert.equal(find(h.value,n=>n.type==='Avatar'),undefined);assert.equal(find(h.value,n=>n.type==='HomeMenu').props.avatarUri,undefined);h.unmount();
 });
-test('Skill Tree renders database-backed branch XP, levels and custom categories', () => {
- const h=hooks(),routes=[];
- const data={profile:{total_xp:250},progressSummary:{totalCompleted:9,byCategory:{Academics:2,Habits:3,Social:1,Health:2,Reading:1},byCategoryXp:{Academics:120,Habits:75,Reading:40}},levelProgress:{},workspaceErrors:{},isLoading:false,isRefreshing:false,refresh(){},retryWorkspace(){}};
- const mod=load('src/app/(tabs)/skill-tree.tsx',{...basics(h),'expo-router':{router:{push:r=>routes.push(r)}},'react-native-svg':{__esModule:true,default:'Svg',Line:'Line'},'@/lib/progression':rawLoad('src/lib/progression.ts'),'@/hooks/use-user-data':{useUserData:()=>data}});
- h.mount(()=>mod.default());
- const content=text(h.value);
- assert.ok(content.includes('Branch progress'));
- for(const label of ['Academics','Habits','Social','Health','Reading'])assert.ok(content.includes(label));
- assert.ok(content.includes('Level 2 · 120 XP'));
- assert.ok(content.includes('Level 1 · 75 XP'));
- assert.ok(content.includes('Level 1 · 40 XP'));
- assert.ok(content.includes('3 completed'));
- assert.ok(content.includes('Level 1 · 0 XP'));
- const icons=nodes(h.value).filter(n=>n.type==='Icon'&&n.props.size===20).map(n=>n.props.name);
- assert.ok(icons.includes('book-outline'));assert.ok(icons.includes('pricetag-outline'));
- find(h.value,n=>n.props?.accessibilityLabel==='Open interactive skill tree prototype').props.onPress();
- assert.deepEqual(routes,['/skill-tree-prototype']);
+test('Skill Tree generates live buds and durable leaves, with list fallback and catch-up', async () => {
+ const h=hooks(),calls=[],acknowledged=[],routes=[];
+ const leaf={id:'history-id',quest_id:null,title:'Review chapters 1–3',category:'Academics',completed_at:'2026-11-11T00:00:00Z'};
+ const quest={id:'quiz',title:'Take practice quiz',category:'Academics',status:'active'};
+ const domains=['Academics','Habits','Social','Health'].map(name=>({id:name.toLowerCase(),name}));
+ const facts=rawLoad('src/lib/recommendation-facts.ts');
+ const data={user:{id:'a'},access:'active',quests:[quest],completionHistory:[],workspaceErrors:{},recommendationData:facts.EMPTY_RECOMMENDATION_DATA};
+ const tree=rawLoad('src/lib/student-skill-tree.ts',{
+  '@/prototypes/skill-tree/forest-model':{DOMAINS:domains},
+  './quest-context':rawLoad('src/lib/quest-context.ts',{'./recommendation-facts':facts}),
+ });
+ let fontScale=1;
+ const mod=load('src/app/(tabs)/skill-tree.tsx',{
+  ...basics(h),'expo-router':{useIsFocused:()=>true,useFocusEffect:callback=>h.react.useEffect(callback,[callback]),router:{push:route=>routes.push(route)}},
+  'react-native':{...native,useWindowDimensions:()=>({width:360,height:780,fontScale}),
+   BackHandler:{addEventListener:()=>({remove(){}})}},
+  'react-native-gesture-handler':{GestureHandlerRootView:'GestureHandlerRootView'},
+  '@/components/mobile-ui':{...presentation,useReducedMotion:()=>true},
+  '@/constants/tokens':{PixelSpacing:{},TypographyRoles:{}},
+  '@/components/pixel/pixel-button':{PixelButton:'PixelButton'},
+  '@/components/pixel/pixel-frame':{PixelFrame:'PixelFrame'},
+  '@/context/quest-priority-context':{},
+  '@/hooks/use-user-data':{useUserData:()=>data},
+  '@/lib/student-skill-tree':tree,
+  '@/lib/tree-growth':{unseenGrowth:async(_,rows)=>rows,acknowledgeGrowth:async(_,row)=>acknowledged.push(row.id)},
+  '@/prototypes/skill-tree/generated-tree-layout':rawLoad('src/prototypes/skill-tree/generated-tree-layout.ts'),
+  '@/prototypes/skill-tree/generated-tree-svg':{GeneratedTreeSvg:'GeneratedTreeSvg',targetLabel:target=>target.title},
+  '@/prototypes/skill-tree/proof-root-content':{},'@/prototypes/skill-tree/proof-roots-data':{},
+  '@/supabase':{supabase:{rpc:(name,args)=>{calls.push([name,args]);return {abortSignal:async()=>({data:[leaf]})}}}},
+ },{AbortController});
+ h.mount(()=>{const screen=mod.default();return screen.type(screen.props);});
+ await flush();
+ assert.equal(calls[0][0],'student_list_completion_history');assert.equal(calls[0][1].page_size,100);
+ const canvas=()=>find(h.value,n=>n.type==='GeneratedTreeSvg');
+ const pixel=label=>find(h.value,n=>n.type==='PixelButton'&&(n.props.accessibilityLabel??n.props.label)===label);
+ assert.equal(canvas().props.singleTap,true);
+ const frame=find(h.value,n=>n.type==='PixelFrame');
+ assert.equal(frame.props.appearance,'flat');
+ assert.equal(find(h.value,n=>n.props?.pointerEvents==='none'&&nodes(n).includes(frame)).props.accessible,false);
+ assert.equal(pixel('Zoom out').props.disabled,true);
+ assert.equal(pixel('Zoom in').props.label,'+');
+ assert.equal(pixel('Zoom out').props.label,'−');
+ assert.ok(nodes(h.value).indexOf(pixel('Zoom in')) < nodes(h.value).indexOf(canvas()));
+ assert.ok(nodes(h.value).indexOf(pixel('Recent leaves')) > nodes(h.value).indexOf(canvas()));
+ const {camera,rootScale}=canvas().props.scene;
+ const raisedY=camera.y-72;
+ assert.ok(canvas().props.verticalPanRange>=72);
+ canvas().props.onCameraChange({...camera,y:raisedY});await flush();
+ assert.equal(canvas().props.scene.camera.y,raisedY);
+ assert.equal(pixel('Reset view').props.disabled,false);
+ pixel('Reset view').props.onPress();await flush();
+ assert.equal(canvas().props.scene.camera.y,camera.y);
+ canvas().props.onCameraChange({...camera,scale:rootScale*4.8});await flush();
+ assert.equal(pixel('Zoom in').props.disabled,true);
+ pixel('Reset view').props.onPress();await flush();
+ assert.equal(canvas().props.world.byId.get(quest.id).parentId,'academics');
+ assert.equal(canvas().props.world.byId.get('completion:history-id').parentId,'academics');
+ assert.ok(canvas().props.artwork['glyph-active:dim'] && canvas().props.artwork['glyph-completed:dim']);
+ assert.ok(canvas().props.scene.targets.every(target=>target.kind==='domain'));
+ canvas().props.onTarget(canvas().props.scene.entries.find(entry=>entry.id==='academics'));await flush();
+ assert.ok(canvas().props.scene.targets.some(target=>target.kind==='quest'));
+ canvas().props.onTarget(canvas().props.scene.entries.find(entry=>entry.id===quest.id));await flush();
+ assert.equal(routes.at(-1).params.questId,quest.id);
+ fontScale=1.5;h.render();
+ assert.equal(canvas(),undefined);
+ const row=find(h.value,n=>n.type?.name==='TreeListAction'&&n.props.label===leaf.title);
+ const action=row.type(row.props);
+ assert.equal(find(action,n=>n.type==='Text').props.numberOfLines,undefined);
+ const open=find(action,n=>n.type==='PixelButton');
+ assert.equal(open.props.accessibilityLabel,'Open '+leaf.title);
+ open.props.onPress();await flush();
+ assert.equal(find(h.value,n=>n.type?.name==='LeafDetails').props.leaf.quest_id,null);
+ const batch=find(h.value,n=>n.type?.name==='GrowthBatch');assert.equal(batch.props.count,1);
+ batch.props.onSeen();await flush();assert.deepEqual(acknowledged,['history-id']);
  h.unmount();
 });
 test('side panel preserves destinations and provider logout, with requested placeholder buttons', () => {

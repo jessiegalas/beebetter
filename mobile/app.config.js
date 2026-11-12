@@ -46,6 +46,7 @@ module.exports = {
     ...(baseConfig.plugins ?? []),
 
     'expo-image',
+    'expo-video',
     'expo-web-browser',
 
     [

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Reanimated, { ReduceMotion, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 import { Badge, Button } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { useBeePalette, useBeeStyles, type BeePalette, Radii, Typography, Spacing, Borders } from '@/constants/theme';
@@ -38,6 +40,22 @@ export function XpProgress({ progress, compact = false }: { progress: LevelProgr
     <ThemedText style={[s.caption, compact && s.compactCaption]}><ThemedText style={compact ? s.compactCaption : s.remaining}>{Math.max(0, progress.xpForNextLevel - progress.currentLevelXp)} XP</ThemedText> to Level {progress.level + 1}</ThemedText>
   </View>;
 }
+export function GrowthLeaf({ animate = false, small = false }: { animate?: boolean; small?: boolean }) {
+  const C = useBeePalette();
+  const phase = useSharedValue(animate ? 0 : 3);
+  useEffect(() => {
+    phase.value = animate ? withTiming(3, { duration: 720, reduceMotion: ReduceMotion.System }) : 3;
+  }, [animate, phase]);
+  const growth = useAnimatedStyle(() => ({ transform: [{ scale: (1 + Math.floor(phase.value)) / 4 }] }));
+  return <Reanimated.View style={growth} accessible={false}>
+    <Svg width={small ? 24 : 48} height={small ? 24 : 48} viewBox="0 0 48 48">
+      <Path d="M6 42H12V30H9V21H12V15H18V9H27V6H42V21H39V30H33V36H18V42H12V45H6Z" fill={C.foreground} />
+      <Path d="M15 30V21H18V15H27V12H36V21H33V27H27V30H21V36H15Z" fill={C.success} />
+      <Path d="M18 33V27H24V21H30V15H33V24H27V30H21V36H15V33Z" fill={C.honey} />
+    </Svg>
+  </Reanimated.View>;
+}
+
 export function QuestReward({ title, xp, previousLevel, progress, onClose }: { title: string; xp: number; previousLevel: number; progress: LevelProgress; onClose: () => void }) {
   const C = useBeePalette();
   const s = useBeeStyles(makeStyles);

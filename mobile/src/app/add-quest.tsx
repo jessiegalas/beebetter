@@ -3,7 +3,7 @@ import { ActivityIndicator, BackHandler, Keyboard, KeyboardAvoidingView, Modal, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Button as ActionButton } from '@/components/mobile-ui';
+import { Button as ActionButton, Sheet } from '@/components/mobile-ui';
 import { QuestAccordion, QuestCard, QuestChoice, QuestFieldLabel, QuestIcon, QuestNote, QuestSelect, QuestText, QuestWizardFooter, QuestWizardHeader } from '@/components/quest-wizard';
 import { ThemedText } from '@/components/themed-text';
 import { QuestTimeInput } from '@/components/quest-time-input';
@@ -17,7 +17,9 @@ import { formatLocalDateTime, parseLocalDateTime, parsePreferredTime, validateQu
 export default function AddQuestScreen() {
   const C = useBeePalette();
   const s = useBeeStyles(makeStyles);
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, after, afterTitle, category } = useLocalSearchParams<{
+    id?: string; after?: string; afterTitle?: string; category?: string;
+  }>();
   const { quests, isLoading, error, refresh } = useUserData();
   const quest = quests.find(item => item.id === id);
   if (id && (isLoading || !quest || quest.status === 'completed')) return <SafeAreaView style={s.screen}><View style={s.content}>
@@ -26,9 +28,12 @@ export default function AddQuestScreen() {
     {!!error && <Button label="Try again" onPress={() => void refresh()} />}
   </View></SafeAreaView>;
   // Mount only after saved data is available; background refreshes must not overwrite edits.
-  return <QuestForm key={id ?? 'new'} quest={quest} />;
+  return <QuestForm key={id ?? after ?? 'new'} quest={quest} after={id ? undefined : after}
+    afterTitle={afterTitle} initialCategory={category} />;
 }
-function QuestForm({ quest }: { quest?: Quest }) {
+function QuestForm({ quest, after, afterTitle, initialCategory }: {
+  quest?: Quest; after?: string; afterTitle?: string; initialCategory?: string;
+}) {
   const C = useBeePalette();
   const s = useBeeStyles(makeStyles);
   const { user, quests, addQuest, updateQuest } = useUserData();
@@ -36,7 +41,7 @@ function QuestForm({ quest }: { quest?: Quest }) {
   const { categories, loading, error, refresh, createCategory } = useQuestCategories();
   const [title, setTitle] = useState(quest?.title ?? '');
   const [description, setDescription] = useState(quest?.description ?? '');
-  const [category, setCategory] = useState(quest?.category ?? '');
+  const [category, setCategory] = useState(quest?.category ?? initialCategory ?? '');
   const [xp, setXp] = useState(quest?.xp ?? 25);
   const [mode, setMode] = useState<'custom' | 'templates'>('custom');
   const [scheduleMode, setScheduleMode] = useState<'anytime' | 'scheduled' | 'preferred'>(quest?.scheduled_at ? 'scheduled' : quest?.preferred_time ? 'preferred' : 'anytime');
@@ -47,7 +52,8 @@ function QuestForm({ quest }: { quest?: Quest }) {
   const [importance, setImportance] = useState(quest?.importance ?? 'normal');
   const [location, setLocation] = useState<string | null>(quest?.location_id ?? null);
   const [proof, setProof] = useState(quest?.requires_proof ?? false);
-  const [prerequisite, setPrerequisite] = useState<string | null>(quest?.prerequisite_quest_id ?? null);
+  const [prerequisite, setPrerequisite] = useState<string | null>(quest?.prerequisite_quest_id ?? after ?? null);
+  const [savedQuestId, setSavedQuestId] = useState<string | null>(null);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [newCategory, setNewCategory] = useState('');
   const [creatingCategory, setCreatingCategory] = useState(false);
@@ -96,7 +102,7 @@ function QuestForm({ quest }: { quest?: Quest }) {
     return true;
   });
   const save = async () => {
-    if (savingRef.current) return;
+    if (savingRef.current || savedQuestId) return;
     setFeedback(null);
     try {
       if (!user) throw new Error('Sign in to save your quest.');
@@ -110,12 +116,22 @@ function QuestForm({ quest }: { quest?: Quest }) {
       validateQuestDates(scheduled_at, deadline_at);
       savingRef.current = true; setSaving(true);
       const draft = { title: title.trim(), description: description.trim(), category, xp, scheduled_at, preferred_time, deadline_at, importance, location_id: location, requires_proof: proof, prerequisite_quest_id: prerequisite };
-      const result = quest ? await updateQuest(quest.id, draft) : await addQuest(draft);
-      if (!result.success) throw new Error(result.error || 'Could not save quest. Please try again.');
+      if (!quest) {
+        const result = await addQuest(draft);
+        if (!result.success) throw new Error(result.error || 'Could not save quest. Please try again.');
+        if (result.questId) { setSavedQuestId(result.questId); return; }
+      } else {
+        const result = await updateQuest(quest.id, draft);
+        if (!result.success) throw new Error(result.error || 'Could not save quest. Please try again.');
+      }
       router.back();
     } catch (failure) { setFeedback(failure instanceof Error ? failure.message : 'Could not save quest. Please try again.'); }
     finally { savingRef.current = false; setSaving(false); }
   };
+  const prerequisiteTitle = quests.find(q => q.id === prerequisite)?.title
+    ?? (prerequisite === after ? afterTitle : undefined);
+  const prerequisiteChoices = after && !prerequisiteOptions.some(item => item.id === after)
+    ? [{ label: afterTitle ?? 'Previous quest', value: after }] : [];
   const addCategory = async () => {
     if (creatingCategory) return;
     setCreatingCategory(true); setCategoryError(null);
@@ -194,13 +210,19 @@ function QuestForm({ quest }: { quest?: Quest }) {
                 <QuestNote>Attach an image, video, or file when completing this quest.</QuestNote>
               </QuestAccordion>
               <QuestAccordion title="Do after" subtitle="What happens next?" icon="git-branch-outline" tone="blue" open={expanded.after} onToggle={() => toggle('after')}>
-                <QuestSelect label="Prerequisite quest" selectedValue={prerequisite ?? ''} value={prerequisite ? quests.find(q => q.id === prerequisite)?.title ?? 'Saved prerequisite unavailable' : 'No prerequisite'} options={[{ label: 'No prerequisite', value: '' }, ...prerequisiteOptions.map(q => ({ label: q.title, value: q.id }))]} onChange={value => setPrerequisite(value || null)} />
+                <QuestSelect label="Prerequisite quest" selectedValue={prerequisite ?? ''} value={prerequisite ? prerequisiteTitle ?? 'Saved prerequisite unavailable' : 'No prerequisite'} options={[{ label: 'No prerequisite', value: '' }, ...prerequisiteChoices, ...prerequisiteOptions.map(q => ({ label: q.title, value: q.id }))]} onChange={value => setPrerequisite(value || null)} />
               </QuestAccordion>
             </View>}
           </View>
         </ScrollView>
-        <QuestWizardFooter xp={xp} label={saving ? 'Saving…' : step === 1 ? 'Continue' : quest ? 'Save changes' : 'Create Quest'} busy={saving} disabled={saving || creatingCategory || loading || (step === 1 && mode === 'templates')} feedback={feedback} onPress={() => step === 1 ? continueToSettings() : void save()} />
+        <QuestWizardFooter xp={xp} label={saving ? 'Saving…' : step === 1 ? 'Continue' : quest ? 'Save changes' : 'Create Quest'} busy={saving} disabled={saving || !!savedQuestId || creatingCategory || loading || (step === 1 && mode === 'templates')} feedback={feedback} onPress={() => step === 1 ? continueToSettings() : void save()} />
       </View>
+      {savedQuestId && <Sheet visible title="Quest saved" onClose={() => router.back()}>
+        <ActionButton label="Add a follow-up" onPress={() => router.replace({
+          pathname: '/add-quest', params: { after: savedQuestId, afterTitle: title.trim(), category },
+        })} />
+        <ActionButton label="Done" intent="quiet" onPress={() => router.back()} />
+      </Sheet>}
       <Modal visible={categoryOpen} animationType="slide" transparent onRequestClose={() => setCategoryOpen(false)}>
         <View style={s.backdrop}><SafeAreaView style={s.modal} edges={['bottom']} accessibilityViewIsModal>
           <View style={s.between}><ThemedText style={s.sectionTitle}>Choose a category</ThemedText><Button label="Close" onPress={() => setCategoryOpen(false)} /></View>

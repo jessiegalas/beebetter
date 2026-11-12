@@ -115,7 +115,7 @@ interface UserDataContextType {
   retryWorkspace: (slice: WorkspaceSlice) => Promise<void>;
   completeQuest: (questId: string, proof?: ProofFile) => Promise<{ success: boolean; error?: string }>;
   deleteQuest: (questId: string) => Promise<{ success: boolean; error?: string }>;
-  addQuest: (quest: QuestDraft) => Promise<{ success: boolean; error?: string }>;
+  addQuest: (quest: QuestDraft) => Promise<{ success: boolean; error?: string; questId?: string }>;
   updateQuest: (id: string, quest: QuestDraft) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<SignOutResult>;
 }
@@ -732,7 +732,7 @@ export function UserDataProvider({ children, notificationLifecycle }: {
     }
   }, [user, quests, isAdmittedSession, fence, fetchUserData]);
 
-  const addQuest = useCallback(async (questData: QuestDraft): Promise<{ success: boolean; error?: string }> => {
+  const addQuest = useCallback(async (questData: QuestDraft): ReturnType<UserDataContextType['addQuest']> => {
     if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };
     const isCurrent = fence.capture(user.id);
 
@@ -763,9 +763,11 @@ export function UserDataProvider({ children, notificationLifecycle }: {
       if (data && isCurrent()) {
         setRecommendationData(previous => ({ ...previous, factsUpdatedAt: null }));
         setQuests((prev) => [data as Quest, ...prev]);
-        await fetchUserData(user, false, true, true);
+        // The insert already committed. A refresh failure must not invite a
+        // duplicate insert or prevent opening the follow-up form.
+        await fetchUserData(user, false, true, true).catch(() => {});
       }
-      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
+      return isCurrent() ? { success: true, questId: data?.id } : { success: false, error: 'Session ended.' };
     } catch (err) {
       return {
         success: false,
