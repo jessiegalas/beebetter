@@ -9,6 +9,8 @@ Read [root rules](../AGENTS.md) first. Paths below are relative to `mobile/`.
 
 ALWAYS read [shared frontend design instructions](../docs/agent/frontend-design.md) before UI work. Use the installed UI foundations and preserve the reference's layout, spacing and hierarchy.
 
+Apply the [mobile UI specification](../docs/ui-spec.md) when adding, changing, or reviewing student UI. Use shared pixel components for the quest loop, from the next action through completion feedback and Skill Tree growth. Read the [pixel asset guide](../docs/pixel-assets.md) when creating or editing sprites, badges, icons, or pixel illustrations.
+
 ## Strict Guardrails
 
 - ALWAYS keep session/profile/quest state and admission/logout ownership in `src/context/user-data-context.tsx`; `use-user-data.ts` is a re-export.

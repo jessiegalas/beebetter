@@ -1,5 +1,7 @@
 # BeeBetter repository guidance
 
+BeeBetter is a gamified student app. In `/mobile`, students choose quests, earn XP, and see their progress grow in Skill Tree. Use Login as the visual reference for pixel controls and Skill Tree as the reference for progress and rewards. Follow the [mobile UI specification](docs/ui-spec.md) when building or reviewing existing and future mobile UI.
+
 ## Task Execution & Autonomy
 - For implementation or fix requests, carry the authorized work through implementation and relevant verification. Do not stop at a proposed plan when you can proceed.
 - Make reasonable assumptions for routine, reversible decisions. Ask a focused question when missing information materially affects correctness, scope, or authorization.
