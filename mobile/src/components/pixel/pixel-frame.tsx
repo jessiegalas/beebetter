@@ -11,6 +11,7 @@ export type PixelFrameProps = {
   depth?: keyof BeePalette;
   pressed?: boolean;
   focused?: boolean;
+  focusColor?: keyof BeePalette;
   /** Raised preserves the experimental button geometry; flat has no bottom depth. */
   appearance?: 'raised' | 'flat';
   borderWidth?: number;
@@ -27,10 +28,22 @@ function outline(width: number, height: number, inset: number, top: number, p = 
   return `M ${l + p * 2} ${t} H ${r - p * 2} V ${t + p} H ${r - p} V ${t + p * 2} H ${r} V ${b - p * 2} H ${r - p} V ${b - p} H ${r - p * 2} V ${b} H ${l + p * 2} V ${b - p} H ${l + p} V ${b - p * 2} H ${l} V ${t + p * 2} H ${l + p} V ${t + p} H ${l + p * 2} Z`;
 }
 
+export function pixelFramePaths(width: number, height: number, minimum: number, appearance: 'raised' | 'flat', edge: number, step: number, line: number, pressed: boolean) {
+  if (width < minimum || height < minimum) return null;
+  const outer = outline(width, height, 0, 0, step);
+  const inset = outline(width, height, edge, 0, step);
+  const highlight = `M 9 ${pressed ? 9 : 6} H ${width - 9} V ${pressed ? 12 : 9} H 9 Z`;
+  return appearance === 'flat'
+    ? { outer, inset, face: line ? outline(width, height, edge + line, 0, step) : inset, depth: '', focus: `${inset} ${outline(width, height, edge + 3, 0, step)}`, highlight }
+    : { outer, inset, face: outline(width, height - (pressed ? 3 : 6), 3, pressed ? 3 : 0), depth: outline(width, height, 3, pressed ? 3 : 0), focus: `${outline(width, height - 3, 6, pressed ? 3 : 0)} ${outline(width, height - 3, 9, pressed ? 3 : 0)}`, highlight };
+}
+
+export { outline as pixelFrameOutline };
+
 // Web receives this hint; native react-native-svg may ignore it.
 const crispEdges: SvgProps & { shapeRendering: 'crispEdges' } = { shapeRendering: 'crispEdges' };
 
-export const PixelFrame = memo(function PixelFrame({ ramp, children, fill = 'card', border = 'foreground', depth = 'primaryPressed', pressed = false, focused = false, appearance = 'raised', borderWidth = 3, cornerStep = 3, innerHighlight, innerHighlightWidth = 1, style, testID }: PixelFrameProps) {
+export const PixelFrame = memo(function PixelFrame({ ramp, children, fill = 'card', border = 'foreground', depth = 'primaryPressed', pressed = false, focused = false, focusColor = 'focus', appearance = 'raised', borderWidth = 3, cornerStep = 3, innerHighlight, innerHighlightWidth = 1, style, testID }: PixelFrameProps) {
   const c = useBeePalette();
   const [size, setSize] = useState({ width: 0, height: 0 });
   // Normalize geometry once to whole logical pixels. Colors stay palette roles.
@@ -39,15 +52,8 @@ export const PixelFrame = memo(function PixelFrame({ ramp, children, fill = 'car
   const line = innerHighlight ? Math.max(1, Math.round(innerHighlightWidth)) : 0;
   const minimum = appearance === 'flat' ? 2 * (edge + line) + 4 * step + 1 : 24;
   const { width, height } = size;
-  const paths = useMemo(() => {
-    if (width < minimum || height < minimum) return null;
-
-    const outer = outline(width, height, 0, 0, step);
-    const inset = outline(width, height, edge, 0, step);
-    return appearance === 'flat'
-      ? { outer, inset, face: line ? outline(width, height, edge + line, 0, step) : inset, depth: '', focus: `${outer} ${inset}` }
-      : { outer, inset: '', face: outline(width, height - (pressed ? 3 : 6), 3, pressed ? 3 : 0), depth: outline(width, height, 3, pressed ? 3 : 0), focus: `${outer} ${outline(width, height, 3, 0)}` };
-  }, [width, height, minimum, appearance, edge, step, line, pressed]);
+  const paths = useMemo(() => pixelFramePaths(width, height, minimum, appearance, edge, step, line, pressed),
+    [width, height, minimum, appearance, edge, step, line, pressed]);
   const onLayout = ({ nativeEvent: { layout } }: LayoutChangeEvent) => {
     // Matching integer SVG dimensions/viewBox avoid fractional viewBox scaling.
     // Ceil can overdraw by <1 dp; it does not guarantee physical-pixel alignment.
@@ -57,12 +63,12 @@ export const PixelFrame = memo(function PixelFrame({ ramp, children, fill = 'car
   return <View testID={testID} onLayout={onLayout} style={[styles.root, appearance === 'flat' && { minWidth: minimum, minHeight: minimum }, style]}>
     {paths && <Svg {...crispEdges} width={size.width} height={size.height}
       viewBox={`0 0 ${size.width} ${size.height}`} pointerEvents="none" accessible={false} aria-hidden style={styles.art}>
-      <Path d={ramp?.base === null ? `${paths.outer} ${outline(width, height, edge, 0, step)}` : paths.outer} fill={ramp?.outline ?? c[border]} fillRule="evenodd" />
+      <Path d={ramp?.base === null ? `${paths.outer} ${paths.inset}` : paths.outer} fill={ramp?.outline ?? c[border]} fillRule="evenodd" />
       {appearance === 'raised' && ramp?.base !== null && <Path d={paths.depth} fill={ramp?.shadow ?? c[depth]} />}
       {appearance === 'flat' && innerHighlight && <Path d={paths.inset} fill={c[innerHighlight]} />}
       <Path d={paths.face} fill={ramp ? ramp.base ?? 'none' : c[fill]} />
-      {ramp?.highlight && <Path d={`M 9 ${pressed ? 9 : 6} H ${width - 9} V ${pressed ? 12 : 9} H 9 Z`} fill={ramp.highlight} />}
-      {focused && <Path d={paths.focus} fill={c.focus} fillRule="evenodd" />}
+      {ramp?.highlight && <Path d={paths.highlight} fill={ramp.highlight} />}
+      {focused && <Path d={paths.focus} fill={c[focusColor]} fillRule="evenodd" />}
     </Svg>}
     {children}
   </View>;

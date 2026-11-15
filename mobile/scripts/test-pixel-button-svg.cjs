@@ -7,6 +7,13 @@ const flush = async () => { for (let i = 0; i < 4; i++) await Promise.resolve();
 const native = { StyleSheet: { create: value => value }, View: 'View', Text: 'Text', Pressable: 'Pressable' };
 const svg = { __esModule: true, default: 'Svg', Path: 'Path', Rect: 'Rect' };
 
+function luminance(hex) {
+  return [0.2126, 0.7152, 0.0722].reduce((sum, weight, index) => {
+    const channel = Number.parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16) / 255;
+    return sum + weight * (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  }, 0);
+}
+
 (async () => {
   let buttonRenders = 0, frameRenders = 0;
   for (const scheme of ['light', 'dark']) {
@@ -36,6 +43,12 @@ const svg = { __esModule: true, default: 'Svg', Path: 'Path', Rect: 'Rect' };
       assert.equal(ramps.pressed.outline, ramps.normal.outline);
       h.value.props.onPressOut(); await flush();
       assert.equal(find(h.value, 'Frame').props.pressed, false);
+      props = { ...props, disabled: true }; h.render();
+      const disabledInk = luminance(find(h.value, 'Text').props.style[2].color);
+      const disabledFace = luminance(ramps.disabled.base ?? tokens[scheme].background);
+      assert.ok((Math.max(disabledInk, disabledFace) + 0.05) / (Math.min(disabledInk, disabledFace) + 0.05) >= 4.5,
+        `${scheme} ${intent} disabled label contrast`);
+      props = { ...props, disabled: false }; h.render();
     }
     props = { ...props, intent: 'primary' }; h.render();
     const before = buttonRenders;
@@ -44,6 +57,7 @@ const svg = { __esModule: true, default: 'Svg', Path: 'Path', Rect: 'Rect' };
     assert.equal(buttonRenders - before, 2);
     h.value.props.onFocus(); await flush();
     assert.equal(find(h.value, 'Frame').props.focused, true);
+    assert.equal(find(h.value, 'Frame').props.focusColor, 'primaryForeground');
     props = { ...props, loading: true }; h.render();
     assert.equal(h.value.props.disabled, true);
     assert.equal(h.value.props.accessibilityState.busy, true);

@@ -1,13 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Button as ActionButton, Sheet } from '@/components/mobile-ui';
+import { Button as ActionButton, ChoiceChip, Field, Sheet } from '@/components/mobile-ui';
+import { CategoryGlyph } from '@/components/quest-visuals';
+import { XpBadge } from '@/components/xp-visuals';
 import { QuestAccordion, QuestCard, QuestChoice, QuestFieldLabel, QuestIcon, QuestNote, QuestSelect, QuestText, QuestWizardFooter, QuestWizardHeader } from '@/components/quest-wizard';
 import { ThemedText } from '@/components/themed-text';
 import { QuestTimeInput } from '@/components/quest-time-input';
-import { Fonts, useAppColorScheme, useBeePalette, useBeeStyles, type BeePalette, MaxContentWidth } from '@/constants/theme';
+import { useBeePalette, useBeeStyles, type BeePalette, MaxContentWidth } from '@/constants/theme';
 import { useUserData, type Quest } from '@/hooks/use-user-data';
 import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useLocationContext } from '@/context/location-context';
@@ -66,8 +67,6 @@ function QuestForm({ quest, after, afterTitle, initialCategory }: {
   const [expanded, setExpanded] = useState({ timing: true, location: false, deadline: false, proof: false, after: false });
   const [recurrence, setRecurrence] = useState('Once');
   const [customDays, setCustomDays] = useState<string[]>([]);
-  const { width } = useWindowDimensions();
-  const dark = useAppColorScheme() === 'dark';
   const toggle = (key: keyof typeof expanded) => setExpanded(previous => ({ ...previous, [key]: !previous[key] }));
   const changeStep = (next: 1 | 2) => {
     Keyboard.dismiss();
@@ -139,53 +138,45 @@ function QuestForm({ quest, after, afterTitle, initialCategory }: {
     catch (failure) { setCategoryError(failure instanceof Error ? failure.message : 'Could not create category.'); }
     finally { setCreatingCategory(false); }
   };
-  return <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-[#faf3df] dark:bg-[#241e17]">
+  return <SafeAreaView edges={['top', 'bottom']} style={s.screen}>
     <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View className="w-full max-w-[480px] flex-1 self-center">
         <ScrollView ref={scrollRef} className="flex-1" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerClassName="pb-8 pt-2">
           <QuestWizardHeader step={step} editing={!!quest} onBack={() => step === 2 ? changeStep(1) : router.back()} onClose={() => router.back()} />
           <View className="px-4">
             {step === 1 ? <QuestCard className="p-5">
-              {!quest && <View className="mb-4 flex-row rounded-[20px] border border-[#e5cda0] bg-[#fffaf0] p-1 dark:border-[#76603d] dark:bg-[#403523]">
-                {(['templates', 'custom'] as const).map(value => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: mode === value }} onPress={() => setMode(value)} className={`min-h-12 flex-1 flex-row items-center justify-center gap-2 rounded-[16px] px-2 py-2 active:opacity-60 ${mode === value ? 'border border-[#9f6010] bg-[#ffdf88] dark:bg-[#71541f]' : ''}`}>
-                  <Ionicons name={value === 'custom' ? 'settings-outline' : 'flash-outline'} size={20} color={dark ? '#f8edda' : '#754315'} /><QuestText className="text-[16px] font-semibold">{value === 'custom' ? 'Custom' : 'Quick Start'}</QuestText>
-                </Pressable>)}
+              {!quest && <View className="mb-lg flex-row flex-wrap gap-sm">
+                {(['templates', 'custom'] as const).map(value => <ChoiceChip appearance="pixel" key={value}
+                  label={value === 'custom' ? 'Custom' : 'Quick Start'} selected={mode === value} onPress={() => setMode(value)} />)}
               </View>}
-              <QuestText className="mb-6 text-[14px] leading-5 text-[#6d5d4d] dark:text-[#c6b9a7]">{mode === 'templates' ? 'Choose an idea, then make it your own.' : 'Get creative! Set your own details and make it your own.'}</QuestText>
+              <QuestText className="mb-6 text-[14px] leading-5 text-muted-foreground">{mode === 'templates' ? 'Choose an idea, then make it your own.' : 'Get creative! Set your own details and make it your own.'}</QuestText>
               {mode === 'templates' ? <View className="gap-3">
-                {getQuestIdeas().map(idea => <Pressable key={idea.id} accessibilityRole="button" accessibilityLabel={`${idea.title}, ${idea.xp} XP`} className="min-h-14 flex-row items-center gap-3 rounded-2xl border border-[#e9dcc4] p-3 active:opacity-60 dark:border-[#64513b]" onPress={() => { setTitle(idea.title); setDescription(idea.description ?? ''); setCategory(categories.find(c => c.name === idea.category)?.name ?? ''); setXp(idea.xp); setMode('custom'); }}>
-                  <QuestIcon icon={idea.icon} small /><QuestText className="flex-1 font-semibold">{idea.title}</QuestText><QuestText className="text-[12px]">+{idea.xp} XP</QuestText>
+                {getQuestIdeas().map(idea => <Pressable key={idea.id} accessibilityRole="button" accessibilityLabel={`${idea.title}, ${idea.xp} XP`} className="min-h-14 flex-row items-center gap-3 rounded-2xl border border-border p-3 active:opacity-60" onPress={() => { setTitle(idea.title); setDescription(idea.description ?? ''); setCategory(categories.find(c => c.name === idea.category)?.name ?? ''); setXp(idea.xp); setMode('custom'); }}>
+                  <QuestIcon icon={idea.icon} small /><QuestText className="flex-1 font-semibold">{idea.title}</QuestText><XpBadge xp={idea.xp} />
                 </Pressable>)}
-              </View> : <View className="gap-5 border-t border-[#f1e7d4] pt-2 dark:border-[#64513b]">
-                <View>
-                  <QuestFieldLabel label="Quest name" icon="create-outline" />
-                  <TextInput accessibilityLabel="Quest name" className="min-h-[50px] rounded-[12px] border border-[#cebea1] bg-[#fffefa] px-3 py-3 text-[15px] leading-[22px] text-[#432914] dark:border-[#76634b] dark:bg-[#342c22] dark:text-[#f8edda]" style={{ fontFamily: Fonts.rounded }} placeholder="e.g. Review my notes" placeholderTextColor={dark ? '#b6a995' : '#8e8071'} value={title} onChangeText={setTitle} maxLength={Math.max(50, title.length)} returnKeyType="next" />
-                  <QuestText className={`mt-1 text-right text-[11px] leading-[14px] ${title.length > 50 ? 'text-[#ae3428]' : 'text-[#796b5c] dark:text-[#c6b9a7]'}`}>{title.length}/50</QuestText>
-                </View>
-                <View>
-                  <QuestFieldLabel label="Description (optional)" icon="list-outline" />
-                  <View className="rounded-[12px] border border-[#cebea1] bg-[#fffefa] dark:border-[#76634b] dark:bg-[#342c22]">
-                    <TextInput accessibilityLabel="Description, optional" className="min-h-[96px] px-3 pb-2 pt-3 text-[15px] leading-[22px] text-[#432914] dark:text-[#f8edda]" style={{ fontFamily: Fonts.rounded }} placeholder="What would you like to accomplish?" placeholderTextColor={dark ? '#b6a995' : '#8e8071'} value={description} onChangeText={setDescription} maxLength={Math.max(200, description.length)} multiline textAlignVertical="top" />
-                    <QuestText className={`px-2 pb-2 text-right text-[11px] leading-[14px] ${description.length > 200 ? 'text-[#ae3428]' : 'text-[#796b5c] dark:text-[#c6b9a7]'}`}>{description.length}/200</QuestText>
-                  </View>
-                </View>
+              </View> : <View className="gap-5 border-t border-border pt-2">
+                <Field label="Quest name" placeholder="e.g. Review my notes" value={title}
+                  onChangeText={setTitle} maxLength={Math.max(50, title.length)} returnKeyType="next"
+                  hint={title.length + '/50'} error={title.length > 50 ? 'Keep your quest name within 50 characters.' : undefined} />
+                <Field label="Description (optional)" placeholder="What would you like to accomplish?"
+                  value={description} onChangeText={setDescription} maxLength={Math.max(200, description.length)}
+                  multiline textAlignVertical="top" style={{ minHeight: 96 }}
+                  hint={description.length + '/200'} error={description.length > 200 ? 'Keep your description within 200 characters.' : undefined} />
                 <View>
                   <QuestFieldLabel label="Category" icon="pricetag-outline" />
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Choose category: ${category || 'None selected'}`} onPress={() => setCategoryOpen(true)} className="min-h-[58px] flex-row items-center gap-3 rounded-[20px] border border-[#e5cea5] px-3 py-2 active:opacity-60 dark:border-[#76603d]">
-                    <QuestIcon icon="accessibility-outline" tone="purple" small /><QuestText className="flex-1">{category || 'Choose a category'}</QuestText><Ionicons name="chevron-down" size={20} color={dark ? '#f8edda' : '#54351e'} />
-                  </Pressable>
+                  <ActionButton label={category || 'Choose a category'} icon="chevron-down" intent="secondary" onPress={() => setCategoryOpen(true)} />
                   {loading && <ActivityIndicator className="mt-2" color={C.honeyDark} />}
-                  {!!error && <View className="mt-2"><QuestText className="text-[13px] text-[#ae3428] dark:text-[#ffb4a9]">{error}</QuestText><Button label="Reload categories" onPress={() => void refresh()} /></View>}
+                  {!!error && <View className="mt-2"><QuestText className="text-[13px] text-destructive">{error}</QuestText><Button label="Reload categories" onPress={() => void refresh()} /></View>}
                 </View>
               </View>}
             </QuestCard> : <View className="gap-3">
               <QuestAccordion title="Timing & schedule" subtitle="When can this quest be done?" icon="time-outline" tone="amber" open={expanded.timing} onToggle={() => toggle('timing')}>
-                <View className="gap-3 rounded-2xl border border-[#f0e5cf] p-3 dark:border-[#64513b]">
+                <View className="gap-3 rounded-2xl border border-border p-3">
                   <QuestSelect label="Timing" selectedValue={scheduleMode} value={scheduleMode === 'anytime' ? 'Anytime' : scheduleMode === 'scheduled' ? 'Scheduled' : 'Preferred time'} options={[{ label: 'Anytime', value: 'anytime' }, { label: 'Scheduled', value: 'scheduled' }, { label: 'Preferred time', value: 'preferred' }]} onChange={value => setScheduleMode(value as typeof scheduleMode)} />
                   {scheduleMode === 'scheduled' && <QuestTimeInput label="Scheduled date & time" value={scheduled} onChange={setScheduled} />}
                   {scheduleMode === 'preferred' && <QuestTimeInput label="Preferred time of day" timeOnly value={preferred} onChange={setPreferred} />}
-                  <View className={`gap-1.5 ${width < 360 ? 'flex-row flex-wrap' : 'flex-row'}`}>
-                    {['Once', 'Daily', 'Weekly', 'Custom'].map(value => <QuestChoice key={value} label={value} compact={width >= 360} selected={recurrence === value} onPress={() => setRecurrence(value)} />)}
+                  <View className="flex-row flex-wrap gap-sm">
+                    {['Once', 'Daily', 'Weekly', 'Custom'].map(value => <QuestChoice key={value} label={value} selected={recurrence === value} onPress={() => setRecurrence(value)} />)}
                   </View>
                   {recurrence === 'Custom' && <View className="gap-2"><QuestText className="text-[12px]">Choose days (preview)</QuestText><View className="flex-row flex-wrap gap-2">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <QuestChoice key={day} label={day} selected={customDays.includes(day)} onPress={() => setCustomDays(days => days.includes(day) ? days.filter(item => item !== day) : [...days, day])} />)}</View></View>}
                   <QuestNote>{recurrence === 'Once' ? (scheduleMode === 'anytime' ? 'Your quest will be available anytime, once.' : 'Your quest will use the timing selected above.') : `${recurrence === 'Daily' ? 'Daily' : recurrence === 'Weekly' ? 'Weekly' : 'Custom'} repeat preview. Repeat settings are preview only. ${quest ? 'Save changes keeps' : 'Create Quest saves'} one quest.`}</QuestNote>
@@ -215,7 +206,7 @@ function QuestForm({ quest, after, afterTitle, initialCategory }: {
             </View>}
           </View>
         </ScrollView>
-        <QuestWizardFooter xp={xp} label={saving ? 'Saving…' : step === 1 ? 'Continue' : quest ? 'Save changes' : 'Create Quest'} busy={saving} disabled={saving || !!savedQuestId || creatingCategory || loading || (step === 1 && mode === 'templates')} feedback={feedback} onPress={() => step === 1 ? continueToSettings() : void save()} />
+        <QuestWizardFooter xp={xp} label={step === 1 ? 'Continue' : quest ? 'Save changes' : 'Create Quest'} busy={saving} disabled={saving || !!savedQuestId || creatingCategory || loading || (step === 1 && mode === 'templates')} feedback={feedback} onPress={() => step === 1 ? continueToSettings() : void save()} />
       </View>
       {savedQuestId && <Sheet visible title="Quest saved" onClose={() => router.back()}>
         <ActionButton label="Add a follow-up" onPress={() => router.replace({
@@ -223,35 +214,26 @@ function QuestForm({ quest, after, afterTitle, initialCategory }: {
         })} />
         <ActionButton label="Done" intent="quiet" onPress={() => router.back()} />
       </Sheet>}
-      <Modal visible={categoryOpen} animationType="slide" transparent onRequestClose={() => setCategoryOpen(false)}>
-        <View style={s.backdrop}><SafeAreaView style={s.modal} edges={['bottom']} accessibilityViewIsModal>
-          <View style={s.between}><ThemedText style={s.sectionTitle}>Choose a category</ThemedText><Button label="Close" onPress={() => setCategoryOpen(false)} /></View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.modalContent}>
-            {loading ? <ActivityIndicator color={C.honeyDark} /> : error ? <><ThemedText style={s.error}>{error}</ThemedText><Button label="Try again" onPress={() => void refresh()} /></> : categories.length ? categories.map(item => <Choice key={item.id} label={item.name} selected={category === item.name} onPress={() => { setCategory(item.name); setCategoryOpen(false); }} />) : <ThemedText style={s.hint}>No categories yet. Create your first one below.</ThemedText>}
-            <ThemedText style={s.label}>Create a category</ThemedText>
-            <TextInput accessibilityLabel="New category name" style={s.input} value={newCategory} onChangeText={setNewCategory} maxLength={40} placeholder="e.g. Creativity" placeholderTextColor={C.muted} />
-            {!!categoryError && <ThemedText style={s.error} accessibilityLiveRegion="polite">{categoryError}</ThemedText>}
-            <Button primary label={creatingCategory ? 'Creating...' : 'Create & select'} disabled={creatingCategory || loading || !!error || !newCategory.trim()} onPress={() => void addCategory()} />
-          </ScrollView>
-        </SafeAreaView></View>
-      </Modal>
+      <Sheet title="Choose a category" visible={categoryOpen} onClose={() => setCategoryOpen(false)}>
+        {loading ? <ActivityIndicator color={C.primary} /> : error ? <>
+          <ThemedText style={s.error}>{error}</ThemedText>
+          <ActionButton label="Try again" onPress={() => void refresh()} />
+        </> : categories.length ? categories.map(item => <ChoiceChip appearance="pixel" key={item.id} label={item.name} leading={<CategoryGlyph label={item.name} />}
+          selected={category === item.name} onPress={() => { setCategory(item.name); setCategoryOpen(false); }} />)
+          : <ThemedText>No categories yet. Create your first one below.</ThemedText>}
+        <Field label="New category name" editable={!creatingCategory} value={newCategory} onChangeText={setNewCategory}
+          maxLength={40} placeholder="e.g. Creativity" error={categoryError ?? undefined} />
+        <ActionButton label="Create & select" loading={creatingCategory} disabled={loading || !!error || !newCategory.trim()}
+          onPress={() => void addCategory()} />
+      </Sheet>
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
-function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <QuestChoice label={label} selected={selected} onPress={onPress} />; }
 function Button({ label, onPress, primary = false, disabled = false }: { label: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
   return <ActionButton label={label} onPress={onPress} intent={primary ? 'primary' : 'quiet'} disabled={disabled} />;
 }
 const makeStyles = (C: BeePalette) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.background },
   content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', padding: 20, gap: 20 },
-  sectionTitle: { fontSize: 20, lineHeight: 28, fontWeight: '700', color: C.ink },
-  label: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: C.ink },
-  hint: { fontSize: 14, lineHeight: 20, color: C.muted },
-  between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  input: { fontFamily: Fonts.rounded, minHeight: 48, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.border, backgroundColor: C.card, fontSize: 16, color: C.ink, lineHeight: 24 },
   error: { fontSize: 14, lineHeight: 20, color: C.danger },
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(45,36,29,0.35)' },
-  modal: { maxHeight: '85%', width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', backgroundColor: C.background, padding: 20, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  modalContent: { gap: 10, paddingBottom: 20 },
 });

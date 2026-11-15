@@ -9,6 +9,7 @@ import tokens from '@/constants/design-tokens.json';
 
 export type PixelButtonSvgProps = {
   label: string;
+  accessibilityLabel?: string;
   /** Gallery state preview; activation still follows disabled/loading props. */
   previewState?: 'normal' | 'pressed' | 'focused';
   onPress: () => void;
@@ -25,6 +26,10 @@ const textRoles: Record<PixelButtonIntent, keyof BeePalette> = {
   primary: 'primaryForeground', secondary: 'foreground', quiet: 'foreground',
   destructive: 'dangerForeground', accent: 'accentForeground', 'accent-quiet': 'foreground',
 };
+// Filled inactive ramps can be much darker or lighter than the generic disabled surface.
+const disabledTextRoles: Partial<Record<PixelButtonIntent, keyof BeePalette>> = {
+  primary: 'primaryForeground', destructive: 'dangerForeground', accent: 'accentForeground',
+};
 const crispEdges: SvgProps & { shapeRendering: 'crispEdges' } = { shapeRendering: 'crispEdges' };
 
 function LoadingDots({ color }: { color: string }) {
@@ -40,8 +45,8 @@ function LoadingDots({ color }: { color: string }) {
   </Svg>;
 }
 
-/** Experimental. Does not replace the PNG PixelButton or its asset pack. */
-export const PixelButtonSvg = memo(function PixelButtonSvg({ previewState, label, onPress, intent = 'primary', disabled = false, loading = false, style, labelStyle, accessibilityHint, testID }: PixelButtonSvgProps) {
+/** Scalable face for wrapping labels and component previews. */
+export const PixelButtonSvg = memo(function PixelButtonSvg({ previewState, label, accessibilityLabel = label, onPress, intent = 'primary', disabled = false, loading = false, style, labelStyle, accessibilityHint, testID }: PixelButtonSvgProps) {
   const c = useBeePalette();
   const scheme = useAppColorScheme();
   const [pressed, setPressed] = useState(false);
@@ -50,16 +55,16 @@ export const PixelButtonSvg = memo(function PixelButtonSvg({ previewState, label
   const down = !disabled && !loading && (previewState === 'pressed' || pressed);
   const ramps = tokens.pixel.button.ramps[scheme][intent];
   const ramp = disabled ? ramps.disabled : down ? ramps.pressed : ramps.normal;
-  const color = c[disabled ? 'disabledForeground' : textRoles[intent]];
+  const color = c[disabled ? disabledTextRoles[intent] ?? 'disabledForeground' : textRoles[intent]];
   return <Pressable
     cssInterop={false}
-    accessibilityRole="button" accessibilityLabel={label} accessibilityHint={accessibilityHint}
+    accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint}
     accessibilityState={{ disabled: blocked, busy: loading }}
     testID={testID} disabled={blocked} onPress={onPress}
     onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)}
     onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
     style={[styles.root, style]}>
-    <PixelFrame ramp={ramp} pressed={down} focused={(previewState === 'focused' || focused) && !blocked}>
+    <PixelFrame ramp={ramp} pressed={down} focused={(previewState === 'focused' || focused) && !blocked} focusColor={textRoles[intent]}>
       <View style={[styles.content, down && styles.down]} pointerEvents="none">
         {/* Keep the wrapping label in layout during loading to avoid height jumps. */}
         <Text allowFontScaling style={[styles.label, labelStyle, { color }, loading && styles.hidden]}>{label}</Text>

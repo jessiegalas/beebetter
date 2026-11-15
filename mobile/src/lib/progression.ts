@@ -122,3 +122,10 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
 export function evaluateAchievements(stats: AchievementStats): AchievementStatus[] {
   return ACHIEVEMENTS.map(({ unlocked, ...definition }) => ({ ...definition, unlocked: unlocked(stats) }));
 }
+
+export function completionFeedback(receipt: import('./quest-completion').CompletionReceipt) {
+  if (receipt.status === 'already_completed') return 'This quest was already completed.';
+  const next = calculateLevel(receipt.total_xp).level;
+  const previous = calculateLevel(receipt.total_xp - receipt.awarded_xp).level;
+  return 'Quest complete. +' + receipt.awarded_xp + ' XP.' + (next > previous ? ' You reached Level ' + next + '!' : '');
+}

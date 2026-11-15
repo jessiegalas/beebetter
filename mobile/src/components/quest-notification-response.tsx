@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { useUserData } from '@/context/user-data-context';
 import { COMPLETE_QUEST_ACTION, OPEN_QUEST_ACTION } from '@/lib/quest-notifications';
+import { completionFeedback } from '@/lib/progression';
 import { supabase } from '@/supabase';
 
 /** Handles both warm taps and the notification that launched the app. */
@@ -61,7 +62,13 @@ export function QuestNotificationResponse() {
       const completion = await completionRef.current(questId);
       if (!current) return;
       if (!completion.success) throw new Error(completion.error || 'Quest completion failed');
-      Alert.alert('Quest complete', 'Your progress has been saved.');
+      Alert.alert(completion.receipt.status === 'completed' ? 'Quest complete' : 'Already complete',
+        completionFeedback(completion.receipt), [
+          { text: 'OK' },
+          { text: 'Refresh progress', onPress: () => {
+            if (admissionRef.current.userId === userId && admissionRef.current.access === 'active') void refresh();
+          } },
+        ]);
       await Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
     })().catch(() => {
       if (current) Alert.alert('Could not complete this action', 'Check your connection and open the quest to try again.', [

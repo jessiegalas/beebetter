@@ -13,9 +13,11 @@ This spec takes precedence over older defaults for new or deliberately migrated 
 
 ## Reuse and tokens
 
+See the [gamified UI library catalog](mobile-gamified-ui-library.md) for existing components, proposed assets, and screen replacements.
+
 - Use [`PixelButton`](../mobile/src/components/pixel/pixel-button.tsx) for pixel actions, [`PixelFrame`](../mobile/src/components/pixel/pixel-frame.tsx) for stepped frames, and [`XpBadge`, `XpProgress`, and `RewardPanel`](../mobile/src/components/xp-visuals.tsx) for reward UI. Reuse shared form and navigation controls from [`mobile-ui`](../mobile/src/components/mobile-ui.tsx).
 - Keep values in [`design-tokens.json`](../mobile/src/constants/design-tokens.json). Import pixel values through [`tokens.ts`](../mobile/src/constants/tokens.ts) and theme-aware roles through [`theme.ts`](../mobile/src/constants/theme.ts).
-- Use semantic colors for each theme. The [PNG atlas](../mobile/assets/pixel-button-pack/pixel-button.atlas.json) and `DerivedRamps` describe shipped artwork. The experimental SVG button uses `pixel.button.ramps`. Atlas regeneration requires explicit approval.
+- Use semantic colors for each theme. The [PNG atlas](../mobile/assets/pixel-button-pack/pixel-button.atlas.json) and `DerivedRamps` describe shipped artwork. The wrapping `PixelButton` uses SVG and `pixel.button.ramps`. Atlas regeneration requires explicit approval.
 
 ## Typography — provisional
 
@@ -43,7 +45,7 @@ See [How to build pixel assets](pixel-assets.md) for the workflow from source ar
 - Use the canonical primary and pressed colors in each theme. The approved accent base is **#D29D30** and its highlight is **#F5B83D**. Use `accentForeground` for text on the accent fill.
 - Filled pressed buttons use the pressed base, the normal base as the highlight, and a single **3dp** face offset. Keep shadow and outline colors consistent between states.
 - Quiet and accent-quiet stay transparent with a uniform **3dp** outline and readable foreground text. Accent-quiet uses an accent outline.
-- Use explicit per-theme, per-variant disabled ramps and `disabledForeground`. Show visible focus and busy feedback. Loading blocks repeat activation while preserving layout.
+- Use explicit per-theme, per-variant disabled ramps. Use `disabledForeground` on neutral surfaces and the semantic foreground paired with a filled ramp for readable labels. Show visible focus and busy feedback. Loading blocks repeat activation while preserving layout.
 - Verify both themes at narrow widths and enlarged text. Check focus, pressed, disabled, and loading states. Maintain **4.5:1** contrast for normal text and **3:1** for large text and meaningful control boundaries and icons. Give meaningful controls explicit names, use cues beyond color, and respect reduced motion.
 
 ## World tree — staged implementation

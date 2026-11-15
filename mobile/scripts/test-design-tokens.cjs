@@ -55,7 +55,7 @@ for (const deviceScheme of ['light', 'dark']) {
   };
   const theme = load('src/constants/theme.ts', {
     '@/global.css': {}, react: h.react, 'react-native': native,
-    nativewind: { useColorScheme: () => ({ colorScheme: deviceScheme }) }, './design-tokens.json': tokens,
+    nativewind: { useColorScheme: () => ({ colorScheme: deviceScheme }) }, './design-tokens.json': tokens, './tokens': load('src/constants/tokens.ts', { './design-tokens.json': tokens }),
   });
   assert.equal(theme.APP_COLOR_SCHEME, 'light');
   const appearance = load('src/hooks/use-theme.ts', {
@@ -81,6 +81,7 @@ for (const deviceScheme of ['light', 'dark']) {
   const applied = [];
   const pass = () => null;
   const layout = load('src/app/_layout.tsx', {
+    'expo-font': { useFonts: () => [true] }, '@/assets/fonts/VT323/VT323-Regular.ttf': 1,
     '@/global.css': {}, react: h.react, 'react-native': native,
     nativewind: { colorScheme: { set: value => applied.push(value) } },
     '@/hooks/use-app-appearance': { useAppAppearance: () => ({ scheme: deviceScheme }), useRestoreAppAppearance() {} },

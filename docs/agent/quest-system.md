@@ -1,6 +1,6 @@
 # Quests, completion, and progression
 
-Read for quest creation/editing, proof Storage, completion, XP/levels/streaks, or history. Paths are repository-relative. SQL ownership: 008, 016, 018, 020, 024, 026; latest `complete_quest` is in 018.
+Read for quest creation/editing, proof Storage, completion, XP/levels/streaks, or history. Paths are repository-relative. SQL ownership: 008, 016, 018, 020, 024, 026; 041 adds completion receipts and paged history.
 
 ## Creation and editing
 
@@ -12,15 +12,15 @@ Read for quest creation/editing, proof Storage, completion, XP/levels/streaks, o
 
 ## Completion and history
 
-- Only `complete_quest` awards student completion XP. It locks the owned row, checks active student/active quest, prerequisites and proof, and atomically updates status/XP with history/streak triggers. Duplicate successful completion must not award XP again.
-- Mobile completion uses `mobile/src/lib/quest-completion.ts` with the production IO adapter in `quest-completion-adapter.ts`. The provider retains admission, owned target lookup, already-completed handling, per-quest duplicate guards and workspace refresh. The module owns byte reading, path generation, upload, RPC dispatch and best-effort failure cleanup. Screens keep proof picking and reward UI.
-- Mobile uploads proof to private `quest-proofs` under a user/quest-prefixed path, calls the RPC, and reloads server state. Preserve duplicate guards, errors, and failed-upload cleanup. Never award XP or set completion state locally.
+- Migration 041 makes `complete_quest_v2` the shared completion operation. The legacy `complete_quest` wrapper still returns void. A new completion returns the locked quest title, awarded XP, and resulting total XP. A repeat returns `already_completed` without a new award. It locks the owned row, checks active student/active quest, prerequisites and proof, and atomically updates status/XP with history/streak triggers. Duplicate successful completion must not award XP again.
+- Mobile completion uses `mobile/src/lib/quest-completion.ts` with the production IO adapter in `quest-completion-adapter.ts`. The provider retains admission, owned target lookup, already-completed handling, per-quest duplicate guards and workspace refresh. The module owns byte reading, path generation, upload, RPC dispatch and cleanup of explicitly unused proof. Screens keep proof picking and reward UI.
+- Mobile uploads proof to private `quest-proofs` under a user/quest-prefixed path, calls the RPC, and reloads server state. Preserve duplicate guards, errors, and private Storage retention. Never award XP or set completion state locally.
 - Client-writable quest `xp` is a reward field, not permission to write `profiles.total_xp` or completion status. Existing protections do not establish that every possible reward-policy abuse is fixed.
 - `calculateLevel` is display logic. SQL constrains level to integer `total_xp / 100 + 1`.
 - Streaks count consecutive institutional calendar completion days ending today or yesterday (default Asia/Manila). SQL recalculates on reads because cached streaks age.
 - Preserve completion/lifecycle snapshots after mutable records change or quests are deleted. FK nulling/cascades do not authorize ad hoc historical cleanup.
-- All-time totals/category summaries use a summary RPC; newest 100 completion events are a separate read. Candidates page all non-completed quests in batches of 200; they do not include completion history. See [known limitations](known-limitations.md) before changing filters or prerequisite ranking.
-- Branch XP attribution uses `student_branch_progress()` (migration 040), which sums immutable completed-event `xp` snapshots from `quest_lifecycle_events` per category for the authenticated student. Overall XP remains `profiles.total_xp`; the four core branches always render and custom categories appear once used. Branch levels are derived client-side with the shared `calculateLevel` and are not persisted. Legacy completions without a lifecycle snapshot cannot be attributed by category.
+- All-time totals/category summaries use a summary RPC; newest 100 completion events are a separate read. Candidates page all non-completed quests in batches of 200; they do not include completion history. All Quests → Completed uses owner-scoped cursor paging and saved category labels. Location and scheduling filters are unavailable for saved completion snapshots.
+- Branch XP attribution uses `student_branch_progress()` (migration 040), which sums immutable completed-event `xp` snapshots from `quest_lifecycle_events` per category for the authenticated student. Overall XP remains `profiles.total_xp`; the four core branches always render and custom categories appear once used. Branch levels are derived client-side with the shared `calculateLevel` and are not persisted. Selected branches show this progress in tree and list mode. Legacy completions without a lifecycle snapshot cannot be attributed by category. The three-day badge reflects the current streak. The first Skill Tree visit establishes a baseline, and later unseen completions can show catch-up growth.
 
 ## Proof retention
 
@@ -32,4 +32,4 @@ A trusted external worker must delete through the Storage API and confirm succes
 
 Run `npm run test:completion` in `mobile` for the coordinator and production adapter contracts, and `npm run test:auth` for provider admission, duplicate and session-switch integration. These mocks do not verify live Storage policies or native file URI behavior.
 
-A stale session stops subsequent dispatch/refresh, but cannot undo an RPC already in flight. Guard cancellation does not remove an uploaded object. Current-session read/upload/RPC failures attempt removal; removal errors preserve the original failure. Acknowledged completion never removes proof during workspace refresh. Lost RPC responses retain the existing failure/cleanup behavior, without automatic redispatch. Server referenced-object protection and retention jobs remain separate from this client cleanup.
+A stale session stops later dispatch and refresh. An already-completed receipt allows cleanup of that attempt’s unique, unused upload. Ambiguous failures leave uploads to retention. After a lost response, the student can retry and the server returns the duplicate outcome if the original attempt committed. After authorization, run the rollback-only `supabase/tests/mobile-completion-history.sql` on a disposable stack after 041. Verify legacy and v2 calls before releasing the dependent mobile build.

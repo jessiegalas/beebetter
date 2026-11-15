@@ -21,11 +21,12 @@ async function actionScenario({ proof = false, state = 'active', owner = 'a', ac
   const routes = [], alerts = [];
   const response = { actionIdentifier: action, notification: { request: { identifier: 'notice', content: { data: { questId: 'q', ownerId: owner } } } } };
   const mod = load('src/components/quest-notification-response.tsx', {
+    '@/lib/progression': { completionFeedback: () => 'Quest complete. +25 XP.' },
     react: { useRef: value => { const ref = { current: value }; if (value?.access) admissionRef = ref; return ref; }, useEffect: fn => { effect = fn; } },
     'react-native': { Platform: { OS: 'android' }, Alert: { alert: (...args) => alerts.push(args) } },
     'expo-router': { router: { push: value => routes.push(value) } },
     'expo-notifications': { useLastNotificationResponse: () => response, DEFAULT_ACTION_IDENTIFIER: 'default', clearLastNotificationResponseAsync: async () => {}, dismissNotificationAsync: async () => {} },
-    '@/context/user-data-context': { useUserData: () => ({ user: { id: 'a' }, access: 'active', isLoading: false, refresh: async () => { refreshed++; }, completeQuest: async () => { calls++; await completionWait; if (!failure) refreshed++; return { success: !failure, error: failure ? 'offline' : undefined }; } }) },
+    '@/context/user-data-context': { useUserData: () => ({ user: { id: 'a' }, access: 'active', isLoading: false, refresh: async () => { refreshed++; }, completeQuest: async () => { calls++; await completionWait; if (!failure) refreshed++; return failure ? { success: false, error: 'offline' } : { success: true, receipt: { status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 } }; } }) },
     '@/lib/quest-notifications': { COMPLETE_QUEST_ACTION: 'COMPLETE_QUEST', OPEN_QUEST_ACTION: 'OPEN_QUEST' },
     '@/supabase': { supabase: {
       from: () => { let id; const query = { select: () => query, eq: (key, value) => { if (key === 'id') id = value; return query; },

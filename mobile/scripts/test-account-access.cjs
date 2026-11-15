@@ -69,9 +69,11 @@ function provider(initialUser = user('a'), initialState = {}, notificationLifecy
       query.then = (resolve, reject) => run().then(resolve, reject);
       return query;
     },
-    rpc: (name, args) => { const task = (async () => {
+    rpc: (name, args) => {
+      const task = (async () => {
       state.rpcCalls ??= []; state.rpcCalls.push({ name, args });
       if (state.rpc) { const result = state.rpc(name, args); if (result !== undefined) return result; }
+      if (name === 'complete_quest_v2') return ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 });
       return ok(name === 'registration_enrollment_options_v2' ? [registrationOption] : name === 'student_list_recommendation_candidates' ? [quest] : name === 'student_get_current_streak' ? 0 : name === 'student_get_registration_state' ? (state.registrationState || (state.missing ? 'unavailable' : 'active')) : []);
     })(); task.abortSignal = () => task; return task; },
     storage: { from: () => ({
@@ -94,7 +96,7 @@ function provider(initialUser = user('a'), initialState = {}, notificationLifecy
     '@/lib/recommendation-facts': load('src/lib/recommendation-facts.ts'),
     '@/lib/student-workspace': load('src/lib/student-workspace.ts', {}),
     '@/lib/quest-completion': load('src/lib/quest-completion.ts'),
-    '@/lib/quest-completion-adapter': load('src/lib/quest-completion-adapter.ts', {}, { fetch: async uri => ({ arrayBuffer: async () => state.readProof ? state.readProof(uri) : new ArrayBuffer(2) }) }),
+    '@/lib/quest-completion-adapter': load('src/lib/quest-completion-adapter.ts', { './quest-completion': load('src/lib/quest-completion.ts') }, { fetch: async uri => ({ arrayBuffer: async () => state.readProof ? state.readProof(uri) : new ArrayBuffer(2) }) }),
     'react-native': { Platform: { OS: 'android' }, AppState: { currentState: 'active', addEventListener: (_, fn) => { appCallbacks.add(fn); return { remove() { appCallbacks.delete(fn); } }; } } },
     '@/supabase': { supabase, authRecoveryStorage: { get: async () => state.recoveryMarker, set: async () => { state.recoveryMarker = true; }, clear: async () => { state.recoveryMarker = false; } } }, '@/lib/account-access': access,
     // No concrete notification mock: importing it from core fails this harness.
@@ -271,13 +273,13 @@ test('late quest insertion and deletion rollback cannot restore logged-out data'
 test('newly assigned uncached quest uses an owned lookup and server completion', async () => {
   const p = provider(); await flush(); let completions = 0;
   p.state.query = table => table === 'quests' ? ok({ status: 'active', requires_proof: false }) : undefined;
-  p.state.rpc = name => { if (name === 'complete_quest') { completions++; return ok(null); } };
+  p.state.rpc = name => { if (name === 'complete_quest_v2') { completions++; return ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 }); } };
   assert.equal((await p.h.value.completeQuest('new-quest')).success, true);
   assert.equal(completions, 1); assert.ok(p.state.queries.includes('quests:select')); p.close();
 });
 test('missing or proof-required uncached quests do not dispatch completion', async () => {
   const p = provider(); await flush(); let completions = 0;
-  p.state.rpc = name => { if (name === 'complete_quest') { completions++; return ok(null); } };
+  p.state.rpc = name => { if (name === 'complete_quest_v2') { completions++; return ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 }); } };
   assert.equal((await p.h.value.completeQuest('foreign-quest')).success, false);
   p.state.query = table => table === 'quests' ? ok({ status: 'active', requires_proof: true }) : undefined;
   assert.match((await p.h.value.completeQuest('proof-quest')).error, /proof/);
@@ -286,23 +288,23 @@ test('missing or proof-required uncached quests do not dispatch completion', asy
 test('logout during an uncached quest lookup prevents completion', async () => {
   const p = provider(); await flush(); const wait = deferred(); let completions = 0;
   p.state.query = table => table === 'quests' ? wait.promise : undefined;
-  p.state.rpc = name => { if (name === 'complete_quest') { completions++; return ok(null); } };
+  p.state.rpc = name => { if (name === 'complete_quest_v2') { completions++; return ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 }); } };
   const completing = p.h.value.completeQuest('new-quest'); await p.h.value.signOut();
   wait.resolve(ok({ status: 'active', requires_proof: false }));
   assert.equal((await completing).success, false); assert.equal(completions, 0); p.close();
 });
 test('completion finishing after logout does not trigger another user load', async () => {
   const p = provider(); await flush(); const wait = deferred();
-  p.state.rpc = name => name === 'complete_quest' ? wait.promise : undefined;
+  p.state.rpc = name => name === 'complete_quest_v2' ? wait.promise : undefined;
   const complete = p.h.value.completeQuest('q1'); await p.h.value.signOut();
   const count = p.state.queries.length;
-  wait.resolve(ok(null)); await complete; await flush();
+  wait.resolve(ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 })); await complete; await flush();
   assert.equal(p.state.queries.length, count); assert.equal(p.h.value.user, null); p.close();
 });
 
 test('duplicate completion is blocked while pending and a failed quest can retry', async () => {
   const p = provider(); await flush(); const wait = deferred();
-  p.state.rpc = name => name === 'complete_quest' ? wait.promise : undefined;
+  p.state.rpc = name => name === 'complete_quest_v2' ? wait.promise : undefined;
   const first = p.h.value.completeQuest('q1');
   assert.match((await p.h.value.completeQuest('q1')).error, /already being completed/);
   wait.resolve({ error: { message: 'Offline' } }); assert.equal((await first).success, false);
@@ -311,9 +313,9 @@ test('duplicate completion is blocked while pending and a failed quest can retry
 test('different quests complete independently and completed targets bypass dispatch', async () => {
   const p = provider(); await flush(); const wait = deferred();
   p.state.query = table => table === 'quests' ? ok({ status: 'active', requires_proof: false }) : undefined;
-  let calls = 0; p.state.rpc = name => name === 'complete_quest' ? (++calls === 1 ? wait.promise : ok(null)) : undefined;
+  let calls = 0; p.state.rpc = name => name === 'complete_quest_v2' ? (++calls === 1 ? wait.promise : ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 })) : undefined;
   const first = p.h.value.completeQuest('q1'); assert.equal((await p.h.value.completeQuest('other')).success, true);
-  wait.resolve(ok(null)); assert.equal((await first).success, true);
+  wait.resolve(ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 })); assert.equal((await first).success, true);
   p.state.query = table => table === 'quests' ? ok({ status: 'completed', requires_proof: true }) : undefined;
   assert.equal((await p.h.value.completeQuest('done')).success, true); assert.equal(calls, 2); p.close();
 });
@@ -322,7 +324,7 @@ test('proof success uploads once and force-refreshes authoritative workspace sli
   assert.equal((await p.h.value.completeQuest('q1', { uri: 'file:///proof.jpg', name: 'proof.jpg', mimeType: 'image/jpeg' })).success, true);
   assert.equal(p.state.uploads.length, 1); assert.equal(p.state.removals, undefined);
   const calls = p.state.rpcCalls.slice(count).map(call => call.name);
-  assert.equal(calls.filter(name => name === 'complete_quest').length, 1);
+  assert.equal(calls.filter(name => name === 'complete_quest_v2').length, 1);
   assert(calls.includes('student_list_recommendation_candidates')); assert(calls.includes('student_list_completion_history')); p.close();
 });
 for (const phase of ['readProof', 'upload']) test('logout during proof ' + phase + ' prevents RPC dispatch', async () => {
@@ -330,17 +332,17 @@ for (const phase of ['readProof', 'upload']) test('logout during proof ' + phase
   const task = p.h.value.completeQuest('q1', { uri: 'file:///proof.jpg', name: 'proof.jpg', mimeType: 'image/jpeg' });
   await flush(); await p.h.value.signOut(); wait.resolve(phase === 'readProof' ? new ArrayBuffer(2) : ok(null));
   assert.equal((await task).error, 'Session ended.');
-  assert(!p.state.rpcCalls.some(call => call.name === 'complete_quest')); assert.equal(p.state.removals, undefined); p.close();
+  assert(!p.state.rpcCalls.some(call => call.name === 'complete_quest_v2')); assert.equal(p.state.removals, undefined); p.close();
 });
 test('old completion cannot release the new account duplicate guard or reload it', async () => {
   const p = provider(); await flush(); const oldWait = deferred(), nextWait = deferred(); let calls = 0;
-  p.state.rpc = name => name === 'complete_quest' ? (++calls === 1 ? oldWait.promise : nextWait.promise) : undefined;
+  p.state.rpc = name => name === 'complete_quest_v2' ? (++calls === 1 ? oldWait.promise : nextWait.promise) : undefined;
   const oldTask = p.h.value.completeQuest('q1'); p.emit(user('b')); await flush();
   const nextTask = p.h.value.completeQuest('q1'); const queryCount = p.state.queries.length;
-  oldWait.resolve(ok(null)); assert.equal((await oldTask).error, 'Session ended.'); await flush();
+  oldWait.resolve(ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 })); assert.equal((await oldTask).error, 'Session ended.'); await flush();
   assert.equal(p.state.queries.length, queryCount); assert.equal(p.h.value.user.id, 'b');
   assert.match((await p.h.value.completeQuest('q1')).error, /already being completed/);
-  nextWait.resolve(ok(null)); assert.equal((await nextTask).success, true); p.close();
+  nextWait.resolve(ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 })); assert.equal((await nextTask).success, true); p.close();
 });
 test('workspace failure after completion preserves admission and referenced proof', async () => {
   const p = provider(); await flush();
@@ -374,6 +376,7 @@ test('all private routes are excluded for every non-active access state', () => 
   });
   const features = load('src/constants/features.ts');
   const layout = load('src/app/_layout.tsx', {
+    'expo-font': { useFonts: () => [true] }, '@/assets/fonts/VT323/VT323-Regular.ttf': 1,
     '@/global.css': {}, '@rn-primitives/portal': { PortalHost: 'PortalHost' },
     '@/constants/features': features,
     '@/constants/theme': { APP_COLOR_SCHEME: 'light', useBeePalette: () => ({ background: '#f8f7de' }) },
@@ -410,7 +413,7 @@ test('all private routes are excluded for every non-active access state', () => 
   const privateRoutes = routes(layout.default());
   assert(privateRoutes.includes('(tabs)')); assert(privateRoutes.includes('add-quest'));
   assert(!privateRoutes.includes('auth'));
-  assert.deepEqual(privateRoutes, ['(tabs)', 'notifications', 'add-quest', 'manage-locations', 'settings/index', 'settings/general']);
+  assert.deepEqual(privateRoutes, ['(tabs)', 'notifications', 'add-quest', 'manage-locations', 'skill-tree-prototype', 'settings/index', 'settings/general']);
   features.MOBILE_NOTIFICATIONS_ENABLED = false;
   assert.deepEqual(routes(layout.default()), privateRoutes.filter(route => route !== 'notifications'));
   features.MOBILE_NOTIFICATIONS_ENABLED = true;

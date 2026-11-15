@@ -6,7 +6,7 @@ import { User } from '@supabase/supabase-js';
 import { supabase, authRecoveryStorage } from '@/supabase';
 import { authFailure, parseAuthCallback, readRegistrationDraft, registrationInput, type RegistrationDraft, type AuthenticationResult, type AuthOperationResult, type AuthFailure, type RegistrationInput } from '@/lib/auth-flow';
 import { createStudentWorkspaceReader, type CompletionRecord, type WorkspaceSlice, type WorkspaceErrors } from '@/lib/student-workspace';
-import { createQuestCompletion, type ProofFile } from '@/lib/quest-completion';
+import { createQuestCompletion, type CompleteQuestOutcome, type ProofFile } from '@/lib/quest-completion';
 import { createQuestCompletionAdapter } from '@/lib/quest-completion-adapter';
 import { passwordError, studentPayload, validateStudent, type RegistrationEnrollmentOption } from '@/lib/student-validation';
 import { readEnrollmentOptions, requestEnrollmentCatalogue } from '@/lib/enrollment-catalogue';
@@ -113,7 +113,7 @@ interface UserDataContextType {
   updateProfile: (updates: StudentProfileUpdates) => Promise<{ success: boolean; error?: string }>;
   refresh: () => Promise<void>;
   retryWorkspace: (slice: WorkspaceSlice) => Promise<void>;
-  completeQuest: (questId: string, proof?: ProofFile) => Promise<{ success: boolean; error?: string }>;
+  completeQuest: (questId: string, proof?: ProofFile) => Promise<CompleteQuestOutcome>;
   deleteQuest: (questId: string) => Promise<{ success: boolean; error?: string }>;
   addQuest: (quest: QuestDraft) => Promise<{ success: boolean; error?: string; questId?: string }>;
   updateQuest: (id: string, quest: QuestDraft) => Promise<{ success: boolean; error?: string }>;
@@ -429,7 +429,14 @@ export function UserDataProvider({ children, notificationLifecycle }: {
         setCompletionHistory(result.history.rows);
         setCompletionHistoryHasMore(result.history.hasMore);
       }
-      if (result.progressSummary) setProgressSummary(result.progressSummary);
+      if (result.progressSummary) {
+        const next = result.progressSummary;
+        setProgressSummary(previous => result.branchProgressFailed ? {
+          ...next,
+          byCategory: { ...previous.byCategory, ...next.byCategory },
+          byCategoryXp: previous.byCategoryXp,
+        } : next);
+      }
       if (result.quests) { setQuests(result.quests); setQuestsHasMore(false); }
 
     } catch {
@@ -651,7 +658,7 @@ export function UserDataProvider({ children, notificationLifecycle }: {
   const refresh = useCallback(() => refreshWorkspace('all'), [refreshWorkspace]);
   const retryWorkspace = useCallback((slice: WorkspaceSlice) => refreshWorkspace(slice), [refreshWorkspace]);
 
-  const completeQuest = useCallback(async (questId: string, proof?: ProofFile): Promise<{ success: boolean; error?: string }> => {
+  const completeQuest = useCallback(async (questId: string, proof?: ProofFile): Promise<CompleteQuestOutcome> => {
     if (!user || !isAdmittedSession()) {
       return { success: false, error: 'User is not signed in.' };
     }
@@ -673,7 +680,7 @@ export function UserDataProvider({ children, notificationLifecycle }: {
     }
 
     if (targetQuest.status === 'completed') {
-      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
+      return isCurrent() ? { success: true, receipt: { status: 'already_completed' } } : { success: false, error: 'Session ended.' };
     }
 
     if (targetQuest.requires_proof && !proof) {
@@ -690,9 +697,9 @@ export function UserDataProvider({ children, notificationLifecycle }: {
       // Refresh server timestamps, durable history and XP together.
       if (isCurrent()) {
         setRecommendationData(previous => ({ ...previous, factsUpdatedAt: null }));
-        await fetchUserData(user, false, true, true);
+        await fetchUserData(user, false, true, true).catch(() => {});
       }
-      return isCurrent() ? { success: true } : { success: false, error: 'Session ended.' };
+      return isCurrent() ? { success: true, receipt: result } : { success: false, error: 'Session ended.' };
     } catch (err) {
       // Completion has already been acknowledged; refresh failures must not
       // remove the proof now referenced by the server.

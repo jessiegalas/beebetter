@@ -6,7 +6,6 @@ Read for affected behavior before relying on old documentation or asserting prod
 
 - Mobile loads the newest 100 completion events and all non-completed candidates in 200-row pages. All-time totals use a summary RPC; history-dependent ranking sees only loaded recent history. Offset RPCs reject offsets above 100,000.
 - Migration 023 excludes completed quests from candidates, but ranking checks prerequisite completion in its candidate map. Completed prerequisites may appear unavailable despite history. Reproduce through provider/RPC flow, not only engine fixtures containing completed quests.
-- The board has a completed filter, while candidate data excludes completed rows; separate history is not merged into that list.
 - Ranking treats rejected quests as actionable, but `complete_quest` accepts only active quests. Do not weaken completion authorization to match this UI discrepancy.
 - Progress-summary category columns cover four defaults even though mobile permits private categories.
 - Wellness/support history reads are not paginated. Notification routing/account-switch cleanup still requires device verification when touched.

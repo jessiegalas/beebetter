@@ -3,6 +3,9 @@ import { ActivityIndicator, Pressable, View, useWindowDimensions } from 'react-n
 import { Ionicons } from '@expo/vector-icons';
 import { QuestCard as WizardCard, QuestText } from '@/components/quest-wizard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { XpBadge } from '@/components/xp-visuals';
+import { CategoryBadge, QuestStatus, questVisualState } from '@/components/quest-visuals';
+import { PixelChoice } from '@/components/pixel/pixel-choice';
 import { useAppColorScheme, useBeePalette } from '@/constants/theme';
 import type { PrerequisiteState } from '@/lib/quest-priority';
 import { prerequisiteMessage } from '@/lib/quest-context';
@@ -20,22 +23,9 @@ export function QuestListHeader({ onSettings, compact = false }: { onSettings: (
   </View>;
 }
 
-export function QuestListTab({ label, selected, onPress, compact = false }: { label: string; selected: boolean; onPress: () => void; compact?: boolean }) {
-  const c = useBeePalette();
-  const [focused, setFocused] = useState(false);
-  return <Pressable accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected }} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} className="min-h-14 flex-1 justify-center border-2 px-1 py-3 active:opacity-60" style={{ borderColor: focused ? c.focus : 'transparent', minHeight: compact ? 48 : 56, paddingVertical: compact ? 8 : 12 }}>
-    <QuestText className={`text-center text-[18px] leading-[26px] ${selected ? 'font-bold' : 'text-[#796e64] dark:text-[#c6b9a7]'}`}>{label}</QuestText>
-    <View pointerEvents="none" accessible={false} style={{ position: 'absolute', bottom: -2, left: -2, right: -2, height: 3, backgroundColor: selected ? c.accent : c.border }} />
-  </Pressable>;
+export function QuestListTab({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return <PixelChoice role="tab" label={label} selected={selected} onPress={onPress} />;
 }
-
-const categoryStyles: Record<string, string> = {
-  health: 'bg-[#e2efdc] dark:bg-[#263d2b]',
-  academics: 'bg-[#e6edf6] dark:bg-[#2e4055]',
-  learning: 'bg-[#e6edf6] dark:bg-[#2e4055]',
-  social: 'bg-[#f3e4f6] dark:bg-[#493452]',
-  habits: 'bg-[#fff0cf] dark:bg-[#4c3c20]',
-};
 
 type QuestRowProps = {
   quest: Quest;
@@ -107,11 +97,11 @@ function QuestRowContent({ quest, locked = false, prerequisiteState = 'none', pr
   const completed = quest.status === 'completed';
   const prerequisiteWarning = prerequisiteMessage(prerequisiteState, prerequisiteTitle);
   const canComplete = quest.status === 'active' && !locked && !prerequisiteWarning && !quest.requires_proof;
-  const stateLabel = completed ? 'Completed' : quest.status === 'pending' ? 'Pending review' : quest.status === 'rejected' ? 'Needs revision' : prerequisiteWarning ? prerequisiteWarning : quest.requires_proof ? 'Proof required' : '';
+  const state = questVisualState(quest.status, locked || !!prerequisiteWarning, quest.requires_proof);
+  const explanation = state === 'locked' ? prerequisiteWarning : undefined;
   const timing = quest.deadline_at ? `Due ${formatTiming(quest.deadline_at)}` : quest.scheduled_at ? `Scheduled ${formatTiming(quest.scheduled_at)}` : quest.preferred_time ? `Preferred at ${quest.preferred_time.slice(0, 5)}` : '';
-  const categoryClass = completed ? 'bg-[#efeeea] dark:bg-[#493d2a]' : categoryStyles[quest.category.trim().toLowerCase()] ?? 'bg-[#f4eedf] dark:bg-[#493d2a]';
   return <View className="flex-row items-center gap-[6px]">
-    <Pressable accessibilityRole={completed || canComplete ? 'checkbox' : 'button'} accessibilityLabel={completed ? `${quest.title}, completed` : canComplete ? `Complete ${quest.title}` : `View requirements for ${quest.title}`} accessibilityHint={completed ? undefined : prerequisiteWarning || (canComplete ? 'Completes this quest and awards its XP after confirmation.' : stateLabel)} accessibilityState={{ checked: completed, disabled: completed || completing, busy: completing }} disabled={completed || completing} onPress={() => { if (!completed && !completing) { if (canComplete) onComplete(); else onOpen(); } }} onFocus={() => setFocused('checkbox')} onBlur={() => setFocused(null)} className="min-h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 active:opacity-60" style={{ borderColor: focused === 'checkbox' ? c.focus : 'transparent' }}>
+    <Pressable accessibilityRole={completed || canComplete ? 'checkbox' : 'button'} accessibilityLabel={completed ? `${quest.title}, completed` : canComplete ? `Complete ${quest.title}` : `View requirements for ${quest.title}`} accessibilityHint={completed ? undefined : prerequisiteWarning || (canComplete ? 'Submits quest completion immediately.' : quest.requires_proof ? 'Proof required' : undefined)} accessibilityState={{ checked: completed, disabled: completed || completing, busy: completing }} disabled={completed || completing} onPress={() => { if (!completed && !completing) { if (canComplete) onComplete(); else onOpen(); } }} onFocus={() => setFocused('checkbox')} onBlur={() => setFocused(null)} className="min-h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 active:opacity-60" style={{ borderColor: focused === 'checkbox' ? c.focus : 'transparent' }}>
       <View className={`h-6 w-6 items-center justify-center rounded-[7px] border-2 ${completed ? 'border-[#bf811b] bg-[#d29d30]' : 'border-[#65452c] bg-[#fffdf7] dark:border-[#d1b997] dark:bg-[#30291f]'}`}>
         {completing ? <ActivityIndicator size="small" color={c.primary} /> : completed ? <Ionicons name="checkmark" size={18} color="#432914" accessible={false} /> : null}
       </View>
@@ -120,14 +110,12 @@ function QuestRowContent({ quest, locked = false, prerequisiteState = 'none', pr
       <View className={fontScale >= 1.3 ? 'gap-1' : 'flex-row items-start gap-2'}>
         <View className="flex-1 gap-1">
           <QuestText className={`text-[17px] font-bold leading-[22px] ${completed ? 'text-[#796e64] line-through dark:text-[#c6b9a7]' : ''}`}>{quest.title}</QuestText>
-          <View className="flex-row flex-wrap gap-1">
-            <View className={`max-w-full rounded-full px-2 py-[2px] ${categoryClass}`}><QuestText className={`text-[12px] font-semibold leading-[16px] ${completed ? 'text-[#796e64] dark:text-[#c6b9a7]' : ''}`}>{quest.category}</QuestText></View>
-          </View>
-          {!!prerequisiteWarning && prerequisiteWarning !== stateLabel && !completed && <QuestText className="text-[12px] leading-[18px]">{prerequisiteWarning}</QuestText>}
+          <CategoryBadge label={quest.category} />
+          {!!prerequisiteWarning && prerequisiteWarning !== explanation && !completed && <QuestText className="text-[12px] leading-[18px]">{prerequisiteWarning}</QuestText>}
           {!!timing && <QuestText className="text-[12px] leading-[18px] text-[#796e64] dark:text-[#c6b9a7]">{timing}</QuestText>}
-          {!!stateLabel && !completed && <QuestText className={`text-[12px] font-semibold leading-[18px] ${quest.status === 'rejected' ? 'text-[#ae3428] dark:text-[#ffb4a9]' : 'text-[#796e64] dark:text-[#c6b9a7]'}`}>{stateLabel}</QuestText>}
+          {state !== 'available' && <QuestStatus state={state} explanation={explanation} />}
         </View>
-        {!completed && <QuestText className="shrink-0 text-[13px] font-bold leading-[22px] text-[#995607] dark:text-[#f4cc81]">+{quest.xp} XP</QuestText>}
+        {!completed && <XpBadge xp={quest.xp} />}
       </View>
     </Pressable>
   </View>;

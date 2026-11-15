@@ -9,6 +9,7 @@ import {
   View,
   Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, Field, IconButton } from '@/components/mobile-ui';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, type MapPressEvent } from 'react-native-maps';
 import { router } from 'expo-router';
@@ -211,29 +212,13 @@ export default function ManageLocationsScreen() {
       </View>
 
       <View style={styles.cardActions}>
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            loc.is_active ? styles.actionButtonActive : styles.actionButtonInactive,
-          ]}
-          onPress={() => handleToggle(loc)}>
-          <Ionicons name={loc.is_active ? 'checkmark-circle' : 'radio-button-off'} size={16} color="#fff" />
-          <ThemedText style={styles.actionButtonText}>{loc.is_active ? 'Active' : 'Inactive'}</ThemedText>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionButtonEdit}
-          onPress={() => handleEdit(loc)}>
-          <Ionicons name="create-outline" size={16} color={COLORS.ink} />
-          <ThemedText style={styles.actionButtonTextEdit}>Edit</ThemedText>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionButtonDelete}
-          onPress={() => handleDelete(loc)}>
-          <Ionicons name="trash-outline" size={16} color={COLORS.danger} />
-          <ThemedText style={styles.actionButtonTextDelete}>Delete</ThemedText>
-        </TouchableOpacity>
+        <Button label={loc.is_active ? 'Active' : 'Inactive'}
+          accessibilityLabel={(loc.is_active ? 'Deactivate ' : 'Activate ') + loc.name}
+          intent="secondary" onPress={() => void handleToggle(loc)} />
+        <Button label="Edit" accessibilityLabel={'Edit ' + loc.name} icon="create-outline"
+          intent="quiet" onPress={() => handleEdit(loc)} />
+        <Button label="Delete" accessibilityLabel={'Delete ' + loc.name} icon="trash-outline"
+          intent="destructive" onPress={() => handleDelete(loc)} />
       </View>
     </View>
   );
@@ -249,12 +234,7 @@ export default function ManageLocationsScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}>
-            <Ionicons name="chevron-back" size={24} color={COLORS.ink} />
-          </TouchableOpacity>
+          <IconButton icon="chevron-back" label="Back from Saved Places" onPress={() => router.back()} />
           <View style={styles.headerCenter}>
             <ThemedText style={styles.headerTitle}>My Places</ThemedText>
             <ThemedText style={styles.headerSubtitle}>
@@ -277,9 +257,7 @@ export default function ManageLocationsScreen() {
 
             {feedback && <ThemedText style={[styles.feedback, feedback.startsWith('Could not') ? styles.feedbackWarning : styles.feedbackError]}>{feedback}</ThemedText>}
 
-            <ThemedText style={styles.label}>Name *</ThemedText>
-            <TextInput
-              style={styles.input}
+            <Field label="Name *"
               placeholder="e.g., Gym, School, Home"
               value={form.name}
               onChangeText={(v) => setForm((p) => ({ ...p, name: v }))}
@@ -287,9 +265,7 @@ export default function ManageLocationsScreen() {
               maxLength={30}
             />
 
-            <ThemedText style={styles.label}>Label (optional)</ThemedText>
-            <TextInput
-              style={styles.input}
+            <Field label="Label (optional)"
               placeholder="e.g., Leg Day Spot, Main Campus"
               value={form.label}
               onChangeText={(v) => setForm((p) => ({ ...p, label: v }))}
@@ -299,9 +275,7 @@ export default function ManageLocationsScreen() {
 
             <View style={styles.coordsRow}>
               <View style={styles.coordInputWrapper}>
-                <ThemedText style={styles.label}>Latitude *</ThemedText>
-                <TextInput
-                  style={styles.input}
+                <Field label="Latitude *"
                   placeholder="40.7128"
                   value={form.latitude}
                   onChangeText={(v) => setForm((p) => ({ ...p, latitude: v }))}
@@ -309,9 +283,7 @@ export default function ManageLocationsScreen() {
                 />
               </View>
               <View style={styles.coordInputWrapper}>
-                <ThemedText style={styles.label}>Longitude *</ThemedText>
-                <TextInput
-                  style={styles.input}
+                <Field label="Longitude *"
                   placeholder="-74.0060"
                   value={form.longitude}
                   onChangeText={(v) => setForm((p) => ({ ...p, longitude: v }))}
@@ -354,8 +326,7 @@ export default function ManageLocationsScreen() {
                 activeOpacity={0.75}>
                 <Ionicons name="remove" size={20} color={COLORS.ink} />
               </TouchableOpacity>
-              <TextInput
-                style={styles.radiusInput}
+              <TextInput accessibilityLabel="Radius in meters, required" style={styles.radiusInput}
                 placeholder="100"
                 value={form.radius}
                 onChangeText={(v) => setForm((p) => ({ ...p, radius: v.replace(/[^0-9]/g, '') }))}
@@ -437,7 +408,6 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 16,
     gap: 12 },
-  backButton: { width: 48, height: 48, borderRadius: 20, backgroundColor: COLORS.card, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1 },
   headerTitle: { fontSize: 28, fontWeight: '700', color: COLORS.ink , lineHeight: 34},
   headerSubtitle: { fontSize: 14, color: COLORS.muted, marginTop: 2 , lineHeight: 20},
@@ -450,7 +420,6 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   feedbackError: { color: COLORS.danger },
   feedbackWarning: { color: COLORS.honeyDark },
   label: { fontSize: 14, fontWeight: '700', color: COLORS.ink, marginTop: 4 , lineHeight: 20},
-  input: { fontFamily: Fonts.sans, backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: COLORS.ink , lineHeight: 24},
   map: { height: 190, borderRadius: 14, overflow: 'hidden' },
   radiusControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   radiusButton: { width: 48, height: 48, borderRadius: 12, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
@@ -459,9 +428,9 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   radiusLegend: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   radiusLegendDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2E9B62' },
   radiusHint: { fontSize: 14, color: COLORS.muted , lineHeight: 20},
-  coordsRow: { flexDirection: 'row', gap: 10 },
-  coordInputWrapper: { flex: 1 },
-  currentLocationButton: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: COLORS.honeySoft, borderRadius: 12 },
+  coordsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  coordInputWrapper: { flex: 1, minWidth: 140 },
+  currentLocationButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: COLORS.honeySoft, borderRadius: 12 },
   currentLocationButtonText: { color: COLORS.honeyDark, fontSize: 14, fontWeight: '700' , lineHeight: 20},
   formActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   cancelButton: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: COLORS.surfaceMuted },
@@ -480,15 +449,7 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   cardLabel: { fontSize: 14, color: COLORS.muted , lineHeight: 20},
   cardDetails: { gap: 4, paddingTop: 2 },
   detailText: { fontSize: 14, color: COLORS.muted, flexDirection: 'row', alignItems: 'center' , lineHeight: 20},
-  cardActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10 },
-  actionButtonActive: { backgroundColor: COLORS.honey },
-  actionButtonInactive: { backgroundColor: COLORS.surfaceMuted },
-  actionButtonText: { color: '#2D241D', fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  actionButtonEdit: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10, backgroundColor: COLORS.surfaceMuted, borderWidth: 1, borderColor: COLORS.honey },
-  actionButtonTextEdit: { color: COLORS.honeyDark, fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  actionButtonDelete: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: 10, backgroundColor: COLORS.peach },
-  actionButtonTextDelete: { color: COLORS.danger, fontSize: 14, fontWeight: '700' , lineHeight: 20},
+  cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   loadingContainer: { alignItems: 'center', paddingVertical: 40, gap: 10 },
   loadingText: { color: COLORS.muted, fontSize: 14 , lineHeight: 20},
   emptyState: { alignItems: 'center', paddingVertical: 40, gap: 10 },

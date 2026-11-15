@@ -4,6 +4,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useReducedMotion } from '@/components/mobile-ui';
 import { useAppColorScheme, useBeePalette } from '@/constants/theme';
 import { FACES, RINGS, SPINNERS, SPINNER_TONE, type PixelIntent } from './pixel-assets';
+import { PixelButtonSvg } from './pixel-button-svg';
 
 /**
  * Pixel-art button built from the generated pack in `assets/pixel/button`.
@@ -50,7 +51,7 @@ function PixelSpinner({ tone }: { tone: keyof typeof SPINNERS }) {
   </View>;
 }
 
-export function PixelButton({ label, accessibilityLabel = label, onPress, intent = 'primary', disabled = false, loading = false, style, labelStyle }: {
+type PixelButtonProps = {
   label: string;
   accessibilityLabel?: string;
   onPress: () => void;
@@ -59,7 +60,14 @@ export function PixelButton({ label, accessibilityLabel = label, onPress, intent
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
   labelStyle?: StyleProp<TextStyle>;
-}) {
+  layout?: 'fixed' | 'wrap';
+};
+
+export function PixelButton({ layout = 'fixed', ...props }: PixelButtonProps) {
+  return layout === 'wrap' ? <PixelButtonSvg {...props} /> : <PixelButtonPng {...props} />;
+}
+
+function PixelButtonPng({ label, accessibilityLabel = label, onPress, intent = 'primary', disabled = false, loading = false, style, labelStyle }: Omit<PixelButtonProps, 'layout'>) {
   const c = useBeePalette();
   const theme = useAppColorScheme() === 'dark' ? 'dark' : 'light';
   const [focused, setFocused] = useState(false);

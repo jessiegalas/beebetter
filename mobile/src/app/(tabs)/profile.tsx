@@ -1,7 +1,8 @@
 import { Alert, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useState } from 'react';
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { AchievementEmblem, CategoryBadge } from '@/components/quest-visuals';
+import { PixelGlyph } from '@/components/pixel/pixel-glyph';
 import { XpProgress } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Disclosure, ScreenFrame } from '@/components/mobile-ui';
@@ -71,11 +72,11 @@ export default function ProfileScreen() {
     });
     const unlockedBadgesCount = badges.filter((b) => b.unlocked).length;
     const stats = [
-        { id: 1, label: 'Quests Done', value: String(questsDone), icon: 'checkmark-circle-outline' as const },
-        { id: 2, label: 'Current Streak', value: `${streakDays} days`, icon: 'flame-outline' as const },
-        { id: 3, label: 'Badges Earned', value: `${unlockedBadgesCount} / ${badges.length}`, icon: 'ribbon-outline' as const },
-        { id: 4, label: 'Total XP', value: String(totalXp), icon: 'sparkles-outline' as const },
-    ];
+        { label: 'Lifetime completions', value: String(questsDone), icon: 'leaf' },
+        { label: 'Current Streak', value: `${streakDays} days`, icon: 'streak' },
+        { label: 'Badges Earned', value: `${unlockedBadgesCount} / ${badges.length}`, icon: 'rising' },
+        { label: 'Total XP', value: String(totalXp), icon: 'xp' },
+    ] as const;
     const handleSignOut = () => {
         if (isSigningOut)
             return;
@@ -106,14 +107,15 @@ export default function ProfileScreen() {
     </ThemedText>
     </View>
     </View>
-    <XpProgress progress={levelProgress}/>
+    <XpProgress progress={levelProgress} scope="Account" />
       <View style={styles.stats}>
-        {stats.map(stat => <View key={stat.id} style={[styles.stat, expandedLayout && styles.statExpanded]}>
+        {stats.map(stat => <View key={stat.label} style={[styles.stat, expandedLayout && styles.statExpanded]}>
+        <PixelGlyph name={stat.icon} />
         <ThemedText type="item">
         {stat.value}
         </ThemedText>
         <ThemedText type="small" style={{ color: COLORS.muted }}>
-        {stat.label === 'Quests Done' ? 'Lifetime completions' : stat.label}
+        {stat.label}
         </ThemedText>
         </View>)}
     </View>
@@ -142,7 +144,7 @@ export default function ProfileScreen() {
     <View style={{ gap: 20 }}>
         {badges.map(badge => <View key={badge.id} style={styles.row}>
         <View style={[styles.avatar, { backgroundColor: badge.unlocked ? COLORS.honeySoft : COLORS.surfaceMuted }]}>
-        <Ionicons name={badge.icon} size={20} color={badge.unlocked ? COLORS.honeyDark : COLORS.muted}/>
+        <AchievementEmblem id={badge.id} earned={badge.unlocked} />
         </View>
         <View style={styles.flex}>
         <ThemedText type="item">
@@ -157,11 +159,10 @@ export default function ProfileScreen() {
     </Disclosure>
     <Disclosure title="History" summary="Your latest recorded completions">
         {completionHistory.length ? completionHistory.slice(0, 10).map(record => <View key={record.id} style={{ gap: 4 }}>
-        <ThemedText type="item">
-        {record.title}
-        </ThemedText>
+        <View style={styles.row}><PixelGlyph name="leaf" /><ThemedText type="item" style={styles.flex}>{record.title}</ThemedText></View>
+        <CategoryBadge label={record.category} />
         <ThemedText type="small" style={{ color: COLORS.muted }}>
-        {new Date(record.completed_at).toLocaleDateString()} · {record.category}
+        {new Date(record.completed_at).toLocaleDateString()}
         </ThemedText>
         </View>) : <ThemedText style={{ color: COLORS.muted }}>No completion history yet. Complete a quest to record your first win.</ThemedText>}
     </Disclosure>

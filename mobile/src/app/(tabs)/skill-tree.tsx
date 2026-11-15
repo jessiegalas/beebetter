@@ -6,12 +6,15 @@ import { ScreenFrame, Sheet, StatusMessage, useReducedMotion } from '@/component
 import { PixelButton } from '@/components/pixel/pixel-button';
 import { PixelFrame } from '@/components/pixel/pixel-frame';
 import { ThemedText } from '@/components/themed-text';
-import { GrowthLeaf } from '@/components/xp-visuals';
+import { CategoryGlyph } from '@/components/quest-visuals';
+import { PixelGlyph } from '@/components/pixel/pixel-glyph';
+import { GrowthLeaf, RewardPanel, XpProgress } from '@/components/xp-visuals';
 import { PixelSpacing, TypographyRoles } from '@/constants/tokens';
 import { useBeePalette } from '@/constants/theme';
 import { useQuestPriority } from '@/context/quest-priority-context';
 import { useUserData } from '@/hooks/use-user-data';
 import type { CompletionRecord } from '@/lib/student-workspace';
+import { branchProgressList } from '@/lib/progression';
 import { buildStudentSkillTree } from '@/lib/student-skill-tree';
 import { acknowledgeGrowth, unseenGrowth } from '@/lib/tree-growth';
 import { clampTreeCamera, layoutGeneratedTree, semanticTreeFocus, treeArtwork, treeCameraAtRest, treeScene, zoomTreeAt,
@@ -27,7 +30,7 @@ export default function SkillTreeScreen() {
 }
 
 function StudentTree({ owner }: { owner: string }) {
-  const { quests, completionHistory, recommendationData, workspaceErrors, retryWorkspace } = useUserData();
+  const { quests, completionHistory, recommendationData, progressSummary, workspaceErrors, retryWorkspace } = useUserData();
   const latestCompletionId = completionHistory[0]?.id;
   const focused = useIsFocused();
   const { width, height, fontScale } = useWindowDimensions();
@@ -88,6 +91,8 @@ function StudentTree({ owner }: { owner: string }) {
     [quests, rows, recommendationData]);
   const world = useMemo(() => layoutGeneratedTree(data), [data]);
   const selected = data.domains.find(domain => domain.id === focus.domainId);
+  const branches = branchProgressList(progressSummary?.byCategoryXp, progressSummary?.byCategory);
+  const branch = branches.find(item => item.category.trim().toLowerCase() === selected?.title.trim().toLowerCase());
   const treeFocus = useMemo(() => selected ? focus : {}, [focus, selected]);
   const canvasWidth = viewport?.width ?? Math.min(460, width - 48);
   const canvasHeight = viewport?.height ?? Math.max(160, Math.floor(height / 2));
@@ -148,6 +153,14 @@ function StudentTree({ owner }: { owner: string }) {
           {selected?.title ?? 'Skill Tree'}
         </ThemedText>
       </View>
+      {selected && <View style={styles.content}>
+        {branch && <XpProgress progress={branch} compact scope="Branch" />}
+        {!branch && !workspaceErrors.progress && <ThemedText style={TypographyRoles.metadata}>0 attributed XP · Branch level 1</ThemedText>}
+        <ThemedText style={TypographyRoles.metadata}>Older completions may have no category XP record.</ThemedText>
+        {workspaceErrors.progress && <StatusMessage error message="Branch progress could not be refreshed.">
+          <PixelButton label="Retry progress" onPress={() => void retryWorkspace('progress')} />
+        </StatusMessage>}
+      </View>}
       {!needsList && <View style={styles.controls}>
         {!showList && <>
           <PixelButton label="+" accessibilityLabel="Zoom in" intent="secondary" labelStyle={TypographyRoles.label}
@@ -170,7 +183,8 @@ function StudentTree({ owner }: { owner: string }) {
       {!!batch.length && seenWrite && <GrowthBatch count={batch.length} onSeen={seenWrite} onClose={() => setBatch([])} />}
       {showList ? <View style={styles.content}>
         {scene.entries.map(entry => <TreeListAction key={entry.id} label={targetLabel(entry)}
-          wrapLabel={fontScale > 1.3} onPress={() => select(entry)} />)}
+          category={entry.kind === 'domain' ? entry.title : undefined} completed={entry.state === 'completed'}
+          onPress={() => select(entry)} />)}
       </View> : <View style={styles.viewportFrame}>
         <View style={styles.viewport} onLayout={({ nativeEvent: { layout } }) => {
           const next = { width: Math.floor(layout.width), height: Math.floor(layout.height) };
@@ -196,21 +210,20 @@ function StudentTree({ owner }: { owner: string }) {
       </View>
     </View>
     {showRecent && <Sheet title="Recent leaves" visible onClose={() => setShowRecent(false)}>
-      {rows.slice(0, 3).map(row => <TreeListAction key={row.id} label={row.title} wrapLabel={fontScale > 1.3} onPress={() => {
+      {rows.slice(0, 3).map(row => <TreeListAction key={row.id} label={row.title} completed onPress={() => {
         setShowRecent(false);
         setLeaf(row);
       }} />)}
     </Sheet>}
-    {leaf && <LeafDetails key={leaf.id} owner={owner} leaf={leaf} wrapLabels={fontScale > 1.3} onClose={() => setLeaf(null)} />}
+    {leaf && <LeafDetails key={leaf.id} owner={owner} leaf={leaf} onClose={() => setLeaf(null)} />}
   </ScreenFrame></GestureHandlerRootView>;
 }
 
-function TreeListAction({ label, wrapLabel, onPress }: { label: string; wrapLabel: boolean; onPress: () => void }) {
-  if (!wrapLabel) return <PixelButton label={label} intent="secondary" labelStyle={TypographyRoles.label} onPress={onPress} />;
+function TreeListAction({ label, category, completed, onPress }: { label: string; category?: string; completed?: boolean; onPress: () => void }) {
   return <View style={styles.listAction}>
-    <ThemedText style={TypographyRoles.body}>{label}</ThemedText>
-    <PixelButton label="Open" accessibilityLabel={'Open ' + label} intent="secondary" style={styles.utilityButton}
-      labelStyle={TypographyRoles.label} onPress={onPress} />
+    {category && <CategoryGlyph label={category} />}
+    {completed && <PixelGlyph name="leaf" />}
+    <PixelButton layout="wrap" label={label} intent="secondary" onPress={onPress} style={styles.listButton} />
   </View>;
 }
 
@@ -219,16 +232,13 @@ function GrowthBatch({ count, onSeen, onClose }: { count: number; onSeen: () => 
     const timer = setTimeout(onSeen, 720);
     return () => clearTimeout(timer);
   }, [onSeen]);
-  return <View style={styles.batch} accessibilityLiveRegion="polite">
-    <GrowthLeaf animate />
-    <ThemedText style={TypographyRoles.label}>{count} {count === 1 ? 'leaf' : 'leaves'} grew while you were away</ThemedText>
-    <PixelButton label="Done" intent="secondary" style={styles.utilityButton} labelStyle={TypographyRoles.label}
-      onPress={() => { onSeen(); onClose(); }} />
-  </View>;
+  return <RewardPanel title={`${count} ${count === 1 ? 'leaf' : 'leaves'} grew while you were away`}
+    emblem={<GrowthLeaf animate />} actionLabel="Done" actionIntent="secondary"
+    onAction={() => { onSeen(); onClose(); }} />;
 }
 
-function LeafDetails({ owner, leaf, wrapLabels, onClose }: {
-  owner: string; leaf: CompletionRecord; wrapLabels: boolean; onClose: () => void;
+function LeafDetails({ owner, leaf, onClose }: {
+  owner: string; leaf: CompletionRecord; onClose: () => void;
 }) {
   const { quests } = useUserData();
   const { recommendations } = useQuestPriority();
@@ -267,7 +277,7 @@ function LeafDetails({ owner, leaf, wrapLabels, onClose }: {
     {proof && <ProofMedia node={proof} source={source} />}
     {(followUps.length ? followUps : suggested ? [suggested] : []).map(quest =>
       <TreeListAction key={quest.id} label={(followUps.length ? 'Follow-up' : 'Suggested next') + ' · ' + quest.title}
-        wrapLabel={wrapLabels} onPress={() => {
+        onPress={() => {
           onClose();
           router.push({ pathname: '/quests', params: { questId: quest.id } });
         }} />)}
@@ -288,6 +298,6 @@ const styles = StyleSheet.create({
   title: { flex: 1 },
   utilityButton: { width: 84 },
   footerButton: { flexBasis: 135, flexGrow: 1 },
-  listAction: { alignItems: 'flex-start', gap: PixelSpacing.px1 },
-  batch: { alignItems: 'center', gap: PixelSpacing.px2 },
+  listAction: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: PixelSpacing.px2 },
+  listButton: { flexGrow: 1, flexShrink: 1 },
 });

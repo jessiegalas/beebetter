@@ -19,6 +19,7 @@ export type WorkspaceRead = {
   profileUpdatedAt?: number;
   history?: { rows: CompletionRecord[]; hasMore: boolean };
   progressSummary?: ProgressSummary;
+  branchProgressFailed?: boolean;
 };
 const slices: WorkspaceSlice[] = ['profile', 'streak', 'progress', 'quests'];
 const messages: Record<WorkspaceSlice, string> = {
@@ -117,6 +118,7 @@ export function createStudentWorkspaceReader(client: Pick<SupabaseClient, 'from'
       return {
         slices: attempted,
         errors,
+        branchProgressFailed: progress?.failed || branches?.failed || undefined,
         updateProfile(previous) {
           let next = previous;
           if (profile) {

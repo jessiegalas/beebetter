@@ -3,6 +3,7 @@ import { AccessibilityInfo, ActivityIndicator, Modal, Pressable, ScrollView, Sty
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from './themed-text';
+import { PixelChoice } from './pixel/pixel-choice';
 import { Borders, Controls, Fonts, Layout, MaxContentWidth, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
 // StyleSheet-only controls bypass CSS interop so native pressed-style callbacks stay intact.
 type Icon = keyof typeof Ionicons.glyphMap;
@@ -33,7 +34,7 @@ export function Surface({ children, featured = false, style }: {
     {children}
     </View>;
 }
-export function Button({ label, onPress, intent = 'primary', icon, disabled = false, loading = false, foregroundColor, style }: {
+export function Button({ label, onPress, intent = 'primary', icon, disabled = false, loading = false, foregroundColor, accessibilityLabel = label, style }: {
     label: string;
     onPress: () => void;
     intent?: 'primary' | 'secondary' | 'quiet' | 'destructive' | 'accent' | 'accent-quiet';
@@ -41,11 +42,12 @@ export function Button({ label, onPress, intent = 'primary', icon, disabled = fa
     disabled?: boolean;
     loading?: boolean;
     foregroundColor?: string;
+    accessibilityLabel?: string;
     style?: StyleProp<ViewStyle>;
 }) {
     const c = useBeePalette(), [focused, setFocused] = useState(false), blocked = disabled || loading;
     const color = disabled ? c.disabledForeground : foregroundColor ?? (intent === 'primary' ? c.primaryForeground : intent === 'accent' ? c.accentForeground : intent === 'accent-quiet' ? c.accent : intent === 'destructive' ? c.dangerForeground : intent === 'quiet' ? c.primary : c.foreground);
-    return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: blocked, busy: loading }} disabled={blocked} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => {
+    return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled: blocked, busy: loading }} disabled={blocked} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => {
         let backgroundColor = 'transparent';
         if (intent === 'accent') backgroundColor = c.accent;
         if (intent === 'primary') backgroundColor = pressed ? c.primaryPressed : c.primary;
@@ -92,14 +94,19 @@ export function Field({ label, hint, error, style, ...props }: TextInputProps & 
         </ThemedText>}
     </View>;
 }
-export function ChoiceChip({ label, selected, onPress }: {
+export function ChoiceChip({ label, selected, onPress, appearance = 'standard', disabled = false, leading }: {
     label: string;
     selected: boolean;
     onPress: () => void;
+    appearance?: 'standard' | 'pixel';
+    disabled?: boolean;
+    leading?: ReactNode;
 }) {
     const c = useBeePalette(), [focused, setFocused] = useState(false);
-    return <Pressable cssInterop={false} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={({ pressed }) => [s.button, { backgroundColor: pressed ? c.surfaceMuted : selected ? c.surface : c.card, borderColor: focused ? c.focus : selected ? c.primary : c.input }]}>
-    <ThemedText type="label">
+    if (appearance === 'pixel') return <PixelChoice label={label} selected={selected} disabled={disabled} leading={leading} onPress={onPress} />;
+    return <Pressable cssInterop={false} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} accessibilityRole="button" accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.button, { backgroundColor: disabled ? c.disabled : pressed ? c.surfaceMuted : selected ? c.surface : c.card, borderColor: focused && !disabled ? c.focus : selected ? c.primary : c.input }]}>
+    {leading}
+    <ThemedText type="label" style={disabled ? { color: c.disabledForeground } : undefined}>
     {label}
     </ThemedText>
     </Pressable>;
