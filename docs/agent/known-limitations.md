@@ -22,4 +22,4 @@ Read for affected behavior before relying on old documentation or asserting prod
 
 Source alone cannot establish configured Auth/email redirects, hook activation, approved active-semester sections, active admin roles, private Storage, an operated proof-cleanup worker, native background-location correctness, or deployed push credentials/function/Cron.
 
-Proof cleanup has no checked-in worker; notification delivery does have an Edge Function but requires separate operational setup. Push is best effort, with offline token-revocation and in-flight delivery limitations. UI report dates hardcode Asia/Manila while SQL reads configuration; inspect both before changing timezone policy. Do not describe old audit results or source availability as current operational verification.
+Proof cleanup has no checked-in worker; notification delivery does have an Edge Function but requires separate operational setup. Push is best effort, with offline token-revocation and in-flight delivery limitations. Overview reads the institutional timezone for date presets. Do not describe old audit results or source availability as current operational verification.

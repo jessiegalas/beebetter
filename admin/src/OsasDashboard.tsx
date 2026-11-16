@@ -1,153 +1,448 @@
-import { useEffect, useRef, useState } from 'react';
-import { getDashboardAnalytics, getDashboardFilterOptions, logDashboardExport, type DashboardAnalytics, type DashboardFilterOption, type DashboardFilters, type OsasPermissions } from './osas-data';
-import { downloadOsasReportCsv } from './osas-report';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { listQuests } from './admin-data'
+import { Status, TableLoading, questStatusLabel } from './AdminTables'
+import type { Quest } from './admin-types'
+import { getDashboardAnalytics, getReportingTimezone, logDashboardExport, type DashboardAnalytics, type DashboardFilters, type OsasPermissions } from './osas-data'
+import { downloadOsasReportCsv } from './osas-report'
 
-const INSTITUTIONAL_TIMEZONE = 'Asia/Manila';
-const institutionalToday = () => {
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: INSTITUTIONAL_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
-  return `${value('year')}-${value('month')}-${value('day')}`;
-};
-const initialFilters = (): DashboardFilters => {
-  const endDate = institutionalToday(); const start = new Date(`${endDate}T12:00:00Z`); start.setUTCDate(start.getUTCDate() - 29);
-  return { startDate: start.toISOString().slice(0, 10), endDate, campus: null, course: null, yearLevel: null };
-};
-const number = (value: number | null | undefined) => value == null ? '—' : Number(value).toLocaleString();
-const score = (value: number | null | undefined) => value == null ? '—' : `${Number(value).toFixed(2)} / 5`;
-const labelDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const DAY = 86_400_000
+const dayNumber = (date: string) => Date.parse(date + 'T00:00:00Z') / DAY
+const dateKey = (day: number) => new Date(day * DAY).toISOString().slice(0, 10)
+const shortDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+const rangeFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
+const labelDate = (date: string) => shortDateFormatter.format(dayNumber(date) * DAY)
+const count = (value: number) => value.toLocaleString()
+const score = (value: number) => value.toFixed(2) + ' / 5'
+const reportCount = (value: number | null) => value == null ? 'Unavailable' : count(value)
+const reportPercent = (value: number | null) => value == null ? 'Unavailable' : value.toLocaleString(undefined, { maximumFractionDigits: 1 }) + '%'
+const reportDecimal = (value: number | null, digits: number) => value == null ? 'Unavailable' : value.toFixed(digits)
 
-export function OsasDashboard({ permissions, onOpenSupport }: { permissions: OsasPermissions; onOpenSupport: () => void }) {
-  const [draft, setDraft] = useState<DashboardFilters>(initialFilters);
-  const [filters, setFilters] = useState<DashboardFilters>(initialFilters);
-  const [options, setOptions] = useState<DashboardFilterOption[]>([]);
-  const [result, setResult] = useState<{ data: DashboardAnalytics; filters: DashboardFilters; reload: number } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [reload, setReload] = useState(0);
-  const [exportNotice, setExportNotice] = useState('');
-  const [exporting, setExporting] = useState(false);
-  const exportBusy = useRef(false);
-  const reportGeneration = useRef(0);
-  const [optionsError, setOptionsError] = useState('');
-  const data = result?.filters === filters && result.reload === reload ? result.data : null;
-  const invalidDates = !draft.startDate || !draft.endDate || draft.startDate > draft.endDate;
-  const values = (dimension: DashboardFilterOption['dimension']) => options.filter((option) => option.dimension === dimension).map((option) => option.value);
+function presetRange(days: number, timezone: string): DashboardFilters {
+  const parts = new Intl.DateTimeFormat('en', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const get = (key: string) => parts.find(part => part.type === key)?.value
+  const endDate = [get('year'), get('month'), get('day')].join('-')
+  return { startDate: dateKey(dayNumber(endDate) - days + 1), endDate }
+}
+
+type ReportResult = { range: DashboardFilters; data: DashboardAnalytics } | { range: DashboardFilters; error: true }
+type Preset = '7' | '30' | 'custom'
+
+export function OsasDashboard({ permissions, reportControlsHost, assignmentRevision, onOpenQuest, onCreateQuest, onReviewAssignments }: {
+  permissions: OsasPermissions
+  reportControlsHost?: HTMLDivElement | null
+  assignmentRevision: number
+  onOpenQuest: (quest: Quest) => void
+  onCreateQuest: () => void
+  onReviewAssignments?: () => void
+}) {
+  const [timezone, setTimezone] = useState('')
+  const [timezoneError, setTimezoneError] = useState(false)
+  const [timezoneRetry, setTimezoneRetry] = useState(0)
+  const [preset, setPreset] = useState<Preset>('30')
+  const [draft, setDraft] = useState<DashboardFilters>({ startDate: '', endDate: '' })
+  const [range, setRange] = useState<DashboardFilters | null>(null)
+  const [result, setResult] = useState<ReportResult | null>(null)
+  const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [exporting, setExporting] = useState(false)
+  const exportBusy = useRef(false)
+  const reportGeneration = useRef(0)
+  const allowed = permissions.can_view_aggregates
+  const current = result?.range === range ? result : null
+  const data = allowed && current && 'data' in current ? current.data : null
+  const reportError = Boolean(current && 'error' in current)
+  const loading = !timezoneError && !current
+  const daySpan = dayNumber(draft.endDate) - dayNumber(draft.startDate)
+  const validRange = daySpan >= 0 && daySpan <= 366
 
   useEffect(() => {
-    if (!permissions.can_view_aggregates) return;
-    let cancelled = false;
-    setOptionsError('');
-    void getDashboardFilterOptions().then(rows => { if (!cancelled) setOptions(rows); }).catch((reason: Error) => { if (!cancelled) setOptionsError(reason.message); });
-    return () => { cancelled = true; };
-  }, [permissions.can_view_aggregates, reload]);
-  useEffect(() => {
-    reportGeneration.current++;
-    if (!permissions.can_view_aggregates) return;
-    let cancelled = false;
-    setLoading(true); setError('');
-    void getDashboardAnalytics(filters)
-      .then(data => { if (!cancelled) setResult({ data, filters, reload }); })
-      .catch((reason: Error) => { if (!cancelled) { setResult(null); setError(reason.message); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; reportGeneration.current++; };
-  }, [filters, permissions.can_view_aggregates, reload]);
+    if (!allowed) return
+    let active = true
+    void getReportingTimezone().then(value => {
+      if (!active) return
+      const initialRange = presetRange(30, value)
+      setTimezone(value)
+      setRange(initialRange)
+      setDraft(initialRange)
+      setPreset('30')
+    }).catch(() => {
+      if (active) setTimezoneError(true)
+    })
+    return () => { active = false }
+  }, [allowed, timezoneRetry])
 
-  const exportCsv = async () => {
-    if (!data || !result || data.suppressed || loading || !permissions.can_view_aggregates || exportBusy.current) return;
-    exportBusy.current = true;
-    const generation = reportGeneration.current;
-    setExporting(true); setExportNotice('');
-    try {
-      await logDashboardExport(result.filters);
-      if (generation !== reportGeneration.current) return;
-      downloadOsasReportCsv(result.data, result.filters);
-      setExportNotice('CSV report downloaded and recorded in the report audit log.');
+  useEffect(() => {
+    if (!range || !allowed) return
+    const generation = ++reportGeneration.current
+    void getDashboardAnalytics(range).then(data => {
+      if (generation !== reportGeneration.current) return
+      if (data.period_start !== range.startDate || data.period_end !== range.endDate) {
+        setResult({ range, error: true })
+        return
+      }
+      setResult({ range, data })
+    }).catch(() => {
+      if (generation === reportGeneration.current) setResult({ range, error: true })
+    })
+    return () => { reportGeneration.current++ }
+  }, [allowed, range])
+
+  function requestReport(next: DashboardFilters) {
+    reportGeneration.current++
+    setRange({ ...next })
+    setExportStatus('idle')
+  }
+
+  function changePreset(next: Preset) {
+    setPreset(next)
+    if (next === 'custom') {
+      if (range) setDraft(range)
+      return
     }
-    catch (reason) { setExportNotice(reason instanceof Error ? reason.message : 'Report export failed.'); }
-    finally { exportBusy.current = false; setExporting(false); }
-  };
+    requestReport(presetRange(Number(next), timezone))
+  }
 
-  if (!permissions.can_view_aggregates) return <section className="panel dashboard-denied" role="alert"><h2>Could not verify OSAS access</h2><p>All active admins receive OSAS reporting and support access automatically. Reload the page to verify access again.</p><button className="secondary-button" onClick={() => window.location.reload()}>Reload page</button></section>;
+  async function exportCsv() {
+    if (!data || !range || data.suppressed || !data.participation || !allowed || exportBusy.current) return
+    exportBusy.current = true
+    const generation = reportGeneration.current
+    setExportStatus('idle')
+    setExporting(true)
+    try {
+      await logDashboardExport(range)
+      if (generation !== reportGeneration.current) return
+      downloadOsasReportCsv(data)
+      setExportStatus('success')
+    } catch {
+      if (generation === reportGeneration.current) setExportStatus('error')
+    } finally {
+      exportBusy.current = false
+      setExporting(false)
+    }
+  }
 
-  return <div className="osas-dashboard">
-    <section className="panel dashboard-filters">
-      <div><h2>Reporting filters</h2><p>Choose one demographic dimension at a time. Small cohorts and small complementary groups are withheld, and queries and exports are audited.</p></div>
-      <div className="dashboard-filter-grid">
-        <label>FROM<input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} /></label>
-        <label>TO<input type="date" value={draft.endDate} onChange={(event) => setDraft({ ...draft, endDate: event.target.value })} /></label>
-        <Filter label="CAMPUS" value={draft.campus} options={values('campus')} onChange={(campus) => setDraft({ ...draft, campus, course: null, yearLevel: null })} />
-        <Filter label="PROGRAM" value={draft.course} options={values('course')} onChange={(course) => setDraft({ ...draft, campus: null, course, yearLevel: null })} />
-        <Filter label="YEAR LEVEL" value={draft.yearLevel} options={values('year_level')} onChange={(yearLevel) => setDraft({ ...draft, campus: null, course: null, yearLevel })} />
-        <button className="primary-button" onClick={() => { reportGeneration.current++; setExportNotice(''); setFilters({ ...draft }); }} disabled={invalidDates}>Apply filters</button>
+  const reportControls = <div className="overview-toolbar">
+        <form className="overview-report-controls" onSubmit={event => {
+          event.preventDefault()
+          if (validRange) requestReport(draft)
+        }}>
+          <label><span className="overview-period-label">Reporting period</span><select value={preset} disabled={!timezone} onChange={event => changePreset(event.target.value as Preset)}>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="custom">Custom</option>
+          </select></label>
+          {preset === 'custom' && <>
+            <label>From<input type="date" required value={draft.startDate} max={draft.endDate || undefined}
+              onChange={event => setDraft({ ...draft, startDate: event.target.value })} /></label>
+            <label>To<input type="date" required value={draft.endDate} min={draft.startDate || undefined}
+              onChange={event => setDraft({ ...draft, endDate: event.target.value })} /></label>
+            <button className="secondary-button" type="submit" disabled={!validRange}>Apply dates</button>
+          </>}
+        </form>
+        <button className="secondary-button overview-export" type="button" onClick={() => void exportCsv()}
+          disabled={!data?.participation || data.suppressed || exporting}>
+          {exporting ? 'Preparing CSV…' : 'Export CSV'}
+        </button>
       </div>
-      {draft.startDate > draft.endDate && <p className="form-error" role="alert">The start date must be on or before the end date.</p>}
-      {optionsError && <p className="form-error" role="alert">Filter choices could not load: {optionsError} <button className="secondary-button" onClick={() => setReload(value => value + 1)}>Retry</button></p>}
-      <div className="report-actions"><button className="secondary-button" onClick={() => void exportCsv()} disabled={!data || data.suppressed || loading || exporting}>{exporting ? 'Recording export…' : 'Export displayed data as CSV'}</button>{exportNotice && <span role="status">{exportNotice}</span>}</div>
-    </section>
-    {loading && <section className="panel dashboard-state">Loading protected aggregate reports…</section>}
-    {error && <section className="panel dashboard-state error" role="alert">Dashboard could not load: {error}<br /><button className="secondary-button" onClick={() => setReload((value) => value + 1)}>Retry</button></section>}
-    {!loading && !error && data?.suppressed && <section className="panel dashboard-state"><h2>Report withheld for privacy</h2><p>The selected cohort or its complementary group is smaller than {data.minimum_cohort} students, so all results are withheld.</p></section>}
-    {!loading && !error && data && !data.suppressed && <DashboardContent data={data} canManageSupport={permissions.can_manage_support_requests} onOpenSupport={onOpenSupport} />}
-  </div>;
+
+  return <div className="osas-overview">
+    {allowed ? <>
+      {reportControlsHost ? createPortal(reportControls, reportControlsHost) : reportControls}
+      {preset === 'custom' && daySpan > 366 && <p className="overview-error" role="alert">Choose dates no more than 366 days apart.</p>}
+      {range && <p className="overview-report-date">{rangeFormatter.formatRange(dayNumber(range.startDate) * DAY, dayNumber(range.endDate) * DAY)} · {data?.institutional_timezone ?? timezone}</p>}
+      {exportStatus === 'success' && <p className="overview-report-date" role="status">CSV download started and logged.</p>}
+      {exportStatus === 'error' && <SectionError message="Could not export the report." onRetry={() => void exportCsv()} />}
+
+      {timezoneError && <SectionError message="Could not load the reporting timezone." onRetry={() => {
+        setTimezoneError(false)
+        setTimezoneRetry(value => value + 1)
+      }} />}
+      {reportError && range && <SectionError message="Could not load student analytics." onRetry={() => requestReport(range)} />}
+      {loading && <div className="overview-report-loading" role="status" aria-label="Loading student analytics">
+        <div className="overview-kpis" aria-hidden="true">
+          <div className="overview-skeleton" /><div className="overview-skeleton" /><div className="overview-skeleton" /><div className="overview-skeleton" />
+        </div>
+        <div className="overview-skeleton overview-chart-skeleton" aria-hidden="true" />
+      </div>}
+      {data?.suppressed && <section className="overview-section">
+        <h2>Report withheld for privacy</h2>
+        <p className="overview-muted">Try a different date range. Reports require at least {data.minimum_cohort} registered students.</p>
+      </section>}
+      {data && !data.suppressed && data.participation && <Participation data={data} />}
+    </> : <section className="overview-section">
+      <h2>Could not verify reporting access</h2>
+      <p className="overview-muted">Reload to check your OSAS reporting permissions.</p>
+      <button className="secondary-button" onClick={() => window.location.reload()}>Reload page</button>
+    </section>}
+
+    {data && !data.suppressed && <>
+      <CheckIns data={data} />
+      <StudentParticipation data={data} />
+      <AssignmentOutcomes rows={data.assignment_outcomes} />
+    </>}
+    <RecentAssignments revision={assignmentRevision} onOpenQuest={onOpenQuest} onCreateQuest={onCreateQuest} onReviewAssignments={onReviewAssignments} />
+  </div>
 }
 
-function Filter({ label, value, options, onChange }: { label: string; value: string | null; options: string[]; onChange: (value: string | null) => void }) {
-  return <label>{label}<select value={value ?? ''} onChange={(event) => onChange(event.target.value || null)}><option value="">All</option>{options.map((option) => <option key={option}>{option}</option>)}</select></label>;
+function SectionError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <div className="overview-error-row">
+    <p className="overview-error" role="alert">{message}</p>
+    <button className="secondary-button" type="button" onClick={onRetry}>Retry</button>
+  </div>
 }
 
-function DashboardContent({ data, canManageSupport, onOpenSupport }: { data: DashboardAnalytics; canManageSupport: boolean; onOpenSupport: () => void }) {
-  const p = data.participation!;
+function Participation({ data }: { data: DashboardAnalytics }) {
+  const participation = data.participation!
   return <>
-    <p className="dashboard-period">Showing {labelDate(data.period_start)}–{labelDate(data.period_end)} in {data.institutional_timezone}. Enrollment cohort is evaluated as of {labelDate(data.cohort_as_of)}. Counts identify participation records, not verified personal improvement.</p>
-    <div className="stats dashboard-stats">
-      <Metric icon="S" label="Registered students" value={number(p.registered_students)} detail="Students matching the selected cohort" />
-      <Metric icon="A" tone="green" label="Students with quest activity" value={number(p.participating_students)} detail="Unique students creating or completing quests" />
-      <Metric icon="C" tone="blue" label="Completion events" value={number(p.completion_events)} detail="Durable completions in the period" />
-      <Metric icon="G" tone="orange" label="Students with goals" value={number(p.students_with_goals)} detail="Current student records with a goal" />
-    </div>
-    <div className="two-panels dashboard-panels">
-      <section className="panel"><PanelTitle title="Quest completion activity" subtitle={`${number(p.quests_completed)} of ${number(p.quests_created)} quests created in this period were completed by period end`} /><BarChart rows={data.activity_trends.map((row) => ({ label: labelDate(row.bucket_start), value: row.completion_events }))} empty="No trend cell reached five participating students." /><p className="metric-footnote">Lifecycle completion rate: <b>{p.quest_completion_rate == null ? 'No privacy-safe denominator' : `${p.quest_completion_rate}%`}</b>. Deleted quests remain in the immutable lifecycle denominator.</p></section>
-      <section className="panel"><PanelTitle title="Development categories" subtitle="Durable quest completions by category" /><RankBars rows={data.category_participation.map((row) => ({ label: row.category, value: row.completion_events, detail: `${row.student_count} students` }))} empty="No category reached five participating students." /></section>
-    </div>
-    <section className="dashboard-section"><h2>Reported well-being</h2><p>Voluntary 1–5 self-ratings. These values are descriptive and are not clinical assessments.</p></section>
-    {data.wellbeing ? <><div className="stats dashboard-stats"><Metric label="Well-being" value={score(data.wellbeing.average_wellbeing)} detail={`${data.wellbeing.check_in_count} check-ins from ${data.wellbeing.student_count} students`} /><Metric label="Stress" value={score(data.wellbeing.average_stress)} detail="Student-weighted; 1 low, 5 high" /><Metric label="Energy" value={score(data.wellbeing.average_energy)} detail="Student-weighted; 1 low, 5 high" /><Metric label="Motivation" value={score(data.wellbeing.average_motivation)} detail={`${data.wellbeing.motivation_response_count} optional responses`} /></div><section className="panel"><PanelTitle title="Check-in trends" subtitle="Each participating student has equal weight within a period" /><ScoreChart rows={data.wellbeing_trends} series={[['average_wellbeing', 'Well-being'], ['average_stress', 'Stress'], ['average_energy', 'Energy'], ['average_motivation', 'Motivation']]} /></section></> : <ProtectedEmpty label="well-being check-ins" />}
-    <section className="dashboard-section"><h2>Self-management reflection</h2><p>Aggregated voluntary scores; written accomplishments, challenges, and next steps remain private.</p></section>
-    {data.self_management ? <><div className="stats dashboard-stats"><Metric label="Planning" value={score(data.self_management.average_planning)} detail="Equal weight per participating student" /><Metric label="Follow-through" value={score(data.self_management.average_follow_through)} detail="Equal weight per participating student" /><Metric label="Confidence" value={score(data.self_management.average_confidence)} detail="Equal weight per participating student" /><Metric label="Reflection participation" value={number(data.self_management.reflection_count)} detail={`${data.self_management.student_count} unique students`} /></div><section className="panel"><PanelTitle title="Reflection trends" subtitle="Student-weighted planning, follow-through, and confidence" /><ScoreChart rows={data.reflection_trends} series={[['average_planning', 'Planning'], ['average_follow_through', 'Follow-through'], ['average_confidence', 'Confidence']]} /></section></> : <ProtectedEmpty label="self-management reflections" />}
-    <section className="dashboard-section support-heading"><div><h2>Voluntary support requests</h2><p>Aggregate status and category counts only. Concerns and case notes are excluded.</p></div>{canManageSupport ? <button className="primary-button" onClick={onOpenSupport}>Manage support requests</button> : <span className="permission-chip">Support access not verified</span>}</section>
-    {data.support ? <><div className="stats dashboard-stats"><Metric label="Total requests" value={number(data.support.request_count)} detail={`${data.support.student_count} unique students`} /><Metric label="Submitted" value={number(data.support.submitted_count)} detail="Awaiting acknowledgement" /><Metric label="Active follow-up" value={number(data.support.acknowledged_count + data.support.in_progress_count)} detail="Acknowledged or in progress" /><Metric label="Closed" value={number(data.support.resolved_count + data.support.withdrawn_count)} detail={`${data.support.resolved_count} resolved, ${data.support.withdrawn_count} withdrawn`} /></div><div className="two-panels dashboard-panels"><section className="panel"><PanelTitle title="Request trends" subtitle="Total voluntary requests over time" /><BarChart rows={data.support_trends.map((row) => ({ label: labelDate(row.bucket_start), value: row.request_count }))} empty="No trend cell reached five requesting students." /></section><section className="panel"><PanelTitle title="Support categories" subtitle="Categories with at least five requesting students" /><RankBars rows={data.support_categories.map((row) => ({ label: row.category, value: row.request_count, detail: `${row.student_count} students` }))} empty="No category reached the privacy threshold." /></section></div></> : <ProtectedEmpty label="support requests" />}
-    <p className="privacy-note">Privacy: only aggregated numeric records are returned. Wellness notes, written reflections, student identities, request messages, quest details, and location data are not included.</p>
-  </>;
+    <dl className="overview-kpis">
+      <div className="overview-kpi overview-kpi-lead">
+        <dt>Students participating</dt>
+        <dd>{participation.participating_students == null ? 'Unavailable' : count(participation.participating_students)}</dd>
+        <dd>Created or completed a quest in this period</dd>
+      </div>
+      <div className="overview-kpi">
+        <dt>Quest completions</dt>
+        <dd>{participation.completion_events == null ? 'Unavailable' : count(participation.completion_events)}</dd>
+        <dd>Recorded completions in this period</dd>
+      </div>
+      <div className="overview-kpi">
+        <dt>Registered BeeBetter accounts</dt>
+        <dd>{count(participation.registered_students)}</dd>
+        <dd>Student accounts as of the period end</dd>
+      </div>
+      <div className="overview-kpi">
+        <dt>Check-in respondents</dt>
+        <dd>{data.wellbeing ? count(data.wellbeing.student_count) : 'Unavailable'}</dd>
+        <dd>Students who shared a daily check-in</dd>
+      </div>
+    </dl>
+    <CompletionChart data={data} />
+  </>
 }
 
-function Metric({ icon, tone = '', label, value, detail }: { icon?: string; tone?: string; label: string; value: string; detail: string }) {
-  return <article className="stat-card">
-    <div className="metric-heading"><div className="metric-value"><small>{label}</small><strong>{value}</strong></div>{icon && <span className={`stat-icon ${tone}`} aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      {icon === 'S' && <><circle cx="9" cy="8" r="3" /><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M17 14a5 5 0 0 1 4 5v1" /></>}
-      {icon === 'A' && <><path d="M3 12h4l3-7 4 14 3-7h4" /><path d="M3 4v16h18" /></>}
-      {icon === 'C' && <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="m8 12 3 3 5-6" /></>}
-      {icon === 'G' && <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></>}
-    </svg></span>}</div>
-    <p>{detail}</p>
-  </article>;
+type CompletionRow = { date: string; activity?: DashboardAnalytics['activity_trends'][number] }
+
+function CompletionPlot({ rows, weekly, ticks }: { rows: CompletionRow[]; weekly: boolean; ticks: number[] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  const width = rows.length
+  const x = (index: number) => (index + 0.5) / width * 100
+  const y = (value: number) => 100 - value / ticks[0] * 100
+  const path = rows.map(({ activity }, index) => activity
+    ? (rows[index - 1]?.activity ? 'L' : 'M') + x(index) + ',' + y(activity.completion_events)
+    : '').join(' ')
+  const columns = { gridTemplateColumns: 'repeat(' + width + ', minmax(0, 1fr))' }
+  const labels = new Set([0, ...[1, 2, 3, 4].map(part => Math.round((width - 1) * part / 4))])
+  const active = activeIndex == null ? null : rows[activeIndex]
+  function trackPointer(event: PointerEvent<HTMLDivElement>) {
+    const plot = event.currentTarget.getBoundingClientRect()
+    setActiveIndex(Math.min(width - 1, Math.max(0, Math.floor((event.clientX - plot.left) / plot.width * width))))
+  }
+
+  return <>
+    <p className="overview-axis-label" aria-hidden="true">Completions</p>
+    <div className="overview-plot">
+      <div className="overview-plot-axis" aria-hidden="true">{ticks.map(value => <span key={value}>{count(value)}</span>)}</div>
+      <div className="overview-plot-body">
+        <div className="overview-plot-interactive" role="group" tabIndex={0} aria-label="Quest completions chart" aria-describedby="completion-chart-help"
+          onPointerMove={trackPointer} onPointerDown={trackPointer}
+          onPointerLeave={event => { if (document.activeElement !== event.currentTarget) setActiveIndex(null) }}
+          onFocus={() => setActiveIndex(index => index ?? 0)} onBlur={() => setActiveIndex(null)}
+          onKeyDown={event => {
+            if (event.key === 'Escape') { setActiveIndex(null); return }
+            const index = activeIndex ?? 0
+            const next = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: width - 1 }[event.key]
+            if (next == null) return
+            event.preventDefault()
+            setActiveIndex(Math.max(0, Math.min(width - 1, next)))
+          }}>
+          <div className="overview-plot-grid" aria-hidden="true">{ticks.map(value => <span key={value} />)}</div>
+          <svg className="overview-plot-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d={path} /></svg>
+          {rows.map(({ date, activity }, index) => {
+            const isolated = activity && !rows[index - 1]?.activity && !rows[index + 1]?.activity
+            return (isolated || (activity && index === activeIndex)) && <span key={date} className="overview-plot-point" aria-hidden="true"
+              style={{ left: x(index) + '%', top: y(activity.completion_events) + '%' }} />
+          })}
+          {active && activeIndex != null && <>
+            <div className="overview-plot-guide" style={{ left: x(activeIndex) + '%' }} aria-hidden="true" />
+            <div className="overview-plot-tooltip" style={{ '--plot-x': x(activeIndex) + '%' } as React.CSSProperties} aria-hidden="true"
+              onPointerMove={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
+              <strong>{weekly ? 'Week of ' : ''}{labelDate(active.date)}</strong>
+              <span>{active.activity ? count(active.activity.completion_events) + ' completions' : 'No publishable count'}</span>
+              {active.activity && <span>{count(active.activity.student_count)} students</span>}
+            </div>
+          </>}
+          <span className="sr-only" role="status">{active && <>
+            {weekly ? 'Week of ' : ''}{labelDate(active.date)}. {active.activity
+              ? count(active.activity.completion_events) + ' completions, ' + count(active.activity.student_count) + ' students.'
+              : 'No publishable count.'}
+          </>}</span>
+        </div>
+        <div className="overview-plot-dates" style={columns} aria-hidden="true">
+          {rows.map(({ date }, index) => labels.has(index) && <span key={date} style={{ gridColumn: index + 1 }}>{labelDate(date)}</span>)}
+        </div>
+        <p className="overview-axis-label overview-x-axis" aria-hidden="true">{weekly ? 'Week starting' : 'Reporting date'}</p>
+      </div>
+    </div>
+    <p id="completion-chart-help" className="sr-only">Use the left and right arrow keys to inspect dates. The data table follows the chart.</p>
+  </>
 }
-function PanelTitle({ title, subtitle }: { title: string; subtitle: string }) { return <div className="panel-heading"><div><h2>{title}</h2><p>{subtitle}</p></div></div>; }
-function ProtectedEmpty({ label }: { label: string }) { return <section className="panel dashboard-state"><p>No {label} can be displayed. There may be no records in this period, or fewer than five distinct students contributed.</p></section>; }
-function BarChart({ rows, empty }: { rows: { label: string; value: number }[]; empty: string }) {
-  const max = Math.max(...rows.map((row) => Number(row.value)), 1);
-  if (!rows.length) return <div className="chart-empty">{empty}</div>;
-  return <><div className="dashboard-bars" role="list" aria-label="Trend bar chart">{rows.map((row) => <div key={row.label} role="listitem" aria-label={`${row.label}: ${row.value}`}><span aria-hidden="true" style={{ height: `${Math.max(8, Number(row.value) / max * 100)}%` }} /><small>{row.label}</small></div>)}</div><ChartDataTable columns={['Period', 'Completions']} rows={rows.map((row) => [row.label, row.value])} /></>;
+
+function CompletionChart({ data }: { data: DashboardAnalytics }) {
+  const start = dayNumber(data.period_start)
+  const end = dayNumber(data.period_end)
+  const weekly = end - start > 31
+  const first = weekly ? start - (new Date(start * DAY).getUTCDay() + 6) % 7 : start
+  const step = weekly ? 7 : 1
+  const byDate = new Map(data.activity_trends.map(row => [row.bucket_start, row]))
+  const dates = Array.from({ length: Math.floor((end - first) / step) + 1 }, (_, index) => dateKey(first + index * step))
+  const rows = dates.map(date => ({ date, activity: byDate.get(date) }))
+  const peak = Math.max(1, ...data.activity_trends.map(row => row.completion_events))
+  const tick = Math.ceil(peak / 4)
+  const ticks = [tick * 4, tick * 3, tick * 2, tick, 0]
+
+  return <section className="overview-section overview-chart" aria-labelledby="completion-heading">
+    <h2 id="completion-heading">Quest completions over time</h2>
+    <p className="overview-muted">Gaps indicate periods without a publishable count.</p>
+    {data.activity_trends.length > 0 ? <CompletionPlot rows={rows} weekly={weekly} ticks={ticks} />
+      : <p className="overview-empty">No publishable completion trend. Choose a different reporting period to check for activity.</p>}
+    <details className="overview-disclosure">
+      <summary>View data</summary>
+      <div className="console-table-scroll" role="region" aria-label="Quest completion figures" tabIndex={0}><table className="overview-table overview-numeric-table">
+        <caption className="sr-only">Quest completion figures by reporting period</caption>
+        <thead><tr><th scope="col">{weekly ? 'Week of' : 'Date'}</th><th scope="col">Completions</th><th scope="col">Students</th></tr></thead>
+        <tbody>{rows.map(({ date, activity }) => <tr key={date}>
+          <th scope="row"><time dateTime={date}>{labelDate(date)}</time></th>
+          <td>{activity ? count(activity.completion_events) : 'Unavailable'}</td>
+          <td>{activity ? count(activity.student_count) : 'Unavailable'}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </details>
+  </section>
 }
-function RankBars({ rows, empty }: { rows: { label: string; value: number; detail: string }[]; empty: string }) {
-  const max = Math.max(...rows.map((row) => Number(row.value)), 1);
-  if (!rows.length) return <div className="chart-empty">{empty}</div>;
-  return <div className="rank-bars">{rows.map((row) => <div key={row.label}><span><b>{row.label}</b><small>{row.detail}</small></span><i><em style={{ width: `${Number(row.value) / max * 100}%` }} /></i><strong>{row.value}</strong></div>)}</div>;
+
+function RecentAssignments({ revision, onOpenQuest, onCreateQuest, onReviewAssignments }: {
+  revision: number
+  onOpenQuest: (quest: Quest) => void
+  onCreateQuest: () => void
+  onReviewAssignments?: () => void
+}) {
+  const [rows, setRows] = useState<Quest[] | null>(null)
+  const [error, setError] = useState(false)
+  const [retry, setRetry] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    void listQuests({ page: 0, pageSize: 5, search: '', status: 'All', difficulty: 'All' }).then(result => {
+      if (active) {
+        setRows(result.rows)
+        setError(false)
+      }
+    }).catch(() => {
+      if (active) setError(true)
+    })
+    return () => { active = false }
+  }, [revision, retry])
+
+  return <section className="overview-section" aria-labelledby="assignments-heading">
+    <div className="overview-section-heading">
+      <div><h2 id="assignments-heading">Recent OSAS assignments</h2><p className="overview-muted">Latest assignments across all dates</p></div>
+      {onReviewAssignments && <button className="secondary-button" onClick={onReviewAssignments}>Review assignments</button>}
+    </div>
+    {error && <SectionError message="Could not load recent assignments." onRetry={() => {
+      setError(false)
+      setRetry(value => value + 1)
+    }} />}
+    {!rows && !error && <TableLoading label="Loading assignments" />}
+    {rows?.length === 0 && !error && <div className="overview-empty">
+      <p>No OSAS assignments yet.</p>
+      <button className="secondary-button" onClick={onCreateQuest}>Create a quest</button>
+    </div>}
+    {rows && rows.length > 0 && <div className="console-table-scroll" role="region" aria-label="Recent assignment records" tabIndex={0}><table className="overview-table overview-assignment-table" role="table" aria-labelledby="assignments-heading">
+      <thead role="rowgroup"><tr role="row">
+        <th scope="col" role="columnheader">Quest</th><th scope="col" role="columnheader">Assigned to</th>
+        <th scope="col" role="columnheader">Category</th><th scope="col" role="columnheader">Status</th>
+      </tr></thead>
+      <tbody role="rowgroup">{rows.map(quest => <tr key={quest.id} role="row">
+        <th scope="row" role="rowheader"><button className="overview-quest-link" type="button" onClick={() => onOpenQuest(quest)}>{quest.title}</button></th>
+        <td role="cell"><span className="overview-cell-label" aria-hidden="true">Assigned to</span>{quest.assignee || '—'}</td>
+        <td role="cell"><span className="overview-cell-label" aria-hidden="true">Category</span>{quest.category}</td>
+        <td role="cell"><span className="overview-cell-label" aria-hidden="true">Status</span><Status status={questStatusLabel(quest.status)} /></td>
+      </tr>)}</tbody>
+    </table></div>}
+  </section>
 }
-function ScoreChart<T extends { bucket_start: string }>({ rows, series }: { rows: T[]; series: [keyof T, string][] }) {
-  const colors = ['var(--chart-honey)', 'var(--chart-coral)', 'var(--chart-green)', 'var(--honey-deep)'];
-  const points = (key: keyof T) => rows.map((row, index) => `${rows.length === 1 ? 50 : index * 100 / (rows.length - 1)},${100 - (Number(row[key]) - 1) * 25}`).join(' ');
-  if (!rows.length) return <div className="chart-empty">No trend cell reached five participating students.</div>;
-  return <div className="score-chart"><div className="score-legend">{series.map(([, label], index) => <span key={label}><i style={{ background: colors[index] }} />{label}</span>)}</div><svg viewBox="0 -5 100 110" preserveAspectRatio="none" role="img" aria-label={`Average rating trends from one to five. Series: ${series.map(([, label]) => label).join(', ')}. Use the data table for values.`}>{[0, 25, 50, 75, 100].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} />)}{series.map(([key], index) => <polyline key={String(key)} points={points(key)} style={{ stroke: colors[index] }} />)}</svg><div className="score-labels">{rows.map((row) => <small key={row.bucket_start}>{labelDate(row.bucket_start)}</small>)}</div><ChartDataTable columns={['Period', ...series.map(([, label]) => label)]} rows={rows.map((row) => [labelDate(row.bucket_start), ...series.map(([key]) => row[key] == null ? 'Not available' : Number(row[key]).toFixed(1))])} /></div>;
+
+function CheckIns({ data }: { data: DashboardAnalytics }) {
+  const checkIns = data.wellbeing
+  return <section className="overview-section" aria-labelledby="check-ins-heading">
+    <h2 id="check-ins-heading">Weekly wellness trends</h2>
+    <p className="overview-muted">Voluntary ratings give each respondent equal weight. Coverage is the share of registered accounts that responded.</p>
+    {checkIns ? <dl className="overview-check-in-stats">
+        <div><dt>Well-being</dt><dd>{score(checkIns.average_wellbeing)}</dd></div>
+        <div><dt>Stress</dt><dd>{score(checkIns.average_stress)}</dd></div>
+        <div><dt>Energy</dt><dd>{score(checkIns.average_energy)}</dd></div>
+      </dl> : <p className="overview-muted">Check-in summary unavailable for this period.</p>}
+    {data.wellbeing_trends.length > 0 && <ReportTable label="Weekly check-in ratings" columns={['Dates covered', 'Respondents', 'Accounts', 'Coverage', 'Well-being / 5', 'Stress / 5', 'Energy / 5']}>
+      {data.wellbeing_trends.map(row => <tr key={row.bucket_start}>
+        <th scope="row">{rangeFormatter.formatRange(dayNumber(row.from_date) * DAY, dayNumber(row.through_date) * DAY)}{row.partial && ' (partial)'}</th>
+        <td>{reportCount(row.student_count)}</td><td>{reportCount(row.registered_students)}</td><td>{reportPercent(row.coverage)}</td>
+        <td>{reportDecimal(row.average_wellbeing, 2)}</td><td>{reportDecimal(row.average_stress, 2)}</td><td>{reportDecimal(row.average_energy, 2)}</td>
+      </tr>)}
+    </ReportTable>}
+  </section>
 }
-function ChartDataTable({ columns, rows }: { columns: string[]; rows: (string | number)[][] }) {
-  return <details className="chart-data"><summary>View data table</summary><div className="chart-data-scroll"><table><thead><tr>{columns.map((column) => <th key={column} scope="col">{column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${String(row[0])}-${index}`}>{row.map((value, cell) => <td key={`${cell}-${String(value)}`}>{value}</td>)}</tr>)}</tbody></table></div></details>;
+
+function StudentParticipation({ data }: { data: DashboardAnalytics }) {
+  return <>
+    <section className="overview-section" aria-labelledby="interests-heading">
+      <h2 id="interests-heading">Student-chosen interests</h2>
+      <p className="overview-muted">Distinct students by quest category. This measures quests with a recorded student creator.</p>
+      <ReportTable label="Student-created quest participation" columns={['Category', 'Students creating', 'Students completing']}>
+        {data.student_interests.map(row => <tr key={row.category}>
+          <th scope="row">{row.category}</th><td>{reportCount(row.creators)}</td><td>{reportCount(row.completers)}</td>
+        </tr>)}
+      </ReportTable>
+    </section>
+    <section className="overview-section" aria-labelledby="student-participation-heading">
+      <h2 id="student-participation-heading">First-week and repeat participation</h2>
+      <dl className="overview-check-in-stats">
+        <div><dt>Completed a quest in their first seven days</dt><dd>{reportPercent(data.first_week?.rate ?? null)}</dd></div>
+        <div><dt>New accounts with seven days to participate</dt><dd>{reportCount(data.first_week?.eligible ?? null)}</dd></div>
+        <div><dt>New students completing a quest</dt><dd>{reportCount(data.first_week?.completed ?? null)}</dd></div>
+      </dl>
+      <h3>Completed a quest again the following week</h3>
+      {data.repeat_participation.length > 0 ? <ReportTable label="Participation across consecutive completed weeks" columns={['First week of', 'Following week of', 'First-week completers', 'Completed both weeks', 'Repeat rate']}>
+        {data.repeat_participation.map(row => <tr key={row.week_start}>
+          <th scope="row">{labelDate(row.week_start)}</th><td>{labelDate(row.next_week_start)}</td>
+          <td>{reportCount(row.eligible)}</td><td>{reportCount(row.completed)}</td><td>{reportPercent(row.rate)}</td>
+        </tr>)}
+      </ReportTable> : <p className="overview-muted">Select a range with two consecutive completed Monday–Sunday weeks.</p>}
+    </section>
+  </>
+}
+
+function AssignmentOutcomes({ rows }: { rows: DashboardAnalytics['assignment_outcomes'] }) {
+  return <section className="overview-section" aria-labelledby="assignment-outcomes-heading">
+    <h2 id="assignment-outcomes-heading">OSAS activity outcomes</h2>
+    <p className="overview-muted">Outcomes cover the first 14 days after publication. Match an activity code in Quest Details.</p>
+    {rows.length > 0 ? <ReportTable label="OSAS assignment outcomes" columns={['Activity', 'Category', 'Published', 'Students assigned', 'Completed in 14 days', 'Completion rate', 'Median hours to complete']}>
+      {rows.map(row => <tr key={row.activity_code ?? row.category}>
+        <th scope="row">{row.activity_code ? <code>{row.activity_code}</code> : 'Historical assignments'}</th>
+        <td>{row.category}</td><td>{row.published_date ? labelDate(row.published_date) : 'Multiple dates'}</td><td>{count(row.assigned)}</td>
+        {row.in_progress ? <td colSpan={3}>In progress</td> : <>
+          <td>{reportCount(row.completed)}</td><td>{reportPercent(row.rate)}</td><td>{reportDecimal(row.median_hours, 1)}</td>
+        </>}
+      </tr>)}
+    </ReportTable> : <p className="overview-muted">No OSAS activity outcomes are available for these dates.</p>}
+  </section>
+}
+
+function ReportTable({ label, columns, children }: { label: string; columns: string[]; children: ReactNode }) {
+  return <div className="console-table-scroll" role="region" aria-label={label} tabIndex={0}>
+    <table className={columns.length > 4 ? 'overview-table overview-wide-results-table' : 'overview-table'}>
+      <caption className="sr-only">{label}</caption>
+      <thead><tr>{columns.map(column => <th scope="col" key={column}>{column}</th>)}</tr></thead>
+      <tbody>{children}</tbody>
+    </table>
+  </div>
 }

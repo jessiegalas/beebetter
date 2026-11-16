@@ -1,32 +1,44 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Dialog, Popover } from 'radix-ui'
 import './App.css'
 import { supabase } from './supabase'
 import type { Admin, AdminAccessRequest, Quest, QuestDraft, QuestListQuery, Section, StudentListQuery, User } from './admin-types'
 import { listAdminAccessRequests, listAdmins, listQuests, listStudents, questXp, reviewAdminAccessRequest } from './admin-data'
-import { AccessScreen, AdminInfoPanel, AuthScreen, Brand, ProfileBadge, initials } from './AdminShell'
+import { AccessScreen, AdminInfoPanel, AuthScreen, Brand, initials } from './AdminShell'
 import { AdminAccessRequests, AdminTable, DataTable } from './AdminTables'
 import { AdminModal, QuestDetails, QuestModal, StudentModal, UserActions, UserDetails } from './AdminModals'
 import { useAdminAccess } from './admin-access'
+import { ADMIN_SUPPORT_REQUESTS_ENABLED } from './admin-features'
 
 const PAGE_SIZE = 10
-const SupportRequests=lazy(()=>import('./SupportRequests').then(module=>({default:module.SupportRequests})))
+const SECTION_LABELS: Record<Section, string> = {
+  Overview: 'Overview',
+  Quests: 'Quest Assignments',
+  Students: 'Students',
+  'Support Requests': 'Support Requests',
+  Admins: 'Admin Access',
+}
+const SupportRequests = ADMIN_SUPPORT_REQUESTS_ENABLED
+  ? lazy(() => import('./SupportRequests').then(module => ({ default: module.SupportRequests })))
+  : null
 const OsasPermissions=lazy(()=>import('./OsasPermissions').then(module=>({default:module.OsasPermissions})))
 const OsasDashboard=lazy(()=>import('./OsasDashboard').then(module=>({default:module.OsasDashboard})))
-const SemesterManagement=lazy(()=>import('./SemesterManagement').then(module=>({default:module.SemesterManagement})))
 
-type AppIconName = 'overview' | 'users' | 'quests' | 'semesters' | 'support' | 'admins' | 'sun' | 'moon' | 'signOut'
+type AppIconName = 'overview' | 'users' | 'quests' | 'support' | 'admins' | 'sun' | 'moon' | 'signOut' | 'menu' | 'search' | 'close'
 
 function AppIcon({ name }: { name: AppIconName }) {
   return <svg className="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     {name === 'overview' && <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>}
     {name === 'users' && <><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20v-1.2a5.5 5.5 0 0 1 11 0V20M16 5.2a3.2 3.2 0 0 1 0 6.1M17 14a5.2 5.2 0 0 1 3.5 4.9V20" /></>}
     {name === 'quests' && <><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z" /></>}
-    {name === 'semesters' && <><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M8 13h3M8 16.5h3M14 13h2.5" /></>}
     {name === 'support' && <><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5 8 8 0 0 1-3.3-.7L4 20l1.7-4.5a7.5 7.5 0 1 1 14.3-4Z" /><path d="M8.5 11.5h7M8.5 14.5h4.5" /></>}
     {name === 'admins' && <><path d="M12 3 20 6v5.3c0 4.6-3.2 7.8-8 9.7-4.8-1.9-8-5.1-8-9.7V6l8-3Z" /><circle cx="12" cy="10" r="2.2" /><path d="M8.5 16a3.8 3.8 0 0 1 7 0" /></>}
     {name === 'sun' && <><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2.5 12h2m15 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>}
     {name === 'moon' && <path d="M19.5 15.2A8.2 8.2 0 0 1 8.8 4.5 8.5 8.5 0 1 0 19.5 15.2Z" />}
     {name === 'signOut' && <><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10M14 16l4-4-4-4M18 12H9" /></>}
+    {name === 'menu' && <path d="M4 6h16M4 12h16M4 18h16" />}
+    {name === 'search' && <><circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4.5 4.5" /></>}
+    {name === 'close' && <path d="m6 6 12 12M18 6 6 18" />}
   </svg>
 }
 
@@ -35,13 +47,41 @@ function SectionIcon({ section }: { section: Section }) {
     Overview: 'overview',
     Students: 'users',
     Quests: 'quests',
-    'Semesters & Sections': 'semesters',
     'Support Requests': 'support',
     Admins: 'admins',
   }
   return <AppIcon name={names[section]} />
 }
 
+function WorkspaceSearch({ onSearch }: { onSearch: (scope: 'Students' | 'Quests', search: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  return <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Trigger asChild>
+      <button type="button" className="workspace-search-trigger" aria-label="Search students or assignments">
+        <AppIcon name="search" /><span>Search</span>
+      </button>
+    </Popover.Trigger>
+    <Popover.Content className="workspace-search-popover" align="end" sideOffset={8} collisionPadding={8}
+      aria-label="Workspace search" onOpenAutoFocus={event => {
+        event.preventDefault()
+        inputRef.current?.focus()
+      }}>
+      <form role="search" onSubmit={event => {
+        event.preventDefault()
+        const fields = new FormData(event.currentTarget)
+        const search = String(fields.get('search') ?? '').trim()
+        if (!search) return
+        onSearch(fields.get('scope') === 'Quests' ? 'Quests' : 'Students', search)
+        setOpen(false)
+      }}>
+        <label>Search in<select name="scope"><option value="Students">Students</option><option value="Quests">Quest Assignments</option></select></label>
+        <label>Search term<input ref={inputRef} type="search" name="search" required /></label>
+        <button type="submit" className="primary-button">Search</button>
+      </form>
+    </Popover.Content>
+  </Popover.Root>
+}
 
 function App() {
   const access = useAdminAccess()
@@ -65,6 +105,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
   const adminRequest = useRef(0)
   const accessListRequest = useRef(0)
   const { identity: adminIdentity, osasPermissions, operationError, signOut } = access
+  const canManageSupport = ADMIN_SUPPORT_REQUESTS_ENABLED && osasPermissions.can_manage_support_requests
   const [section, setSection] = useState<Section>('Overview')
   const [users, setUsers] = useState<User[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
@@ -76,6 +117,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
   const [quests, setQuests] = useState<Quest[]>([])
   const [questQuery, setQuestQuery] = useState<QuestListQuery>({ page: 0, pageSize: 50, search: '', status: 'All', difficulty: 'All' })
   const [questTotal, setQuestTotal] = useState(0)
+  const [assignmentRevision, setAssignmentRevision] = useState(0)
   const [admins, setAdmins] = useState<Admin[]>([])
   const [adminAccessRequests, setAdminAccessRequests] = useState<AdminAccessRequest[]>([])
   const [accessRequestsLoading, setAccessRequestsLoading] = useState(false)
@@ -84,6 +126,8 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
   const [adminsError, setAdminsError] = useState('')
   const [adminModalOpen, setAdminModalOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [reportControlsHost, setReportControlsHost] = useState<HTMLDivElement | null>(null)
   const [newQuestOpen, setNewQuestOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null)
@@ -184,13 +228,15 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
   useEffect(() => { if (section === 'Quests') void loadQuests(); return () => { questRequest.current++ } }, [section, loadQuests])
 
   useEffect(() => {
-    if ((section === 'Admins' && adminRole !== 'super_admin') || (section === 'Support Requests' && !osasPermissions.can_manage_support_requests)) setSection('Overview')
+    if ((section === 'Admins' && adminRole !== 'super_admin') || (section === 'Support Requests' && !canManageSupport)) setSection('Overview')
     if (adminRole !== 'super_admin') setAdminModalOpen(false)
-  }, [section, adminRole, osasPermissions.can_manage_support_requests])
+  }, [section, adminRole, canManageSupport])
   const closeProfile = useCallback(() => setProfileOpen(false), [])
   const navigate = (next: Section) => {
     setSection(next)
     setProfileOpen(false)
+    setMobileNavOpen(false)
+    if (section !== next) window.scrollTo(0, 0)
   }
 
   const saveStudent = async (student: User) => {
@@ -207,7 +253,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
       status_value: student.status,
     })
     if (error) {
-      setNotice(`Could not save ${student.name}: ${error.message}`)
+      setNotice(`Could not save ${student.name || 'student ' + student.studentNumber}: ${error.message}`)
       throw error
     }
     if (!mounted.current) return
@@ -238,7 +284,9 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
       setNotice('No eligible active student accounts were available, so no quest was created.')
       return
     }
-    await loadQuests()
+    if (!mounted.current) return
+    if (section === 'Quests') await loadQuests()
+    setAssignmentRevision(value => value + 1)
     setNewQuestOpen(false)
     setEditingQuest(null)
     setNotice(draft.publish
@@ -260,7 +308,9 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
       setNotice(`Could not update quest: ${error.message}`)
       return
     }
-    await loadQuests()
+    if (!mounted.current) return
+    if (section === 'Quests') await loadQuests()
+    setAssignmentRevision(value => value + 1)
     setEditingQuest(null)
     setNotice(`"${draft.title}" was updated.`)
   }
@@ -303,36 +353,80 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
     }
   }
 
-  const sections = ['Overview', 'Students', 'Quests', 'Semesters & Sections', ...(osasPermissions.can_manage_support_requests ? ['Support Requests'] : []), ...(adminRole === 'super_admin' ? ['Admins'] : [])] as Section[]
+  const sections: Section[] = ['Overview', 'Quests', 'Students']
+  if (canManageSupport) sections.push('Support Requests')
+  const sectionLabel = SECTION_LABELS[section]
+  const navItem = (item: Section) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item}
+    aria-label={SECTION_LABELS[item]} title={SECTION_LABELS[item]} aria-current={section === item ? 'page' : undefined}>
+    <SectionIcon section={item} /><span className="nav-label">{SECTION_LABELS[item]}</span>
+  </button>
+  const navigation = <>
+    <nav aria-label="Admin navigation">
+      {sections.map(navItem)}
+      {adminRole === 'super_admin' && <div className="admin-nav-group" role="group" aria-label="Administration">
+        <span className="admin-nav-heading" aria-hidden="true">Administration</span>
+        {navItem('Admins')}
+      </div>}
+    </nav>
+    <div className="sidebar-tools">
+      <button onClick={() => { setMobileNavOpen(false); void signOut() }} aria-label="Sign out" title="Sign out">
+        <AppIcon name="signOut" /><span>Sign out</span>
+      </button>
+    </div>
+  </>
 
   return (
     <div className={dark ? 'app-shell dark' : 'app-shell'}>
-      <aside className="sidebar">
+      <a href="#console-heading" className="workspace-skip-link">Skip to content</a>
+      <aside className="sidebar workspace-sidebar">
         <Brand />
-        <span className="admin-label">ADMIN CONSOLE</span>
-        <nav aria-label="Admin navigation">{sections.map((item) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item} aria-label={item} title={item} aria-current={section === item ? 'page' : undefined}><SectionIcon section={item} /><span className="nav-label">{item}</span></button>)}</nav>
-        <div className="sidebar-tools"><button onClick={toggleTheme} aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'} title={dark ? 'Light mode' : 'Dark mode'}><AppIcon name={dark ? 'sun' : 'moon'} /><span>{dark ? 'Light mode' : 'Dark mode'}</span></button><button onClick={() => void signOut()} aria-label="Sign out" title="Sign out"><AppIcon name="signOut" /><span>Sign out</span></button></div>
-        <ProfileBadge identity={adminIdentity} onClick={() => setProfileOpen((value) => !value)} />
+        {navigation}
       </aside>
       <main className="main">
-        <header className="topbar">
-          <div className="header-greeting"><div className="mobile-brand"><Brand /></div><strong>{section}</strong></div>
-          <div className="top-actions">
-            <button className="icon-button" aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'} onClick={toggleTheme}><AppIcon name={dark ? 'sun' : 'moon'} /></button>
-            <button className="avatar-button" aria-label={`Open admin information for ${adminIdentity.name}`} onClick={() => setProfileOpen((value) => !value)}><span className="avatar">{initials(adminIdentity.name)}</span></button>
+        <header className="topbar workspace-header">
+          <div className="workspace-header-primary">
+            <div className="workspace-context">
+              <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                <Dialog.Trigger asChild><button className="icon-button workspace-menu-trigger" aria-label="Open navigation"><AppIcon name="menu" /></button></Dialog.Trigger>
+                <Dialog.Portal>
+                  <Dialog.Overlay className="workspace-nav-overlay" />
+                  <Dialog.Content className="sidebar workspace-nav-drawer" aria-describedby={undefined}>
+                    <Dialog.Title className="sr-only">Admin navigation</Dialog.Title>
+                    <div className="workspace-drawer-heading">
+                      <Brand /><Dialog.Close className="icon-button" aria-label="Close navigation"><AppIcon name="close" /></Dialog.Close>
+                    </div>
+                    {navigation}
+                  </Dialog.Content>
+                </Dialog.Portal>
+              </Dialog.Root>
+              <span className="workspace-section-label">{sectionLabel}</span>
+              <span className="workspace-mobile-brand">BeeBetter</span>
+            </div>
+            <div className="top-actions">
+              <WorkspaceSearch onSearch={(scope, search) => {
+                if (scope === 'Students') setUserQuery(current => ({ ...current, page: 0, search }))
+                else setQuestQuery(current => ({ ...current, page: 0, search }))
+                navigate(scope)
+              }} />
+              <button className="icon-button" aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'} onClick={toggleTheme}><AppIcon name={dark ? 'sun' : 'moon'} /></button>
+              <button className="avatar-button workspace-avatar" aria-label={`Open admin information for ${adminIdentity.name}`} onClick={() => setProfileOpen((value) => !value)}><span className="avatar">{initials(adminIdentity.name)}</span></button>
+            </div>
           </div>
+          <div className="workspace-report-controls" ref={setReportControlsHost} />
         </header>
         <div className="content">
           {operationError && <p className="form-error" role="alert">{operationError}</p>}
-          <div className="section-context"><span>Admin Console</span><span aria-hidden="true">/</span><span>{section}</span></div>
-          <div className="heading-row"><div><h1>{section === 'Overview' ? 'Student development overview' : section}</h1><p>{section === 'Overview' ? 'OSAS insights into student participation, well-being, self-management, and support services.' : `Manage and monitor ${section.toLowerCase()} in the admin console.`}</p></div>{section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}</div>
-          <Suspense fallback={<section className="panel dashboard-state">Loading section...</section>}>
-          {section === 'Overview' && <OsasDashboard permissions={osasPermissions} onOpenSupport={() => navigate('Support Requests')} />}
+          <div className="heading-row">
+            <h1 id="console-heading" tabIndex={-1}>{section === 'Overview' ? 'Student analytics' : sectionLabel}</h1>
+            {section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}
+          </div>
+          <Suspense fallback={<div className="overview-skeleton overview-chart-skeleton" role="status" aria-label="Loading section" />}>
+          {section === 'Overview' && <OsasDashboard permissions={osasPermissions} reportControlsHost={reportControlsHost} assignmentRevision={assignmentRevision}
+            onOpenQuest={setSelectedQuest} onCreateQuest={() => setNewQuestOpen(true)} onReviewAssignments={() => navigate('Quests')} />}
           {section === 'Students' && <DataTable kind="users" users={users} total={userTotal} query={userQuery} loading={usersLoading} error={usersError} onRefresh={loadUsers} onQueryChange={setUserQuery} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
           {section === 'Quests' && <DataTable kind="quests" quests={quests} total={questTotal} query={questQuery} loading={questsLoading} error={questsError} onRefresh={loadQuests} onQueryChange={setQuestQuery} onQuestClick={setSelectedQuest} />}
-          {section === 'Semesters & Sections' && <SemesterManagement />}
-          {section === 'Support Requests' && osasPermissions.can_manage_support_requests && <SupportRequests />}
-          {section === 'Admins' && adminRole === 'super_admin' && <><AdminAccessRequests requests={adminAccessRequests} loading={accessRequestsLoading} error={accessRequestsError} onRefresh={loadAccessRequests} onReview={(request, approve) => { void decideAccessRequest(request, approve) }} /><AdminTable admins={admins} currentAdminId={adminIdentity.id} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} /><OsasPermissions admins={admins} /></>}
+          {section === 'Support Requests' && canManageSupport && SupportRequests && <SupportRequests />}
+          {section === 'Admins' && adminRole === 'super_admin' && <><AdminAccessRequests requests={adminAccessRequests} loading={accessRequestsLoading} error={accessRequestsError} onRefresh={loadAccessRequests} onReview={(request, approve) => { void decideAccessRequest(request, approve) }} /><AdminTable admins={admins} currentAdminId={adminIdentity.id} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} /><OsasPermissions admins={admins} loading={adminsLoading} error={adminsError} /></>}
           </Suspense>
         </div>
       </main>

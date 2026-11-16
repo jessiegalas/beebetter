@@ -24,20 +24,25 @@ export type SupportRequestEvent = {
   assigned_to: string | null; actor_label: string; note: string | null; created_at: string;
 };
 export type SupportRequestFilters = { page: number; pageSize: number; status: string; category: string; search: string; from: string; to: string };
-export type DashboardFilters = { startDate: string; endDate: string; campus: string | null; course: string | null; yearLevel: string | null };
-export type DashboardFilterOption = { dimension: 'campus' | 'course' | 'year_level'; value: string };
+export type DashboardFilters = { startDate: string; endDate: string };
+type ParticipationRate = { eligible: number | null; completed: number | null; rate: number | null };
 export type DashboardAnalytics = {
   suppressed: boolean; minimum_cohort: number; period_start: string; period_end: string; institutional_timezone: string; cohort_as_of: string;
-  participation: null | { registered_students: number; participating_students: number | null; completion_events: number | null; students_with_goals: number | null; quests_created: number | null; quests_completed: number | null; quest_completion_rate: number | null };
-  wellbeing: null | { student_count: number; check_in_count: number; motivation_response_count: number; averaging_method: string; average_wellbeing: number; average_stress: number; average_energy: number; average_motivation: number | null };
-  self_management: null | { student_count: number; reflection_count: number; averaging_method: string; average_planning: number; average_follow_through: number; average_confidence: number };
-  support: null | { student_count: number; request_count: number; submitted_count: number; acknowledged_count: number; in_progress_count: number; resolved_count: number; withdrawn_count: number };
+  participation: null | { registered_students: number; participating_students: number | null; completion_events: number | null };
+  wellbeing: null | { student_count: number; average_wellbeing: number; average_stress: number; average_energy: number };
   activity_trends: { bucket_start: string; student_count: number; completion_events: number }[];
-  category_participation: { category: string; student_count: number; completion_events: number }[];
-  wellbeing_trends: { bucket_start: string; student_count: number; check_in_count: number; motivation_response_count: number; average_wellbeing: number; average_stress: number; average_energy: number; average_motivation: number | null }[];
-  reflection_trends: { bucket_start: string; student_count: number; reflection_count: number; average_planning: number; average_follow_through: number; average_confidence: number }[];
-  support_trends: { bucket_start: string; student_count: number; request_count: number }[];
-  support_categories: { category: string; student_count: number; request_count: number }[];
+  wellbeing_trends: {
+    bucket_start: string; from_date: string; through_date: string; partial: boolean;
+    student_count: number | null; registered_students: number | null; coverage: number | null;
+    average_wellbeing: number | null; average_stress: number | null; average_energy: number | null;
+  }[];
+  student_interests: { category: string; creators: number | null; completers: number | null }[];
+  first_week: ParticipationRate | null;
+  repeat_participation: (ParticipationRate & { week_start: string; next_week_start: string })[];
+  assignment_outcomes: {
+    activity_code: string | null; published_date: string | null; category: string; assigned: number;
+    in_progress: boolean; completed: number | null; rate: number | null; median_hours: number | null;
+  }[];
 };
 
 export async function getMyOsasPermissions(): Promise<OsasPermissions> {
@@ -55,23 +60,22 @@ export async function getSelfManagementSummary(startDate: string, endDate: strin
   if (error) throw error;
   return (data ?? []) as SelfManagementSummary[];
 }
-export async function getDashboardFilterOptions(): Promise<DashboardFilterOption[]> {
-  const { data, error } = await supabase.rpc('osas_dashboard_filter_options');
+export async function getReportingTimezone(): Promise<string> {
+  const { data, error } = await supabase.rpc('institutional_timezone');
   if (error) throw error;
-  return (data ?? []) as DashboardFilterOption[];
+  if (typeof data !== 'string' || !data) throw new Error('Reporting timezone is unavailable.');
+  return data;
 }
 export async function getDashboardAnalytics(filters: DashboardFilters): Promise<DashboardAnalytics> {
-  const { data, error } = await supabase.rpc('osas_dashboard_analytics', {
-    start_date: filters.startDate, end_date: filters.endDate, campus_filter: filters.campus,
-    course_filter: filters.course, year_level_filter: filters.yearLevel,
+  const { data, error } = await supabase.rpc('osas_dashboard_analytics_v2', {
+    start_date: filters.startDate, end_date: filters.endDate,
   });
   if (error) throw error;
   return data as DashboardAnalytics;
 }
 export async function logDashboardExport(filters: DashboardFilters): Promise<void> {
-  const { error } = await supabase.rpc('osas_log_dashboard_export', {
-    start_date: filters.startDate, end_date: filters.endDate, campus_filter: filters.campus,
-    course_filter: filters.course, year_level_filter: filters.yearLevel,
+  const { error } = await supabase.rpc('osas_log_dashboard_export_v2', {
+    start_date: filters.startDate, end_date: filters.endDate,
   });
   if (error) throw error;
 }

@@ -4,7 +4,7 @@ import type { Admin, PageResult, Quest, QuestDraft, QuestListQuery, StudentListQ
 export async function listStudents(query: StudentListQuery): Promise<PageResult<User>> {
   const { data,error }=await supabase.rpc('admin_list_students_page',{page_size:query.pageSize,page_offset:query.page*query.pageSize,search_query:query.search.trim()||null,status_filter:query.status==='All'?null:query.status});
   if(error) throw error;
-  const rows=(data??[]).map((student: any):User=>({id:student.id,studentNumber:student.student_number,name:student.name||student.email?.split('@')[0]||'Bee Explorer',email:student.email||'No email',course:student.course,yearLevel:student.year_level,section:student.section,campus:student.campus,goal:student.goal,joined:new Date(student.created_at).toLocaleDateString(undefined,{month:'short',day:'2-digit',year:'numeric'}),quests:String(student.quests_completed),status:student.status}));
+  const rows=(data??[]).map((student: any):User=>({id:student.id,studentNumber:student.student_number,name:student.name ?? '',email:student.email||'No email',course:student.course,yearLevel:student.year_level,section:student.section,campus:student.campus,goal:student.goal,joined:new Date(student.created_at).toLocaleDateString(undefined,{month:'short',day:'2-digit',year:'numeric'}),quests:String(student.quests_completed),status:student.status}));
   return {rows,total:Number(data?.[0]?.total_count??0)};
 }
 export async function listQuests(query: QuestListQuery):Promise<PageResult<Quest>> {
@@ -18,6 +18,11 @@ export async function listQuests(query: QuestListQuery):Promise<PageResult<Quest
   if(error) throw error;
   const rows=(data??[]).map((quest:any):Quest=>({id:quest.id,ownerId:quest.owner_id,title:quest.title,description:quest.description??'',category:quest.category,xp:quest.xp,difficulty:quest.xp>=50?'Hard':quest.xp>=30?'Medium':'Easy',completions:String(quest.completions??0),status:quest.status,assignee:quest.assignee}));
   return {rows,total:Number(data?.[0]?.total_count??0)};
+}
+export async function getQuestActivityCode(questId: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc('admin_get_quest_activity_code', { quest_id_value: questId });
+  if (error) throw error;
+  return data;
 }
 export async function listAdmins():Promise<Admin[]> { const {data,error}=await supabase.rpc('super_admin_list_admins'); if(error) throw error; return (data??[]).map((a:any)=>({id:a.id,email:a.email,displayName:a.display_name||a.email,role:a.role,isActive:a.is_active,createdAt:new Date(a.created_at).toLocaleDateString()})); }
 

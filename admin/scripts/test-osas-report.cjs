@@ -12,19 +12,24 @@ const { buildOsasReportCsv } = reportModule.exports;
 
 const data = {
   suppressed: false, minimum_cohort: 5, period_start: '2026-09-01', period_end: '2026-09-30', institutional_timezone: 'Asia/Manila', cohort_as_of: '2026-09-30',
-  participation: { registered_students: 6, participating_students: 6, completion_events: 7, students_with_goals: 5, quests_created: 4, quests_completed: 3, quest_completion_rate: 75 },
-  wellbeing: { student_count: 6, check_in_count: 8, motivation_response_count: 5, averaging_method: 'equal weight per participating student', average_wellbeing: 3.5, average_stress: 2.75, average_energy: 4, average_motivation: 3.2 },
-  self_management: null,
-  support: { student_count: 5, request_count: 6, submitted_count: 2, acknowledged_count: 1, in_progress_count: 1, resolved_count: 1, withdrawn_count: 1 },
+  participation: { registered_students: 12, participating_students: 6, completion_events: 7 },
+  wellbeing: { student_count: 6, average_wellbeing: 3.5, average_stress: 2.75, average_energy: 4 },
   activity_trends: [{ bucket_start: '2026-09-20', student_count: 5, completion_events: 6 }],
-  category_participation: [{ category: '=Academics', student_count: 5, completion_events: 6 }],
-  wellbeing_trends: [{ bucket_start: '2026-09-20', student_count: 6, check_in_count: 6, motivation_response_count: 5, average_wellbeing: 3.5, average_stress: 2.5, average_energy: 4, average_motivation: 3 }],
-  reflection_trends: [], support_trends: [], support_categories: [],
+  wellbeing_trends: [{ bucket_start: '2026-08-31', from_date: '2026-09-01', through_date: '2026-09-06', partial: true, student_count: 6, registered_students: 12, coverage: 50, average_wellbeing: 3.5, average_stress: 2.5, average_energy: 4 }],
+  student_interests: [{ category: 'Habits', creators: 6, completers: null }],
+  first_week: { eligible: 12, completed: 6, rate: 50 },
+  repeat_participation: [{ week_start: '2026-09-07', next_week_start: '2026-09-14', eligible: 12, completed: 6, rate: 50 }],
+  assignment_outcomes: [
+    { activity_code: 'activity-one', published_date: '2026-09-01', category: 'Health', assigned: 12, in_progress: false, completed: 6, rate: 50, median_hours: 25 },
+    { activity_code: 'activity-two', published_date: '2026-09-24', category: 'Social', assigned: 12, in_progress: true, completed: null, rate: null, median_hours: null },
+  ],
 };
-const filters = { startDate: '2026-09-01', endDate: '2026-09-30', campus: 'Main Campus', course: 'BSCS', yearLevel: '4th Year' };
-const csv = buildOsasReportCsv(data, filters, new Date('2026-10-01T00:00:00Z'));
+const csv = buildOsasReportCsv({ ...data, participation: { ...data.participation, completion_events: null } }, new Date('2026-10-01T00:00:00Z'));
 assert(csv.startsWith('\uFEFF'));
-for (const value of ['2026-09-01', '2026-09-30', 'Main Campus', 'BSCS', 'Registered students', 'Durable quest completion-history', 'Unavailable: no records', "'=Academics"]) assert(csv.includes(value), `missing ${value}`);
-for (const privateValue of ['Private note from Student A', 'student@example.com', 'I need confidential support', '14.5995,120.9842']) assert.equal(csv.includes(privateValue), false);
-assert.throws(() => buildOsasReportCsv({ ...data, suppressed: true, participation: null }, filters), /fewer than 5 students/i);
+for (const value of ['2026-09-01', '2026-09-30', 'Asia/Manila', 'Registered BeeBetter accounts', 'Students participating', 'Quest completion period start', 'Daily check-ins', 'Unavailable', 'Student-chosen interests', 'Repeat rate (%)', 'Partial week']) assert(csv.includes(value), `missing ${value}`);
+assert(csv.includes('"activity-one","2026-09-01","Health","12","Complete","6","50","25"'));
+assert(csv.includes('"activity-two","2026-09-24","Social","12","In progress","Unavailable","Unavailable","Unavailable"'));
+for (const excluded of ['"Campus"', '"Program"', 'Year level', 'goals', 'Self-management', 'Support', 'Motivation']) assert.equal(csv.includes(excluded), false, `unexpected ${excluded}`);
+assert(buildOsasReportCsv({ ...data, institutional_timezone: '=unsafe' }).includes('"' + "'=unsafe" + '"'));
+assert.throws(() => buildOsasReportCsv({ ...data, suppressed: true, participation: null }), /withheld for privacy/i);
 console.log('PASS OSAS CSV report content, unavailable values, suppression, and spreadsheet escaping');

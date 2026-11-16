@@ -26,7 +26,7 @@ function load(source, h, mocks = {}) {
 function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   if (!tree || typeof tree !== 'object') return [];
-  if (typeof tree.type === 'function' && ['SearchField', 'PageSize', 'Pagination', 'Filter', 'Status'].includes(tree.type.name)) return nodes(tree.type(tree.props));
+  if (typeof tree.type === 'function' && ['SearchField', 'PageSize', 'Pagination', 'SectionError', 'Status', 'ConsoleTable', 'ConsoleCell'].includes(tree.type.name)) return nodes(tree.type(tree.props));
   return [tree, ...nodes(tree.props?.children)];
 }
 function text(tree) {
@@ -48,40 +48,56 @@ async function reports() {
   let auditWait = null, auditError = null;
   const mod = load('admin/src/OsasDashboard.tsx', h, {
     './osas-data': {
-      getDashboardFilterOptions: async () => [],
+      getReportingTimezone: async () => 'Asia/Manila',
       getDashboardAnalytics: filters => { const pending = deferred(); requests.push({ filters, pending }); return pending.promise; },
       logDashboardExport: async filters => { audits.push(filters); if (auditWait) await auditWait.promise; if (auditError) throw auditError; },
     },
-    './osas-report': { downloadOsasReportCsv: (data, filters) => downloads.push({ data, filters }) },
+    './osas-report': { downloadOsasReportCsv: data => downloads.push(data) },
   });
   const permissions = { can_view_aggregates: true, can_manage_support_requests: false };
-  h.mount(() => mod.exports.OsasDashboard({ permissions, onOpenSupport() {} }));
-  const result = id => ({ id, suppressed: false, participation: {}, activity_trends: [], category_participation: [] });
+  h.mount(() => mod.exports.OsasDashboard({ permissions, assignmentRevision: 0, onOpenQuest() {}, onCreateQuest() {} }));
+  const result = (index, id) => ({
+    id, suppressed: false, participation: { registered_students: 10, participating_students: 6, completion_events: 7 }, activity_trends: [], wellbeing_trends: [],
+    student_interests: [], first_week: null, repeat_participation: [], assignment_outcomes: [],
+    period_start: requests[index].filters.startDate, period_end: requests[index].filters.endDate,
+  });
   const applyDate = async date => {
-    find(h.value, 'input', node => node.props.type === 'date').props.onChange({ target: { value: date } });
-    await flush(); button(h.value, 'Apply filters').props.onClick(); await flush();
+    const dates = nodes(h.value).filter(node => node.type === 'input' && node.props.type === 'date');
+    dates[0].props.onChange({ target: { value: date } }); await flush();
+    find(h.value, 'input', node => node.props.type === 'date' && node.props.min === date).props.onChange({ target: { value: '2026-03-01' } });
+    await flush(); find(h.value, 'form').props.onSubmit({ preventDefault() {} }); await flush();
   };
   await flush();
+  assert.equal((Date.parse(requests[0].filters.endDate) - Date.parse(requests[0].filters.startDate)) / 86_400_000, 29);
+  find(h.value, 'select').props.onChange({ target: { value: 'custom' } });
+  await flush();
   await applyDate('2026-01-01');
-  requests[1].pending.resolve(result('current')); await flush();
-  await flush(); requests[0].pending.resolve(result('stale')); await flush();
+  requests[1].pending.resolve(result(1, 'current')); await flush();
+  requests[0].pending.resolve(result(0, 'stale')); await flush();
   const displayed = nodes(h.value).find(node => typeof node.type === 'function' && node.props.data);
   assert.equal(displayed.props.data.id, 'current');
-  button(h.value, 'Export displayed data as CSV').props.onClick(); await flush();
-  assert.equal(downloads[0].data.id, 'current');
-  assert.equal(downloads[0].filters.startDate, '2026-01-01');
-  assert.equal(audits[0], downloads[0].filters);
+  const chart = nodes(displayed.type(displayed.props)).find(node => node.type?.name === 'CompletionChart');
+  const chartTable = find(chart.type({ data: {
+    ...displayed.props.data, period_start: '2026-09-01', period_end: '2026-09-03',
+    activity_trends: [{ bucket_start: '2026-09-01', student_count: 5, completion_events: 6 }, { bucket_start: '2026-09-03', student_count: 5, completion_events: 8 }],
+  } }), 'tbody');
+  const withheldRow = find(chartTable, 'tr', node => text(node).includes('Unavailable'));
+  assert.equal(find(withheldRow, 'time').props.dateTime, '2026-09-02');
+  assert.deepEqual(nodes(withheldRow).filter(node => node.type === 'td').map(text), ['Unavailable', 'Unavailable']);
+  button(h.value, 'Export CSV').props.onClick(); await flush();
+  assert.equal(downloads[0].id, 'current');
+  assert.deepEqual({ ...audits[0] }, { startDate: '2026-01-01', endDate: '2026-03-01' });
 
   auditError = new Error('Audit rejected');
-  button(h.value, 'Export displayed data as CSV').props.onClick(); await flush();
+  button(h.value, 'Export CSV').props.onClick(); await flush();
   assert.equal(downloads.length, 1, 'Failed audit must prevent download');
   auditError = null; auditWait = deferred();
-  button(h.value, 'Export displayed data as CSV').props.onClick(); await flush();
+  button(h.value, 'Retry').props.onClick(); await flush();
   await applyDate('2026-02-01');
   auditWait.resolve(); await flush();
   assert.equal(downloads.length, 1, 'Changed report must cancel the pending download');
-  requests[2].pending.resolve({ ...result('withheld'), suppressed: true, minimum_cohort: 5 }); await flush();
-  assert.equal(button(h.value, 'Export displayed data as CSV').props.disabled, true);
+  requests[2].pending.resolve({ ...result(2, 'withheld'), suppressed: true, minimum_cohort: 5 }); await flush();
+  assert.equal(button(h.value, 'Export CSV').props.disabled, true);
   h.unmount();
 }
 
@@ -140,7 +156,9 @@ async function studentSave() {
 
 async function capabilities() {
   const h = hookHarness();
-  const mod = load('admin/src/OsasPermissions.tsx', h, {});
+  const tables = load('admin/src/AdminTables.tsx', h).exports;
+  const features = load('admin/src/admin-features.ts', h).exports;
+  const mod = load('admin/src/OsasPermissions.tsx', h, { './AdminTables': tables, './admin-features': features });
   const admins = [
     { id: 'ordinary', displayName: 'Ordinary', email: 'ordinary@example.test', role: 'admin', isActive: true },
     { id: 'super', displayName: 'Super', email: 'super@example.test', role: 'super_admin', isActive: true },
@@ -148,7 +166,8 @@ async function capabilities() {
   ];
   h.mount(() => mod.exports.OsasPermissions({ admins }));
   assert.equal(nodes(h.value).filter(node => node.type === 'input' || node.type === 'button').length, 0);
-  const rows = nodes(h.value).filter(node => node.props?.className === 'permission-row');
+  assert.equal(nodes(h.value).some(node => node.type === 'th' && text(node) === 'Support cases'), features.ADMIN_SUPPORT_REQUESTS_ENABLED);
+  const rows = nodes(find(h.value, 'tbody')).filter(node => node.type === 'tr');
   assert.equal(rows.length, 3);
   assert(text(rows[0]).includes('Included'));
   assert(text(rows[1]).includes('Included'));

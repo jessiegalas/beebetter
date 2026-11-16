@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { AuthActionResult, OwnAccessRequest } from './admin-access'
 import type { AdminIdentity } from './admin-types'
+import { ADMIN_SUPPORT_REQUESTS_ENABLED } from './admin-features'
 
 export function Brand() { return <div className="brand"><span className="brand-mark">✦</span><strong>BeeBetter</strong></div> }
 export function initials(name: string) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join('') || 'AD' }
@@ -45,7 +46,7 @@ export function AdminInfoPanel({ identity, role, permissions, onClose, onSignOut
       <div className="admin-info-heading"><div><span className="eyebrow">ADMIN CONSOLE</span><h2 id="admin-info-title">Admin information</h2></div><button ref={closeButton} className="admin-info-close" aria-label="Close admin information" onClick={onClose}>×</button></div>
       <div className="admin-info-identity"><span className="drawer-avatar">{initials(identity.name)}</span><div><b>{identity.name}</b><small>{identity.email || 'Signed-in account'}</small></div></div>
       <section className="admin-info-section" aria-labelledby="admin-session-title"><h3 id="admin-session-title">Current session</h3><div className="admin-info-value"><span>Account status</span><b className="capability-granted">Active</b></div><div className="admin-info-value"><span>Admin role</span><b>{role === 'super_admin' ? 'Super Admin' : 'Admin'}</b></div></section>
-      <section className="admin-info-section" aria-labelledby="admin-permissions-title"><h3 id="admin-permissions-title">OSAS access</h3><p>Reporting and support access are included for all active admins.</p>{capability('Admin console access', true)}{capability('OSAS aggregate reports', permissions.can_view_aggregates)}{capability('OSAS support case management', permissions.can_manage_support_requests)}</section>
+      <section className="admin-info-section" aria-labelledby="admin-permissions-title"><h3 id="admin-permissions-title">OSAS access</h3><p>Aggregate reporting access is included for all active admins.</p>{capability('Admin console access', true)}{capability('OSAS aggregate reports', permissions.can_view_aggregates)}{ADMIN_SUPPORT_REQUESTS_ENABLED && capability('OSAS support case management', permissions.can_manage_support_requests)}</section>
       <button className="admin-info-signout" onClick={onSignOut}>Sign out</button>
     </aside>
   </div>
