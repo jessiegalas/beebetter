@@ -1,18 +1,19 @@
-import { LIMITS, type StudentFields } from './student-validation';
+import { LIMITS, type StudentIdentity } from './student-validation';
 
 export type AuthFailure = { status: 'error'; code: string; message: string };
 export type AuthOperationResult = { status: 'completed' } | AuthFailure;
-export type AuthenticationResult = { status: 'session_created' | 'confirmation_required' } | AuthFailure;
+export type AuthenticationResult = { status: 'session_created' } | AuthFailure;
 
 export function authFailure(error: unknown): AuthFailure {
   const value = error as { code?: string; message?: string } | null;
   const code = value?.code ?? 'network_error';
   const messages: Record<string, string> = {
-    email_not_confirmed: 'Confirm your email before signing in. You can resend the confirmation below.',
-    invalid_credentials: 'Email or password is incorrect. Check your details and try again.',
-    over_email_send_rate_limit: 'Too many email attempts. Wait a few minutes before trying again.',
+    invalid_credentials: 'Student ID or password is incorrect. Check your details and try again.',
+    invalid_student_id: 'Enter your student ID.',
     over_request_rate_limit: 'Too many attempts. Wait a few minutes before trying again.',
-    user_already_exists: 'Check your email for next steps, or sign in if you already have an account.',
+    legacy_confirmation_required: 'This older account needs help from your school administrator before you can sign in.',
+    student_auth_unavailable: 'Student sign-in is temporarily unavailable. Try again in a moment.',
+    student_account_created: 'Your account was created. Use your student ID and password to sign in.',
     weak_password: 'Choose a stronger password with at least 15 characters.',
     otp_expired: 'This link has expired or was already used. Request another email.',
     flow_state_not_found: 'Open the newest link on the device that requested it, or sign in after confirming your email.',
@@ -20,7 +21,7 @@ export function authFailure(error: unknown): AuthFailure {
     registration_unavailable: 'Account creation is temporarily unavailable. Please try again later.',
     invalid_registration: 'Check your student information and try again.',
     enrollment_changed: 'The enrollment choices changed. Select your section again for the current semester.',
-    student_number_unavailable: 'This student number is unavailable. Check it or contact your administrator.',
+    student_number_unavailable: 'This student ID is unavailable. If you already have an account, sign in.',
     operation_cancelled: 'This operation was cancelled. Please try again.',
   };
   const category = Object.hasOwn(messages, code) ? code : ['network_error', 'operation_busy', 'enrollment_changed', 'invalid_registration', 'student_number_unavailable', 'recovery_session_missing'].includes(code) ? code : 'other';
@@ -51,39 +52,24 @@ export function parseAuthCallback(raw: string, webOrigin?: string): AuthCallback
   return accessToken && refreshToken ? { kind: 'tokens', accessToken, refreshToken, recovery } : null;
 }
 
-export type RegistrationInput = {
-  name: string; studentNumber: string; goal: string; semesterId: string; enrollmentOptionId: string;
+export type RegistrationDraft = StudentIdentity & {
+  enrollment?: { goal: string; semesterId: string; enrollmentOptionId: string };
 };
-
-export type RegistrationDraft = {
-  version: 1;
-  student: StudentFields;
-  semesterId: string;
-  enrollmentOptionId: string;
-};
-
-export const emptyStudentFields = (): StudentFields => ({
-  name: '', student_number: '', course: '', year_level: '', section: '', campus: '', goal: '',
-});
 
 // Auth metadata is editable input, never evidence of student admission.
 export function readRegistrationDraft(value: unknown): RegistrationDraft | null {
   if (!value || typeof value !== 'object') return null;
-  const draft = value as Partial<RegistrationDraft>;
+  const draft = value as { version?: unknown; student?: unknown; semesterId?: unknown; enrollmentOptionId?: unknown };
+  if ((draft.version !== 1 && draft.version !== 2) || !draft.student || typeof draft.student !== 'object') return null;
+  const student = draft.student as { student_number?: unknown; name?: unknown; goal?: unknown };
+  if (typeof student.student_number !== 'string' || student.student_number.length > LIMITS.student_number
+    || typeof student.name !== 'string' || student.name.length > LIMITS.name) return null;
+  const identity = { student_number: student.student_number, name: student.name };
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (draft.version !== 1 || typeof draft.semesterId !== 'string' || !uuid.test(draft.semesterId)
-    || typeof draft.enrollmentOptionId !== 'string' || !uuid.test(draft.enrollmentOptionId)
-    || !draft.student || typeof draft.student !== 'object') return null;
-  const student = emptyStudentFields();
-  for (const field of Object.keys(student) as (keyof StudentFields)[]) {
-    const text = draft.student[field];
-    if (typeof text !== 'string' || text.length > (field === 'year_level' ? 30 : LIMITS[field])) return null;
-    student[field] = text;
+  if (draft.version === 1 && typeof student.goal === 'string' && student.goal.trim() && student.goal.length <= LIMITS.goal
+    && typeof draft.semesterId === 'string' && uuid.test(draft.semesterId)
+    && typeof draft.enrollmentOptionId === 'string' && uuid.test(draft.enrollmentOptionId)) {
+    return { ...identity, enrollment: { goal: student.goal, semesterId: draft.semesterId, enrollmentOptionId: draft.enrollmentOptionId } };
   }
-  return { version: 1, student, semesterId: draft.semesterId, enrollmentOptionId: draft.enrollmentOptionId };
-}
-
-export function registrationInput(draft: RegistrationDraft): RegistrationInput {
-  return { name: draft.student.name, studentNumber: draft.student.student_number, goal: draft.student.goal,
-    semesterId: draft.semesterId, enrollmentOptionId: draft.enrollmentOptionId };
+  return identity;
 }

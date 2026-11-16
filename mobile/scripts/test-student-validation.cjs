@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const ts = require('typescript');
 const source = ts.transpileModule(fs.readFileSync(path.resolve(__dirname, '../src/lib/student-validation.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const mod = { exports: {} }; vm.runInThisContext('(function(exports){' + source + '\n})')(mod.exports);
-const { cleanName, cleanStudentNumber, validateStudent, studentPayload, normalizeProgram, normalizeYear, emailError, passwordError } = mod.exports;
+const { cleanName, cleanStudentNumber, validateStudent, studentPayload, normalizeProgram, normalizeYear, studentLoginIdError, passwordError } = mod.exports;
 const options = [{ id: '1', course: 'BSCS', year_level: '4th Year', campus: 'Test Campus', section: 'A' }, { id: '2', course: 'BSEd', year_level: '1st Year', campus: 'Test Campus', section: 'B' }];
 const valid = { name: "Ana-Maria O'Neil", student_number: '202311197', course: 'BSCS', year_level: '4th Year', campus: 'Test Campus', section: 'A', goal: 'Learn more' };
 let count = 0;
@@ -19,8 +19,9 @@ test('student number accepts exactly nine digits and strips invalid input', () =
   for (const student_number of ['12345678', '1234567890', '2023-1197', 'abcdefghi']) assert(validateStudent({ ...valid, student_number }, options).student_number);
   assert.equal(cleanStudentNumber('2023-11197abc88'), '202311197'); assert.deepEqual(validateStudent(valid, options), {});
 });
-test('email and password boundaries retain 15-character minimum', () => {
-  assert.equal(emailError('user+tag@example.edu'), undefined); assert(emailError('a@b')); assert(emailError('a b@c.edu')); assert(emailError('a'.repeat(250) + '@b.edu'));
+test('login accepts recorded legacy IDs and new passwords keep the 15-character minimum', () => {
+  assert.equal(studentLoginIdError(' 202311197 '), undefined); assert.equal(studentLoginIdError('LEGACY-123'), undefined);
+  assert(studentLoginIdError(' ')); assert(studentLoginIdError('x'.repeat(65)));
   assert(passwordError('a'.repeat(14))); assert.equal(passwordError('a'.repeat(15)), undefined); assert.equal(passwordError('a'.repeat(72)), undefined); assert(passwordError('a'.repeat(73))); assert(passwordError('é'.repeat(37)));
 });
 test('dropdown combinations and custom programs are validated', () => {

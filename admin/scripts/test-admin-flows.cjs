@@ -205,34 +205,6 @@ async function semesters() {
   h.unmount();
 }
 
-async function enrollment() {
-  const h = hookHarness(), requests = [];
-  let context = 'sign-in', appState;
-  const validation = load('mobile/src/lib/student-validation.ts', h).exports;
-  const catalogue = load('mobile/src/lib/enrollment-catalogue.ts', h, { './student-validation': validation }).exports;
-  const mod = load('mobile/src/hooks/use-enrollment-options.ts', h, {
-    '@/lib/enrollment-catalogue': catalogue,
-    'react-native': { AppState: { currentState: 'active', addEventListener: (_event, fn) => { appState = fn; return { remove() {} }; } } },
-    '@/supabase': { supabase: { rpc: () => ({ abortSignal: signal => { const pending = deferred(); requests.push({ signal, pending }); return pending.promise; } }) } },
-  });
-  h.mount(() => mod.exports.useEnrollmentOptions({ kind: 'profile', context }));
-  await flush(); requests[0].pending.resolve({ data: [], error: null }); await flush();
-  context = 'sign-up'; h.render(); await flush();
-  assert.equal(h.value.loading, true);
-  const fresh = [{ id: '03400000-0000-4000-8000-000000000101', course: 'BSCS', year_level: '4th Year', campus: 'Campus', section: 'B' }];
-  requests[1].pending.resolve({ data: fresh, error: null }); await flush();
-  assert.equal(h.value.options[0].section, 'B');
-  h.value.retry(); await flush();
-  assert.equal(h.value.isRefreshing, true);
-  requests[2].pending.resolve({ data: null, error: new Error('Offline') }); await flush();
-  assert(h.value.error); assert.equal(h.value.status, 'error'); assert.equal(h.value.options.length, 1);
-  appState('background'); appState('active'); await flush();
-  requests[3].pending.resolve({ data: fresh, error: null }); await flush();
-  assert.equal(h.value.options[0].id, fresh[0].id); assert.equal(h.value.error, null);
-  h.value.retry(); await flush(); h.unmount();
-  assert.equal(requests[4].signal.aborted, true);
-}
-
 async function main() {
   await test('reports reject stale results, audit matching filters and cancel changed exports', reports);
   await test('student search, filters and pagination preserve query and retry behavior', tables);
@@ -240,7 +212,6 @@ async function main() {
   await test('student drafts survive failed saves and duplicate submissions are blocked', studentSave);
   await test('OSAS access is included for active admins without capability controls', capabilities);
   await test('semester switch resets section edits and activation uses explicit sections', semesters);
-  await test('registration reloads on form entry, retry and foreground with cancellation', enrollment);
-  console.log(count + ' admin/enrollment flow regressions passed.');
+  console.log(count + ' admin flow regressions passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

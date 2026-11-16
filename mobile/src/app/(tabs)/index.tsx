@@ -48,7 +48,7 @@ export default function HomeScreen() {
     : 'No quest recommended right now';
   const place = next?.quest.location_id ? locations.find(item => item.id === next.quest.location_id) : undefined;
   const whyButton = <IconButton icon="information-circle-outline" label="Why this quest" onPress={() => setWhyOpen(true)} />;
-  const displayName = profile?.display_name?.trim() || profile?.name?.trim() || user?.email?.split('@')[0] || 'Explorer';
+  const displayName = profile?.display_name?.trim() || profile?.name?.trim() || 'Explorer';
   const avatarUri = typeof user?.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : undefined;
   return <>
     <ScreenFrame tab viewportRef={viewportRef} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={c.primary} colors={[c.primary]} />}>

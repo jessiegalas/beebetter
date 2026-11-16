@@ -1,4 +1,4 @@
--- Explicitly authorized disposable database only, after migration 034. Always rolls back.
+-- Explicitly authorized disposable database only, after migration 043. Always rolls back.
 begin;
 create function pg_temp.assert_true(value boolean,label text) returns void language plpgsql as $$
 begin if value is distinct from true then raise exception 'Assertion failed: %',label; end if; end; $$;
@@ -40,10 +40,12 @@ select set_config('request.jwt.claim.sub','',true);
 select pg_temp.expect_denied($q$select public.student_get_registration_state()$q$);
 select set_config('request.jwt.claim.sub','03400000-0000-4000-8000-000000000002',true);
 select pg_temp.assert_true(public.student_get_registration_state()='confirmation_required','unconfirmed state');
+select pg_temp.assert_true(public.student_complete_registration(null,'934000002',null,null,null)->>'code'='email_not_confirmed','ID-only registration still requires email confirmation');
 select pg_temp.assert_true((select public.student_complete_registration('New Student','934000002','Build habits',semester_id,id)->>'code'='email_not_confirmed' from fixture_option),'unconfirmed completion denied');
 select pg_temp.expect_denied($q$insert into public.students(id,student_number,name,email,course,year_level,campus,section,goal) values('03400000-0000-4000-8000-000000000002','934000002','Student','a@example.invalid','BSCS','4th Year','Bacoor','1','Build habits')$q$);
 select set_config('request.jwt.claim.sub','03400000-0000-4000-8000-000000000004',true);
 select pg_temp.assert_true(public.student_get_registration_state()='unavailable','administrator unavailable');
+select pg_temp.assert_true(public.student_complete_registration(null,'934000004',null,null,null)->>'code'='registration_unavailable','administrator cannot register with an ID alone');
 select pg_temp.assert_true((select public.student_complete_registration('New Student','934000004','Build habits',semester_id,id)->>'code'='registration_unavailable' from fixture_option),'administrator completion denied');
 select set_config('request.jwt.claim.sub','03400000-0000-4000-8000-000000000001',true);
 select pg_temp.assert_true(public.student_get_registration_state()='onboarding_required','confirmed incomplete state');
@@ -65,7 +67,18 @@ update public.student_enrollment_options set is_active=true where id=(select id 
 update public.academic_semesters set status='archived',archived_at=now() where id=(select semester_id from fixture_option);
 set local role authenticated;
 select pg_temp.assert_true((select public.student_complete_registration('Other Student','934000003','Build habits',semester_id,id)->>'code'='enrollment_changed' from fixture_option),'semester rollover rejects old period');
+select pg_temp.assert_true(public.student_complete_registration(null,'934000001',null,null,null)->>'code'='student_number_unavailable','ID-only registration rejects duplicates');
+select pg_temp.assert_true(public.student_complete_registration(null,'934000003',null,null,null)->>'status'='completed','ID alone completes registration without an active semester');
+select pg_temp.assert_true(public.student_get_registration_state()='active','ID-only student is admitted');
+update public.students set name='Honey Bee' where id=auth.uid();
+select pg_temp.assert_true((select display_name='Honey Bee' from public.profiles where id=auth.uid()),'nickname update syncs the profile');
+update public.students set name='' where id=auth.uid();
+select pg_temp.assert_true((select display_name is null from public.profiles where id=auth.uid()),'nickname can be cleared');
 reset role;
+select pg_temp.assert_true((select semester_id is null and enrollment_option_id is null and goal='' and name=''
+  from public.students where id='03400000-0000-4000-8000-000000000003'),'unassigned student uses existing defaults');
+select pg_temp.assert_true((select count(*)=1 from public.student_enrollment_history
+  where student_id='03400000-0000-4000-8000-000000000003' and enrollment_option_id is null),'nickname changes preserve the initial unassigned period');
 update public.academic_semesters set status='active',activated_at=now(),archived_at=null where id=(select semester_id from fixture_option);
 update public.students set status='Inactive' where id='03400000-0000-4000-8000-000000000001';
 set local role authenticated;
@@ -74,4 +87,29 @@ select pg_temp.assert_true(public.student_get_registration_state()='blocked','su
 select pg_temp.assert_true((select public.student_complete_registration('New Student','934000001','Build habits',semester_id,id)->>'code'='registration_unavailable' from fixture_option),'suspended account cannot reregister');
 reset role;
 select pg_temp.assert_true((select count(*)=1 from public.student_enrollment_history where student_id='03400000-0000-4000-8000-000000000005'),'legacy history preserved');
+
+-- The Auth Admin service marker provisions a student atomically. Metadata an
+-- ordinary signup can supply must never enter this path.
+insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data,raw_user_meta_data)
+values ('04300000-0000-4000-8000-000000000001','student-04300000-0000-4000-8000-000000000001@beebetter.invalid',now(),
+  '{"student_login":"id_password"}','{"student_number":"943000001","name":""}'),
+ ('04300000-0000-4000-8000-000000000002','registration-043@example.invalid',null,
+  '{}','{"signup_intent":"student_registration","student_login":"id_password","student_number":"943000002"}');
+select pg_temp.assert_true((select email='' and name='' and status='Active' and enrollment_option_id is null
+  from public.students where id='04300000-0000-4000-8000-000000000001'),'student signup stores no email or enrollment');
+select pg_temp.assert_true(not exists(select 1 from public.students where id='04300000-0000-4000-8000-000000000002'),
+  'client metadata cannot provision a student');
+set local role authenticated;
+select set_config('request.jwt.claim.sub','04300000-0000-4000-8000-000000000001',true);
+select pg_temp.assert_true(public.student_get_registration_state()='active','ID/password signup is admitted');
+select pg_temp.expect_denied($q$select public.student_password_identity('943000001')$q$);
+select pg_temp.expect_denied($q$select public.reserve_student_signup()$q$);
+reset role;
+set local role service_role;
+select pg_temp.assert_true((select email='student-04300000-0000-4000-8000-000000000001@beebetter.invalid' and status='Active'
+  from public.student_password_identity('943000001')),'server can look up the internal identity by student ID');
+select pg_temp.assert_true((select email='registration-1@example.invalid' and status='Inactive'
+  from public.student_password_identity('934000001')),'server can look up an established email account by student ID');
+select pg_temp.assert_true(public.reserve_student_signup(),'server can reserve an account creation attempt');
+reset role;
 rollback;

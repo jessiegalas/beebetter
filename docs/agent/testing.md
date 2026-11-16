@@ -10,7 +10,7 @@ Read when choosing checks for affected behavior. Batch related edits, run target
 | `mobile/` | `npm run test:workspace` for workspace reads/cancellation; `npm run test:completion` for proof/completion coordination; `npm run test:ui` for synthetic screen interactions. |
 | `mobile/` | `node scripts/test-quest-notifications.cjs` for current notification actions/registration (present in working tree; no npm script). |
 | `admin/` | `npm run build` (`tsc -b` plus Vite); `npm run lint` (Oxlint, not ESLint); `npm run test:report` for CSV/report behavior; `npm run test:auth` for mocked session/role/access-request behavior. |
-| `admin/` | `npm run test:flows` for mocked report request/export ordering, student query transitions, semester edit/activation flow, and mobile enrollment refresh/cancellation. |
+| `admin/` | `npm run test:flows` for mocked report request/export ordering, student query transitions, and semester edit/activation flow. |
 | Repository root | `git diff --check`; inspect changed-file scope and documentation paths. |
 
 Shared validation or cross-client contracts require checks in both apps. For shared student validation, include mobile TypeScript/student tests and admin checks. Documentation-only tasks require diff/path/reference checks, not application test suites or migration execution.

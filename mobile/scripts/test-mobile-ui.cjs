@@ -654,7 +654,7 @@ test('Home header, shortcuts and recommendation use existing account and quest d
  assert.equal(find(h.value,n=>n.props?.label==='Open notifications'),undefined);
  assert(find(h.value,n=>n.props?.label==='Open menu'));assert(button(h.value,'View quest'));
  features.MOBILE_NOTIFICATIONS_ENABLED=true;
- data.user.user_metadata={};data.profile.display_name='';h.render();assert.ok(text(h.value).includes('Hi, fallback!'));assert.equal(find(h.value,n=>n.type==='Avatar'),undefined);assert.equal(find(h.value,n=>n.type==='HomeMenu').props.avatarUri,undefined);h.unmount();
+ data.user.user_metadata={};data.profile.display_name='';h.render();assert.ok(text(h.value).includes('Hi, Explorer!'));assert.equal(find(h.value,n=>n.type==='Avatar'),undefined);assert.equal(find(h.value,n=>n.type==='HomeMenu').props.avatarUri,undefined);h.unmount();
 });
 test('Skill Tree generates live buds and durable leaves, with list fallback and catch-up', async () => {
  const h=hooks(),calls=[],acknowledged=[],routes=[];

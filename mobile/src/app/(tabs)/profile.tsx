@@ -8,9 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Disclosure, ScreenFrame } from '@/components/mobile-ui';
 import { Controls, Layout, Radii, Spacing, useBeePalette } from '@/constants/theme';
 import { StudentInformationFields } from '@/components/student-information-fields';
-import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
-import { validateStudent, studentPayload } from '@/lib/student-validation';
-import { useUserData, StudentProfileUpdates } from '@/hooks/use-user-data';
+import { validateStudentIdentity, studentIdentityPayload, type StudentIdentity } from '@/lib/student-validation';
+import { useUserData } from '@/hooks/use-user-data';
 import { evaluateAchievements } from '@/lib/progression';
 export default function ProfileScreen() {
     const COLORS = useBeePalette();
@@ -18,12 +17,10 @@ export default function ProfileScreen() {
     const expandedLayout = width < Layout.wideBreakpoint && fontScale >= Layout.largeTextScale;
     const { user, profile, completionHistory, progressSummary, levelProgress, isRefreshing, refresh, updateProfile, signOut, isSigningOut, workspaceErrors, retryWorkspace, } = useUserData();
     const [editing, setEditing] = useState(false);
-    const [draft, setDraft] = useState<StudentProfileUpdates | null>(null);
+    const [draft, setDraft] = useState<StudentIdentity | null>(null);
     const [saving, setSaving] = useState(false);
-    const enrollment = useEnrollmentOptions({ kind: 'profile', context: user?.id ?? 'profile' });
-    const fieldErrors = draft ? validateStudent(draft, enrollment.options, profile ?? undefined) : {};
+    const fieldErrors = draft ? validateStudentIdentity(draft, profile ?? undefined) : {};
     const displayName = profile?.display_name ||
-        user?.email?.split('@')[0] ||
         (user ? 'Bee Explorer' : 'Guest Explorer');
     const initials = displayName
         .split(' ')
@@ -40,11 +37,6 @@ export default function ProfileScreen() {
         setDraft({
             student_number: profile.student_number,
             name: profile.name,
-            course: profile.course,
-            year_level: profile.year_level,
-            section: profile.section,
-            campus: profile.campus,
-            goal: profile.goal,
         });
         setEditing(true);
     };
@@ -56,7 +48,7 @@ export default function ProfileScreen() {
             return;
         }
         setSaving(true);
-        const result = await updateProfile(studentPayload(draft, profile ?? undefined));
+        const result = await updateProfile(studentIdentityPayload(draft, profile ?? undefined));
         setSaving(false);
         if (!result.success) {
             Alert.alert('Could not save profile', result.error || 'Please try again.');
@@ -102,9 +94,6 @@ export default function ProfileScreen() {
     <ThemedText type="subtitle">
     {displayName}
     </ThemedText>
-    <ThemedText type="small" style={{ color: COLORS.muted }}>
-    {profile?.email || user?.email}
-    </ThemedText>
     </View>
     </View>
     <XpProgress progress={levelProgress} scope="Account" />
@@ -126,17 +115,14 @@ export default function ProfileScreen() {
         <Button intent="quiet" label={'Retry ' + scope} onPress={() => void retryWorkspace(scope)}/>
         </View>)}
     </View>
-    <Disclosure title="Student information" summary={profile?.course || 'Your enrollment and current goal'} defaultOpen={false}>
+    <Disclosure title="Student information" summary="Your student ID and optional name" defaultOpen={false}>
       {editing && draft ? <>
-        <StudentInformationFields value={draft} onChange={setDraft} options={enrollment.options} errors={fieldErrors} loading={enrollment.loading} loadError={enrollment.error} onRetry={enrollment.retry} disabled={saving} original={profile ?? undefined}/>
+        <StudentInformationFields value={draft} onChange={setDraft} errors={fieldErrors} disabled={saving}/>
         <Button label="Save student information" loading={saving} disabled={Object.keys(fieldErrors).length > 0} onPress={() => void saveProfile()}/>
         <Button label="Cancel editing" intent="quiet" disabled={saving} onPress={() => { setEditing(false); setDraft(null); }}/>
         </> : <>
-        <InfoRow label="Student number" value={profile?.student_number || 'Not provided'}/>
-        <InfoRow label="Course" value={profile?.course || 'Not provided'}/>
-        <InfoRow label="Year / section" value={(profile?.year_level || 'Not provided') + ' · ' + (profile?.section || 'Not provided')}/>
-        <InfoRow label="Campus" value={profile?.campus || 'Not provided'}/>
-        <InfoRow label="Current goal" value={profile?.goal || 'No goal set'}/>
+        <InfoRow label="Student ID" value={profile?.student_number || 'Not provided'}/>
+        <InfoRow label="Name or nickname" value={profile?.name || 'Not set'}/>
         <Button label="Edit student information" intent="secondary" icon="create-outline" onPress={startEditing}/>
         </>}
     </Disclosure>

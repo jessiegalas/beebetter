@@ -9,7 +9,7 @@ type HistoryRow = CompletionRecord & { total_count: number };
 type SummaryRow = { total_completed: number; academics_completed: number; habits_completed: number; social_completed: number; health_completed: number; total_xp: number; level: number; current_streak: number };
 type BranchRow = { category: string; xp: number; completed: number };
 type ReadResult<T> = { data: T | null; failed: boolean };
-type WorkspaceInput = { user: Pick<User, 'id' | 'email'>; student: Partial<UserProfile>; isCurrent: () => boolean };
+type WorkspaceInput = { user: Pick<User, 'id'>; student: Partial<UserProfile>; isCurrent: () => boolean };
 export type WorkspaceRead = {
   slices: WorkspaceSlice[];
   errors: WorkspaceErrors;
@@ -126,8 +126,8 @@ export function createStudentWorkspaceReader(client: Pick<SupabaseClient, 'from'
               id: input.user.id,
               display_name: profileRow?.display_name ?? student.name ?? null,
               student_number: student.student_number ?? 'LEGACY-' + input.user.id.replaceAll('-', '').slice(0, 8).toUpperCase(),
-              name: student.name ?? profileRow?.display_name ?? input.user.email?.split('@')[0] ?? 'Bee Explorer',
-              email: student.email ?? input.user.email ?? '', course: student.course ?? 'Undeclared',
+              name: student.name ?? profileRow?.display_name ?? '',
+              email: student.email ?? '', course: student.course ?? 'Undeclared',
               year_level: student.year_level ?? 'Not specified', section: student.section ?? 'Not specified', campus: student.campus ?? 'Not specified',
               goal: student.goal ?? '', status: 'Active',
               level: profileRow?.level ?? previous?.level ?? 1, total_xp: profileRow?.total_xp ?? previous?.total_xp ?? 0,

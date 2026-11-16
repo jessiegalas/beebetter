@@ -31,7 +31,7 @@ const STATUS_LABELS: Record<SupportRequest['status'], string> = {
 export default function SupportRequestsScreen() {
   const COLORS = useBeePalette();
   const styles = useBeeStyles(makeStyles);
-  const { user } = useUserData();
+  const { profile, user } = useUserData();
   const [requests, setRequests] = useState<SupportRequest[]>([]);
   const [category, setCategory] = useState<SupportRequest['category']>('academic');
   const [contact, setContact] = useState<SupportRequest['preferred_contact']>('email');
@@ -91,7 +91,7 @@ export default function SupportRequestsScreen() {
           <ThemedText style={styles.counter}>{message.length}/2000</ThemedText>
           <ChoiceGroup title="Preferred contact" options={CONTACTS} value={contact} onChange={value => setContact(value as SupportRequest['preferred_contact'])} />
           <ThemedText style={styles.hint}>{CONTACTS.find(item => item.value === contact)?.hint}</ThemedText>
-          <TextInput style={styles.input} value={contactDetail} onChangeText={setContactDetail} maxLength={254} placeholder={contact === 'phone' ? 'Phone number' : contact === 'email' ? user?.email ?? 'Email address' : 'Optional contact detail'} placeholderTextColor={COLORS.muted} accessibilityLabel="Contact detail" />
+          <TextInput style={styles.input} value={contactDetail} onChangeText={setContactDetail} maxLength={254} placeholder={contact === 'phone' ? 'Phone number' : contact === 'email' ? profile?.email || 'Email address' : 'Optional contact detail'} placeholderTextColor={COLORS.muted} accessibilityLabel="Contact detail" />
           <ChoiceGroup title="Requested response" options={PRIORITIES} value={priority} onChange={value => setPriority(value as SupportRequest['priority'])} />
           <TouchableOpacity style={styles.consentRow} onPress={() => setConsent(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: consent }}>
             <View style={[styles.checkbox, consent && styles.checkboxChecked]}>{consent && <Ionicons name="checkmark" size={20} color="#2D241D" />}</View>

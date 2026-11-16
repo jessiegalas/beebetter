@@ -2,7 +2,6 @@ const assert = require('node:assert/strict');
 const { hooks, load } = require('./test-harness.cjs');
 const access = load('src/lib/account-access.ts');
 const validation = load('src/lib/student-validation.ts');
-const catalogue = load('src/lib/enrollment-catalogue.ts', { './student-validation': validation });
 const authFlow = load('src/lib/auth-flow.ts', { './student-validation': validation });
 const pause = () => new Promise(resolve => setTimeout(resolve, 5));
 async function flush() { for (let i = 0; i < 4; i++) await pause(); }
@@ -13,21 +12,31 @@ const ok = data => ({ data, error: null });
 const registrationOption = { id: '03400000-0000-4000-8000-000000000101', semester_id: '03400000-0000-4000-8000-000000000102', academic_year: '2026-2027', term: '1st Semester', course: 'BSCS', year_level: '4th Year', campus: 'Bacoor', section: '1' };
 const registrationDraft = { version: 1, semesterId: registrationOption.semester_id, enrollmentOptionId: registrationOption.id,
   student: { name: 'Maria Cruz', student_number: '202311197', goal: 'Build habits', course: 'BSCS', year_level: '4th Year', campus: 'Bacoor', section: '1' } };
-const pendingStudent = id => ({ ...user(id), user_metadata: { signup_intent: 'student_registration', registration_draft: registrationDraft } });
+const studentIdentity = { name: '', student_number: '202311197' };
+const identityDraft = { version: 2, student: studentIdentity };
+const pendingStudent = (id, draft = identityDraft) => ({ ...user(id), user_metadata: { signup_intent: 'student_registration', registration_draft: draft } });
 
 function provider(initialUser = user('a'), initialState = {}, notificationLifecycle) {
   const h = hooks();
   let authCallback;
   const appCallbacks = new Set();
-  const state = { session: initialUser ? { user: initialUser } : null, status: 'Active', queries: [], signouts: [], cancellations: 0, authCalls: 0, signupSession: false, ...initialState };
+  const state = { session: initialUser ? { user: initialUser } : null, status: 'Active', queries: [], signouts: [], cancellations: 0, authCalls: 0, ...initialState };
   const emit = (next, event = next ? 'SIGNED_IN' : 'SIGNED_OUT') => {
     state.session = next ? { user: next } : null;
     authCallback(event, state.session);
   };
   const supabase = {
+    functions: {
+      invoke: async (name, { body }) => {
+        assert.equal(name, 'student-auth');
+        state.authCalls++; state.authInput = body;
+        if (state.loginWait) await state.loginWait.promise;
+        if (state.authError) return { error: {}, response: { json: async () => ({ code: state.authError }) } };
+        return ok({ access_token: 'student-access', refresh_token: 'student-refresh' });
+      },
+    },
     auth: {
       startAutoRefresh: () => { state.refreshStarts = (state.refreshStarts || 0) + 1; }, stopAutoRefresh: () => { state.refreshStops = (state.refreshStops || 0) + 1; },
-      resetPasswordForEmail: async (email, options) => { state.reset = { email, options }; return { error: null }; },
       updateUser: async input => {
         state.updated = input;
         if (state.updateWait) await state.updateWait.promise;
@@ -37,9 +46,6 @@ function provider(initialUser = user('a'), initialState = {}, notificationLifecy
       exchangeCodeForSession: async code => { state.exchange = code; emit(state.callbackUser || user('a')); return { error: state.exchangeError || null }; },
       setSession: async tokens => { state.tokens = tokens; emit(user('a')); return { error: null }; },
       getSession: async () => { if (state.sessionError) throw new Error('Storage unavailable'); return { data: { session: state.session }, error: null }; },
-      signInWithPassword: async () => { state.authCalls++; if (state.loginWait) await state.loginWait.promise; if (state.authError) return { error: typeof state.authError === 'string' ? new Error(state.authError) : state.authError }; emit(state.loginUser || user('a')); return { error: null }; },
-      signUp: async input => { state.signupInput = input; state.authCalls++; if (state.authError) return { data: { session: null }, error: new Error(state.authError) }; if (state.signupSession) emit(user('a')); return { data: { session: state.signupSession ? { user: user('a') } : null }, error: null }; },
-      resend: async () => { state.resendCalls = (state.resendCalls || 0) + 1; return state.authError ? { error: new Error(state.authError) } : { error: null }; },
       onAuthStateChange: fn => { authCallback = fn; return { data: { subscription: { unsubscribe() {} } } }; },
       signOut: async options => {
         state.signouts.push(options.scope);
@@ -74,7 +80,7 @@ function provider(initialUser = user('a'), initialState = {}, notificationLifecy
       state.rpcCalls ??= []; state.rpcCalls.push({ name, args });
       if (state.rpc) { const result = state.rpc(name, args); if (result !== undefined) return result; }
       if (name === 'complete_quest_v2') return ok({ status: 'completed', title: 'Quest', awarded_xp: 25, total_xp: 25 });
-      return ok(name === 'registration_enrollment_options_v2' ? [registrationOption] : name === 'student_list_recommendation_candidates' ? [quest] : name === 'student_get_current_streak' ? 0 : name === 'student_get_registration_state' ? (state.registrationState || (state.missing ? 'unavailable' : 'active')) : []);
+      return ok(name === 'student_list_recommendation_candidates' ? [quest] : name === 'student_get_current_streak' ? 0 : name === 'student_get_registration_state' ? (state.registrationState || (state.missing ? 'unavailable' : 'active')) : []);
     })(); task.abortSignal = () => task; return task; },
     storage: { from: () => ({
       upload: async (path, bytes, options) => { state.uploads ??= []; state.uploads.push({ path, bytes, options }); return state.upload ? state.upload() : ok(null); },
@@ -91,7 +97,7 @@ function provider(initialUser = user('a'), initialState = {}, notificationLifecy
   const mod = load('src/context/user-data-context.tsx', {
     react: h.react,
     'expo-linking': { createURL: (path, options) => 'beebetter://' + path + (options.queryParams ? '?flow=recovery' : ''), getInitialURL: async () => state.initialUrl || null, addEventListener: (_, fn) => { state.link = fn; return { remove() {} }; } },
-    '@/lib/auth-flow': authFlow, '@/lib/enrollment-catalogue': catalogue, '@/lib/student-validation': validation,
+    '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation,
     '@/lib/progression': load('src/lib/progression.ts'),
     '@/lib/recommendation-facts': load('src/lib/recommendation-facts.ts'),
     '@/lib/student-workspace': load('src/lib/student-workspace.ts', {}),
@@ -129,24 +135,20 @@ for (const mode of ['Inactive', 'missing', 'unknown']) test(`${mode} restored ac
   if (mode === 'Inactive') assert.equal(p.h.value.accessMessage, access.SUSPENDED_MESSAGE);
   p.close();
 });
-test('context owns login, signup, and confirmation resend operations', async () => {
+test('student ID login still respects provider admission', async () => {
   const p = provider(null); await flush();
   p.state.status = 'Inactive';
-  const denied = await p.h.value.signIn('a@example.test', 'password'); await flush();
+  const denied = await p.h.value.signIn(studentIdentity.student_number, 'password'); await flush();
   assert.equal(denied.status, 'session_created');
   assert.equal(p.h.value.access, 'blocked');
   p.state.status = 'Active';
-  const admitted = await p.h.value.signIn('a@example.test', 'password'); await flush();
+  const admitted = await p.h.value.signIn(studentIdentity.student_number, 'password'); await flush();
   assert.equal(admitted.status, 'session_created');
   assert.equal(p.h.value.access, 'active');
-  p.state.authError = 'Invalid login credentials';
-  const failed = await p.h.value.signIn('a@example.test', 'wrong');
+  p.state.authError = 'invalid_credentials';
+  const failed = await p.h.value.signIn(studentIdentity.student_number, 'wrong');
   assert.equal(failed.status, 'error');
-  assert.equal(failed.message, 'Invalid login credentials');
-  p.state.authError = null;
-  assert.equal((await p.h.value.signUp('a@example.test', 'a'.repeat(15), registrationDraft)).status, 'confirmation_required');
-  assert.equal((await p.h.value.resendConfirmation('a@example.test', 'beebetter://auth')).status, 'completed');
-  assert.equal(p.state.resendCalls, 1);
+  assert.equal(failed.code, 'invalid_credentials');
   p.close();
 });
 test('verification failure closes access and retry recovers', async () => {
@@ -186,7 +188,7 @@ test('duplicate logout shares cleanup and blocks late refresh events', async () 
   assert.equal(p.h.value.user, null);
   p.emit(user('a'), 'TOKEN_REFRESHED'); await flush();
   assert.equal(p.h.value.access, 'signed_out');
-  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'error');
+  assert.equal((await p.h.value.signIn(studentIdentity.student_number, 'password')).status, 'error');
   p.state.signoutWait.resolve(); assert.equal((await first).status, 'signed_out'); await flush();
   assert.deepEqual(p.state.signouts, ['global']);
   assert.equal(p.h.value.isSigningOut, false);
@@ -199,17 +201,17 @@ for (const failure of ['signoutError', 'signoutThrows']) test(`${failure} is con
   assert.equal(p.h.value.access, 'blocked');
   assert.equal(p.h.value.user, null);
   assert.equal(p.h.value.isSigningOut, false);
-  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'error');
+  assert.equal((await p.h.value.signIn(studentIdentity.student_number, 'password')).status, 'error');
   p.state[failure] = false; await p.h.value.signOut(); await flush();
   assert.equal(p.h.value.access, 'signed_out');
-  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'session_created');
+  assert.equal((await p.h.value.signIn(studentIdentity.student_number, 'password')).status, 'session_created');
   p.close();
 });
 test('successful logout clears access and allows a later login', async () => {
   const p = provider(); await flush();
   assert.equal((await p.h.value.signOut()).status, 'signed_out'); await flush();
   assert.equal(p.h.value.access, 'signed_out');
-  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'session_created'); await flush();
+  assert.equal((await p.h.value.signIn(studentIdentity.student_number, 'password')).status, 'session_created'); await flush();
   assert.equal(p.h.value.access, 'active');
   p.close();
 });
@@ -223,7 +225,7 @@ test('logout with no session is safe and notification cleanup failure is indepen
 });
 test('authentication works with an explicitly disabled notification integration', async () => {
   const p = provider(null, {}, { start: () => () => {}, cleanup: async () => {} }); await flush();
-  assert.equal((await p.h.value.signIn('a@example.test', 'password')).status, 'session_created'); await flush();
+  assert.equal((await p.h.value.signIn(studentIdentity.student_number, 'password')).status, 'session_created'); await flush();
   assert.equal(p.h.value.access, 'active'); assert.equal(p.h.value.user.id, 'a');
   assert.equal((await p.h.value.signOut()).status, 'signed_out'); await flush();
   assert.equal(p.h.value.access, 'signed_out'); assert.equal(p.state.cancellations, 0); p.close();
@@ -524,7 +526,7 @@ test('foreground polling detects suspension without an Auth event', async () => 
 test('callbacks retained from an earlier login cannot mutate a new session', async () => {
   const p = provider(); await flush(); const oldAdd = p.h.value.addQuest;
   await p.h.value.signOut(); await flush();
-  await p.h.value.signIn('a@example.test', 'password'); await flush();
+  await p.h.value.signIn(studentIdentity.student_number, 'password'); await flush();
   const count = p.state.queries.length;
   const result = await oldAdd({ title: 'Old callback', category: 'Habits', xp: 20 });
   assert.equal(result.success, false); assert.equal(p.state.queries.length, count); p.close();
@@ -608,17 +610,17 @@ for (const foreground of ['denied', 'granted']) test('foreground ' + foreground 
 
 test('logout waits for a delayed login and removes its persisted SDK session', async () => {
   const p = provider(null); await flush(); p.state.loginWait = deferred();
-  const login = p.h.value.signIn('a@example.test', 'legacy'); await pause();
+  const login = p.h.value.signIn(studentIdentity.student_number, 'legacy'); await pause();
   const logout = p.h.value.signOut(); let settled = false; logout.then(() => { settled = true; });
   await flush(); assert.equal(settled, false); assert.equal(p.h.value.user, null);
   p.state.loginWait.resolve(); assert.equal((await login).code, 'operation_cancelled'); await logout; await flush();
   assert.equal(p.state.session, null); assert.equal(p.h.value.access, 'signed_out'); p.close();
 });
-test('structured unconfirmed failures and returning-account resend remain available', async () => {
-  const p = provider(null); await flush(); p.state.authError = { code: 'email_not_confirmed', message: 'Localized text' };
-  const result = await p.h.value.signIn('returning@example.test', 'legacy');
-  assert.equal(result.code, 'email_not_confirmed'); p.state.authError = null;
-  assert.equal((await p.h.value.resendConfirmation('returning@example.test')).status, 'completed'); p.close();
+test('student ID login preserves the older-account help error', async () => {
+  const p = provider(null); await flush(); p.state.authError = 'legacy_confirmation_required';
+  const result = await p.h.value.signIn(studentIdentity.student_number, 'legacy');
+  assert.equal(result.code, 'legacy_confirmation_required');
+  assert.equal(p.state.tokens, undefined); p.close();
 });
 test('cold-start recovery persists its restriction until password update succeeds', async () => {
   const p = provider(user('a'), { initialUrl: 'beebetter://auth?code=recovery-code&flow=recovery' }); await flush();
@@ -642,14 +644,14 @@ test('implicit links remain supported and foreign URLs cannot exchange credentia
   assert.equal(p.state.tokens.access_token, 'synthetic'); assert.equal(p.h.value.access, 'active');
   const expired = await p.h.value.handleAuthCallback('beebetter://auth?error_code=otp_expired'); assert.equal(expired.code, 'otp_expired'); p.close();
 });
-test('confirmed incomplete registrations restore onboarding and submit explicit identities', async () => {
+test('confirmed incomplete registrations can submit a student ID without a name or enrollment', async () => {
   const p = provider(); p.state.missing = true; p.state.registrationState = 'onboarding_required'; await flush();
   assert.equal(p.h.value.access, 'onboarding_required'); assert.equal(p.h.value.user, null);
   p.state.rpc = name => { if (name === 'student_complete_registration') { p.state.missing = false; p.state.registrationState = 'active'; return ok({ status: 'completed' }); } };
-  const result = await p.h.value.completeRegistration({ name: 'Student', studentNumber: '2026-12345', goal: 'Build habits', semesterId: 'semester', enrollmentOptionId: 'option' });
+  const result = await p.h.value.completeRegistration(studentIdentity);
   assert.equal(result.status, 'completed'); await flush(); assert.equal(p.h.value.access, 'active');
   const call = p.state.rpcCalls.find(x => x.name === 'student_complete_registration');
-  assert.equal(call.args.semester_id_value, 'semester'); assert.equal(call.args.enrollment_option_id_value, 'option'); p.close();
+  assert.deepEqual({ ...call.args }, { student_number_value: studentIdentity.student_number, name_value: '', goal_value: null, semester_id_value: null, enrollment_option_id_value: null }); p.close();
 });
 test('workspace exceptions retain verified admission and retry recovers', async () => {
   const p = provider(); p.state.rpc = name => { if (name === 'student_get_current_streak') throw new Error('Offline'); }; await flush();
@@ -696,20 +698,18 @@ test('web callbacks enforce the app origin and preserve recovery semantics', () 
   assert.equal(authFlow.parseAuthCallback('https://foreign.test/auth?code=synthetic', 'https://app.example.test'), null);
   assert.equal(authFlow.parseAuthCallback('https://app.example.test/private?code=synthetic', 'https://app.example.test'), null);
 });
-test('new signup is gated by the additive contract and enforces new-password policy', async () => {
-  const p = provider(null); await flush(); assert.equal((await p.h.value.signUp('a@example.test', 'short')).code, 'weak_password');
-  p.state.rpc = name => name === 'registration_enrollment_options_v2' ? { data: null, error: { code: 'PGRST202' } } : undefined;
-  assert.equal((await p.h.value.signUp('a@example.test', 'a'.repeat(15), registrationDraft)).code, 'registration_unavailable'); assert.equal(p.state.authCalls, 0); p.close();
+test('signup rejects an invalid student ID or a short password before creating an account', async () => {
+  const p = provider(null); await flush();
+  assert.equal((await p.h.value.signUp(studentIdentity, 'short')).code, 'weak_password');
+  assert.equal((await p.h.value.signUp({ ...studentIdentity, student_number: '123' }, 'a'.repeat(15))).code, 'invalid_registration');
+  assert.equal(p.state.authCalls, 0); p.close();
 });
 
-
-function screen(relative, context, options = []) {
+function screen(relative, context) {
   context = { isAuthBusy: false, isSigningOut: false, ...context };
   const h = hooks(); const native = Object.fromEntries(['ActivityIndicator','KeyboardAvoidingView','TextInput','TouchableOpacity','View','ScrollView'].map(x => [x,x]));
   native.Platform = { OS: 'web' }; native.StyleSheet = { create: x => x };
-  const enrollment = { options, loading: false, isRefreshing: false, error: null, retry() {},
-    get status() { return this.loading ? 'loading' : this.error ? 'error' : this.options.length ? 'ready' : 'empty'; } };
-  for (const key of ['signIn', 'signUp', 'resendConfirmation', 'requestPasswordReset', 'updateRecoveryPassword', 'completeRegistration']) {
+  for (const key of ['signIn', 'signUp', 'updateRecoveryPassword', 'completeRegistration']) {
     const operation = context[key];
     if (operation) context[key] = (...args) => {
       context.isAuthBusy = true; h.render();
@@ -718,11 +718,11 @@ function screen(relative, context, options = []) {
   }
   const mod = load(relative, { react: h.react, 'react-native': native,
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, '@expo/vector-icons': { Ionicons: 'Icon' },
-    '@/lib/auth-flow': authFlow, '@/lib/enrollment-catalogue': catalogue,
+    '@/lib/auth-flow': authFlow,
     '@/hooks/use-user-data': { useUserData: () => context }, '@/components/themed-text': { ThemedText: 'Text' },
     '@/components/student-onboarding': { StudentOnboarding: 'Onboarding' }, '@/components/student-information-fields': { StudentInformationFields: 'Fields' },
     '@/hooks/use-registration-form': load('src/hooks/use-registration-form.ts', { react: h.react, '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation }),
-    '@/hooks/use-enrollment-options': { useEnrollmentOptions: () => enrollment }, '@/lib/student-validation': validation,
+    '@/lib/student-validation': validation,
     '@/constants/theme': { ...require('../src/constants/design-tokens.json'), Borders: { focus: 2 }, Controls: { minHeight: 48 }, Typography: require('../src/constants/design-tokens.json').typography, Fonts: { sans: 'sans-serif' }, Radii: {}, useBeePalette: () => require('../src/constants/design-tokens.json').light, useBeeStyles: factory => factory(require('../src/constants/design-tokens.json').light) },
     '@/components/mobile-ui': { Button: 'ActionButton', Field: 'Field', IconButton: 'IconButton' },
     '@/components/pixel/pixel-button': { PixelButton: 'ActionButton' },
@@ -731,7 +731,7 @@ function screen(relative, context, options = []) {
   h.mount(() => relative.endsWith('auth.tsx') ? mod.default() : mod.StudentOnboarding());
   const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)];
   const text = node => !node ? '' : typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : text(node.props?.children);
-  return { h, enrollment, find: predicate => nodes(h.value).find(predicate), button: label => nodes(h.value).find(x => x.type === 'ActionButton' && x.props.label === label) || nodes(h.value).find(x => x.type === 'TouchableOpacity' && text(x) === label) };
+  return { h, find: predicate => nodes(h.value).find(predicate), button: label => nodes(h.value).find(x => x.type === 'ActionButton' && x.props.label === label) || nodes(h.value).find(x => x.type === 'TouchableOpacity' && text(x) === label) };
 }
 test('password visibility and focus preserve the entered value and do not submit Auth', async () => {
   let calls = 0;
@@ -750,52 +750,31 @@ test('password visibility and focus preserve the entered value and do not submit
   assert.equal(calls, 0); s.h.unmount();
 });
 
-test('Auth UI captures unconfirmed recipient even when email is edited', async () => {
-  let recipient; const context = { access: 'signed_out', signIn: async () => ({ status: 'error', code: 'email_not_confirmed', message: 'Confirm email' }), resendConfirmation: async email => { recipient = email; return { status: 'completed' }; } };
-  const s = screen('src/app/auth.tsx', context); const input = () => s.find(x => x.props?.accessibilityLabel === 'Email address, required');
-  input().props.onChangeText('first@example.test'); s.find(x => x.props?.accessibilityLabel === 'Password, required').props.onChangeText('old'); await flush();
-  await s.button('Sign in').props.onPress(); await flush();
-  input().props.onChangeText('second@example.test'); await flush(); await s.button('Resend confirmation').props.onPress(); await flush(); assert.equal(recipient, 'first@example.test'); s.h.unmount();
+test('sign-in uses student ID and password without an email field', async () => {
+  let attempted;
+  const s = screen('src/app/auth.tsx', { access: 'signed_out', signIn: async (...args) => { attempted = args; return { status: 'session_created' }; } });
+  assert(!s.find(node => node.props?.accessibilityLabel === 'Email address, required'));
+  s.find(node => node.props?.accessibilityLabel === 'Student ID, required').props.onChangeText(studentIdentity.student_number);
+  s.find(node => node.props?.accessibilityLabel === 'Password, required').props.onChangeText('old password');
+  await flush(); await s.button('Sign in').props.onPress(); await flush();
+  assert.deepEqual(attempted, [studentIdentity.student_number, 'old password']); s.h.unmount();
 });
 test('pending Auth UI prevents duplicate requests and mode changes', async () => {
   const wait = deferred(); let requests = 0; const s = screen('src/app/auth.tsx', { access: 'signed_out', signIn: () => { requests++; return wait.promise; } });
-  s.find(x => x.props?.accessibilityLabel === 'Email address, required').props.onChangeText('first@example.test');
+  s.find(x => x.props?.accessibilityLabel === 'Student ID, required').props.onChangeText(studentIdentity.student_number);
   s.find(x => x.props?.accessibilityLabel === 'Password, required').props.onChangeText('old'); await flush();
   const submit = s.button('Sign in');
   submit.props.onPress(); submit.props.onPress(); await flush(); assert.equal(requests, 1); assert.equal(s.find(x => x.type === 'TouchableOpacity' && x.props.accessibilityState?.selected === false).props.disabled, true);
   wait.resolve({ status: 'error', code: 'network_error', message: 'Retry' }); await flush(); s.h.unmount();
 });
-test('onboarding preserves explicit semester identity and requires reselection after rollover', async () => {
-  let submitted; const option = { id: 'option-a', semester_id: 'semester-a', academic_year: '2026-2027', term: 'First', course: 'BSCS', year_level: '4th Year', campus: 'Bacoor', section: '1' };
-  const s = screen('src/components/student-onboarding.tsx', { registrationEmail: 'a@example.test', completeRegistration: async input => { submitted = input; return { status: 'error', code: 'network_error', message: 'Retry' }; } }, [option]);
-  const draft = { name: 'Maria Cruz', student_number: '202311197', goal: 'Build habits', course: 'BSCS', year_level: '4th Year', campus: 'Bacoor', section: '1' };
-  s.find(x => x.type === 'Fields').props.onChange(draft, 'section'); await flush();
-  assert.equal(s.button('Complete registration').props.disabled, false); await s.button('Complete registration').props.onPress(); await flush();
-  assert.equal(submitted.semesterId, 'semester-a'); assert.equal(s.find(x => x.type === 'Fields').props.value.name, 'Maria Cruz');
-  s.enrollment.options = [{ ...option, id: 'option-b', semester_id: 'semester-b' }]; s.h.render(); assert.equal(s.button('Complete registration').props.disabled, true);
-  s.find(x => x.type === 'Fields').props.onChange(draft, 'section'); await flush(); await s.button('Complete registration').props.onPress(); await flush();
-  assert.equal(submitted.semesterId, 'semester-b'); assert.equal(submitted.enrollmentOptionId, 'option-b'); s.h.unmount();
-});
-
-
-test('signup saves only a validated versioned student draft alongside its intent', async () => {
+test('signup sends the student ID and optional name and opens a session', async () => {
   const p = provider(null); await flush();
-  assert.equal((await p.h.value.signUp('a@example.test', 'a'.repeat(15), registrationDraft)).status, 'confirmation_required');
-  const metadata = p.state.signupInput.options.data;
-  assert.equal(metadata.signup_intent, 'student_registration');
-  assert.equal(metadata.registration_draft.student.student_number, '202311197');
-  assert.equal(metadata.registration_draft.semesterId, registrationOption.semester_id);
-  assert(!JSON.stringify(metadata).includes('password')); assert.equal(p.h.value.access, 'signed_out');
-  p.close();
+  assert.equal((await p.h.value.signUp(studentIdentity, 'a'.repeat(15))).status, 'session_created');
+  assert.deepEqual({ ...p.state.authInput }, { action: 'sign_up', ...studentIdentity, password: 'a'.repeat(15) });
+  assert.equal(p.state.tokens.access_token, 'student-access');
+  await flush(); assert.equal(p.h.value.access, 'active'); p.close();
 });
-test('signup rejects incomplete drafts and enrollment that changed before account creation', async () => {
-  const p = provider(null); await flush();
-  assert.equal((await p.h.value.signUp('a@example.test', 'a'.repeat(15), { version: 1 })).code, 'invalid_registration');
-  p.state.rpc = name => name === 'registration_enrollment_options_v2' ? ok([{ ...registrationOption, semester_id: '03400000-0000-4000-8000-000000000103' }]) : undefined;
-  assert.equal((await p.h.value.signUp('a@example.test', 'a'.repeat(15), registrationDraft)).code, 'enrollment_changed');
-  assert.equal(p.state.authCalls, 0); p.close();
-});
-for (const value of [undefined, { version: 2 }, { ...registrationDraft, semesterId: 'invalid' }, { ...registrationDraft, student: { ...registrationDraft.student, name: 17 } }, { ...registrationDraft, student: { ...registrationDraft.student, goal: 'x'.repeat(201) } }]) test('missing/malformed metadata remains editable onboarding: ' + String(value?.version), async () => {
+for (const value of [undefined, { version: 3 }, { version: 2 }, { ...identityDraft, student: { ...studentIdentity, name: 17 } }]) test('missing/malformed metadata keeps manual onboarding available: ' + String(value?.version), async () => {
   const account = { ...user('a'), user_metadata: { signup_intent: 'student_registration', registration_draft: value } };
   const p = provider(account, { missing: true, registrationState: 'onboarding_required' }); await flush();
   assert.equal(p.h.value.access, 'onboarding_required'); assert.equal(p.h.value.registrationDraft, null);
@@ -808,33 +787,50 @@ function allowRegistration(p) {
     }
   };
 }
-for (const entry of ['restart', 'manual login', 'confirmation callback']) test('saved registration completes automatically after ' + entry, async () => {
+for (const entry of ['restart', 'confirmation callback']) test('saved registration completes automatically after ' + entry, async () => {
   const p = provider(entry === 'restart' ? pendingStudent('a') : null, { missing: true, registrationState: 'onboarding_required' });
   allowRegistration(p);
   if (entry !== 'restart') {
     await flush();
-    if (entry === 'manual login') { p.state.loginUser = pendingStudent('a'); await p.h.value.signIn('a@example.test', 'legacy'); }
-    else { p.state.callbackUser = pendingStudent('a'); await p.h.value.handleAuthCallback('beebetter://auth?code=confirmed'); }
+    p.state.callbackUser = pendingStudent('a'); await p.h.value.handleAuthCallback('beebetter://auth?code=confirmed');
   }
   await flush(); await flush();
   assert.equal(p.h.value.access, 'active'); assert.equal(p.h.value.user.id, 'a');
   const calls = p.state.rpcCalls.filter(call => call.name === 'student_complete_registration');
-  assert.equal(calls.length, 1); assert.equal(calls[0].args.student_number_value, '202311197');
-  assert.equal(calls[0].args.enrollment_option_id_value, registrationOption.id);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args.enrollment_option_id_value, null);
+  assert.equal(calls[0].args.student_number_value, studentIdentity.student_number);
   assert.equal(p.state.updated.data.registration_draft, null);
   assert.equal(p.state.session.user.user_metadata.registration_draft, null); p.close();
 });
-for (const code of ['enrollment_changed', 'student_number_unavailable', 'invalid_registration', 'network_error']) test('automatic failure preserves a correction form without retry loops: ' + code, async () => {
+for (const stale of [false, true]) test('pending legacy enrollment is preserved when available: ' + !stale, async () => {
+  const p = provider(pendingStudent('a', registrationDraft), { missing: true, registrationState: 'onboarding_required' });
+  allowRegistration(p);
+  const complete = p.state.rpc;
+  p.state.rpc = (name, args) => {
+    if (stale && name === 'student_complete_registration' && args.enrollment_option_id_value) return ok({ code: 'enrollment_changed' });
+    return complete(name);
+  };
+  await flush(); await flush();
+  const calls = p.state.rpcCalls.filter(call => call.name === 'student_complete_registration');
+  assert.equal(calls.length, stale ? 2 : 1);
+  assert.equal(calls[0].args.enrollment_option_id_value, registrationOption.id);
+  assert.equal(calls[0].args.name_value, 'Maria Cruz');
+  assert.equal(calls.at(-1).args.enrollment_option_id_value, stale ? null : registrationOption.id);
+  assert.equal(p.h.value.access, 'active'); p.close();
+});
+
+for (const code of ['student_number_unavailable', 'invalid_registration', 'network_error']) test('automatic failure preserves a correction form without retry loops: ' + code, async () => {
   const p = provider(pendingStudent('a'), { missing: true, registrationState: 'onboarding_required' });
   p.state.rpc = name => name === 'student_complete_registration' ? (code === 'network_error' ? { error: { code, message: 'Retry' }, data: null } : ok({ status: 'error', code })) : undefined;
   await flush(); await flush();
   assert.equal(p.h.value.access, 'onboarding_required'); assert(p.h.value.registrationError);
-  assert.equal(p.h.value.registrationDraft.student.name, 'Maria Cruz');
+  assert.equal(p.h.value.registrationDraft.student_number, studentIdentity.student_number);
   assert(!p.state.queries.includes('profiles:select'));
   p.emit(pendingStudent('a'), 'TOKEN_REFRESHED'); await flush(); await p.h.value.refresh(); await flush();
   assert.equal(p.state.rpcCalls.filter(call => call.name === 'student_complete_registration').length, 1);
   allowRegistration(p);
-  assert.equal((await p.h.value.completeRegistration(authFlow.registrationInput(registrationDraft))).status, 'completed');
+  assert.equal((await p.h.value.completeRegistration(studentIdentity)).status, 'completed');
   await flush(); assert.equal(p.h.value.access, 'active'); p.close();
 });
 test('failed draft cleanup leaves successful registration admitted and idempotent', async () => {
@@ -867,196 +863,68 @@ for (const end of ['logout', 'account switch', 'unmount']) test('delayed automat
 });
 test('signup shows required student fields and preserves the draft across a failed submission', async () => {
   const wait = deferred(); let calls = 0, submitted;
-  const s = screen('src/app/auth.tsx', { access: 'signed_out', signUp: (email, password, draft) => { calls++; submitted = draft; return wait.promise; } }, [registrationOption]);
+  const s = screen('src/app/auth.tsx', { access: 'signed_out', signUp: (draft, password) => { calls++; submitted = draft; return wait.promise; } });
   assert(!s.find(node => node.type === 'Fields'));
   s.button('Create account').props.onPress(); await flush();
-  assert(s.find(node => node.type === 'Fields')); assert.equal(s.button('Create account').props.disabled, false);
-  s.find(node => node.props?.accessibilityLabel === 'Email address, required').props.onChangeText('a@example.test');
+  assert(s.find(node => node.type === 'Fields'));
+  assert(!s.find(node => node.props?.accessibilityLabel === 'Email address, required'));
   s.find(node => node.props?.accessibilityLabel === 'Password, required').props.onChangeText('a'.repeat(15));
-  s.find(node => node.type === 'Fields').props.onChange(registrationDraft.student, 'section'); await flush();
-  assert.equal(s.button('Create account').props.disabled, false);
+  s.find(node => node.type === 'Fields').props.onChange(studentIdentity); await flush();
   const button = s.button('Create account'); button.props.onPress(); button.props.onPress(); await flush();
-  assert.equal(calls, 1); assert.equal(submitted.semesterId, registrationOption.semester_id);
+  assert.equal(calls, 1); assert.deepEqual({ ...submitted }, studentIdentity);
   assert.equal(s.find(node => node.type === 'Fields').props.disabled, true);
   wait.resolve({ status: 'error', code: 'network_error', message: 'Retry' }); await flush();
   assert.equal(s.find(node => node.type === 'Fields').props.value.student_number, '202311197');
-  assert.equal(s.button('Create account').props.disabled, false); s.h.unmount();
-});
-test('signup remains disabled through catalogue loading, failure, emptiness and rollover', async () => {
-  const s = screen('src/app/auth.tsx', { access: 'signed_out' }, [registrationOption]);
-  s.button('Create account').props.onPress(); await flush();
-  s.find(node => node.props?.accessibilityLabel === 'Email address, required').props.onChangeText('a@example.test');
-  s.find(node => node.props?.accessibilityLabel === 'Password, required').props.onChangeText('a'.repeat(15));
-  s.find(node => node.type === 'Fields').props.onChange(registrationDraft.student, 'section'); await flush();
-  assert.equal(s.button('Create account').props.disabled, false);
-  s.enrollment.loading = true; s.h.render(); assert.equal(s.button('Create account').props.disabled, true);
-  s.enrollment.loading = false; s.enrollment.error = 'Retry'; s.h.render(); assert.equal(s.button('Create account').props.disabled, true);
-  s.enrollment.error = null; s.enrollment.options = []; s.h.render(); assert.equal(s.button('Create account').props.disabled, true);
-  s.enrollment.options = [{ ...registrationOption, semester_id: '03400000-0000-4000-8000-000000000103' }]; s.h.render();
-  assert.equal(s.button('Create account').props.disabled, true); assert.equal(s.find(node => node.type === 'Fields').props.value.name, 'Maria Cruz'); s.h.unmount();
+  assert.equal(s.button('Create account').props.loading, false); s.h.unmount();
 });
 test('onboarding restores saved fields and server feedback for correction', async () => {
-  const s = screen('src/components/student-onboarding.tsx', { registrationDraft, registrationError: 'This student number is unavailable.' }, [registrationOption]);
+  const s = screen('src/components/student-onboarding.tsx', { registrationDraft: studentIdentity, registrationError: 'This student ID is unavailable.' });
   await flush(); assert.equal(s.find(node => node.type === 'Fields').props.value.student_number, '202311197');
-  assert.equal(s.button('Complete registration').props.disabled, false);
-  assert(s.find(node => node.props?.accessibilityRole === 'alert' && node.props.children.includes('This student number is unavailable.')));
+  assert.equal(s.button('Complete registration').props.loading, false);
+  assert(s.find(node => node.props?.accessibilityRole === 'alert' && node.props.children.includes('This student ID is unavailable.')));
   s.h.unmount();
 });
-test('catalogue field changes clear every dependent selection', async () => {
-  const h = hooks(); let changed;
-  const mod = load('src/components/student-information-fields.tsx', {
-    react: h.react, 'react-native': { StyleSheet: { create: value => value }, View: 'View', TextInput: 'TextInput', TouchableOpacity: 'TouchableOpacity' },
-    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, '@expo/vector-icons': { Ionicons: 'Icon' },
-    '@/components/themed-text': { ThemedText: 'Text' }, '@/lib/student-validation': validation,
-    '@/constants/theme': { Controls: { minHeight: 48 }, Borders: { focus: 2 }, Radii: { md: 12 }, useBeePalette: () => ({}), useBeeStyles: fn => fn({}), Fonts: {} },
+test('shared student fields show just the required ID and optional name', () => {
+  const h = hooks();
+  let next;
+  const { StudentInformationFields } = load('src/components/student-information-fields.tsx', {
+    react: h.react, '@/components/mobile-ui': { Field: 'Field' }, '@/lib/student-validation': validation,
   });
-  h.mount(() => mod.StudentInformationFields({ value: registrationDraft.student, onChange: value => { changed = value; }, options: [registrationOption], errors: {}, catalogueOnly: true }));
-  const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)];
-  const select = label => nodes(h.value).find(node => node.props?.label === label);
-  select('Course / Program').props.onChange('BSIT'); assert.equal(changed.year_level, ''); assert.equal(changed.campus, ''); assert.equal(changed.section, '');
-  select('Year level').props.onChange('3rd Year'); assert.equal(changed.campus, ''); assert.equal(changed.section, '');
-  select('Campus').props.onChange('Other Campus'); assert.equal(changed.section, ''); assert.equal(changed.course, 'BSCS'); h.unmount();
-});
-test('student fields retain stable borders and readable disabled states across focus', async () => {
-  const h=hooks(), tokens=require('../src/constants/design-tokens.json');let disabled=false;
-  const mod=load('src/components/student-information-fields.tsx',{
-    react:h.react,'react-native':{StyleSheet:{create:style=>style},View:'View',TextInput:'TextInput',TouchableOpacity:'TouchableOpacity'},
-    'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'},'@expo/vector-icons':{Ionicons:'Icon'},
-    '@/components/themed-text':{ThemedText:'Text'},'@/lib/student-validation':validation,
-    '@/constants/theme':{Controls:tokens.controls,Borders:tokens.borders,Radii:tokens.radii,Fonts:{},useBeePalette:()=>tokens.light,useBeeStyles:fn=>fn(tokens.light)},
-  });
-  h.mount(()=>mod.StudentInformationFields({value:registrationDraft.student,onChange(){},options:[registrationOption],errors:{},catalogueOnly:true,disabled}));
-  const nodes=value=>!value||typeof value!=='object'?[]:Array.isArray(value)?value.flatMap(nodes):[value,...nodes(value.props?.children)];
-  const input=()=>nodes(h.value).find(node=>node.type==='TextInput'&&node.props.accessibilityLabel==='Full name, required');
-  const style=()=>Object.assign({},...input().props.style.filter(Boolean));const borderWidth=style().borderWidth;
-  assert.equal(style().borderColor,tokens.light.input);input().props.onFocus();await flush();
-  assert.equal(style().borderWidth,borderWidth);assert.equal(style().borderColor,tokens.light.focus);
-  input().props.onBlur();await flush();assert.equal(style().borderWidth,borderWidth);
-  disabled=true;h.render();assert.equal(input().props.editable,false);assert.equal(style().backgroundColor,tokens.light.disabled);assert.equal(style().color,tokens.light.disabledForeground);h.unmount();
-});
-
-test('disabled enrollment hook makes no requests until signup opens and aborts when it closes', async () => {
-  const h = hooks(); let enabled = false; const requests = [];
-  const mod = load('src/hooks/use-enrollment-options.ts', { react: h.react,
-    'react-native': { AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) } },
-    '@/lib/enrollment-catalogue': catalogue,
-    '@/supabase': { supabase: { rpc: name => ({ abortSignal: signal => { const wait = deferred(); requests.push({ name, signal, wait }); return wait.promise; } }) } },
-  });
-  h.mount(() => mod.useEnrollmentOptions({ kind: 'registration', context: 'signup', enabled })); await flush(); assert.equal(requests.length, 0);
-  enabled = true; h.render(); await flush(); assert.equal(h.value.loading, true); assert.equal(requests[0].name, 'registration_enrollment_options_v2');
-  enabled = false; h.render(); assert.equal(requests[0].signal.aborted, true);
-  requests[0].wait.resolve(ok([registrationOption])); await flush(); assert.equal(h.value.options.length, 0);
-  enabled = true; h.render(); await flush(); assert.equal(requests.length, 2); assert.equal(h.value.loading, true); h.unmount();
-});
-
-
-test('catalogue responses are validated before entering a form', () => {
-  assert.equal(catalogue.readEnrollmentOptions([registrationOption], 'registration')[0].semester_id, registrationOption.semester_id);
-  assert.equal(catalogue.readEnrollmentOptions([], 'registration').length, 0);
-  for (const data of [null, {}, [null], [{ ...registrationOption, id: 'bad' }],
-    [{ ...registrationOption, course: '' }], [{ ...registrationOption, semester_id: null }],
-    [registrationOption, registrationOption], [registrationOption, { ...registrationOption, id: '03400000-0000-4000-8000-000000000104', semester_id: '03400000-0000-4000-8000-000000000105' }]]) {
-    assert.throws(() => catalogue.readEnrollmentOptions(data, 'registration'), error => error.code === 'invalid_response');
-  }
-  assert.equal(catalogue.readEnrollmentOptions([{ ...registrationOption, semester_id: undefined }], 'profile').length, 1);
-});
-
-test('catalogue deadlines settle even if transport ignores abort', async () => {
-  let signal;
-  await assert.rejects(catalogue.requestEnrollmentCatalogue(value => { signal = value; return new Promise(() => {}); }, { timeoutMs: 10 }), error => error.code === 'timeout');
-  assert.equal(signal.aborted, true);
-});
-
-test('catalogue cancellation does not wait for an unresponsive transport', async () => {
-  const controller = new AbortController(); let signal;
-  const task = catalogue.requestEnrollmentCatalogue(value => { signal = value; return new Promise(() => {}); }, { signal: controller.signal });
-  await pause(); controller.abort();
-  await assert.rejects(task, error => error.code === 'cancelled'); assert.equal(signal.aborted, true);
-});
-
-test('catalogue refresh preserves choices, blocks stale submission, and isolates contexts', async () => {
-  const h = hooks(), requests = []; let context = 'one';
-  const mod = load('src/hooks/use-enrollment-options.ts', { react: h.react, '@/lib/enrollment-catalogue': catalogue,
-    'react-native': { AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) } },
-    '@/supabase': { supabase: { rpc: () => ({ abortSignal: signal => { const wait = deferred(); requests.push({ wait, signal }); return wait.promise; } }) } },
-  });
-  h.mount(() => mod.useEnrollmentOptions({ kind: 'registration', context })); await flush();
-  assert.equal(h.value.status, 'loading');
-  requests[0].wait.resolve(ok([registrationOption])); await flush(); assert.equal(h.value.status, 'ready');
-  h.value.retry(); await flush(); assert.equal(h.value.isRefreshing, true); assert.equal(h.value.options.length, 1);
-  requests[1].wait.resolve({ data: null, error: { code: 'offline' } }); await flush();
-  assert.equal(h.value.status, 'error'); assert.equal(h.value.options.length, 1); assert.equal(h.value.isRefreshing, false);
-  h.value.retry(); await flush(); requests[2].wait.resolve(ok([])); await flush();
-  assert.equal(h.value.status, 'empty'); assert.equal(h.value.options.length, 0);
-  context = 'two'; h.render(); await flush(); assert.equal(h.value.status, 'loading');
-  requests[3].wait.resolve(ok([{ ...registrationOption, semester_id: null }])); await flush();
-  assert.equal(h.value.status, 'error'); assert.equal(h.value.options.length, 0); h.unmount();
+  h.mount(() => StudentInformationFields({ value: studentIdentity, errors: {}, onChange: value => { next = value; } }));
+  const fields = h.value.props.children;
+  assert.equal(fields.length, 2);
+  assert.equal(fields[0].props.accessibilityLabel, 'Student ID, required');
+  assert.equal(fields[1].props.label, 'Name or nickname (optional)');
+  fields[0].props.onChangeText('2023-11198');
+  assert.equal(next.student_number, '202311198');
+  fields[1].props.onChangeText('');
+  assert.equal(next.name, ''); h.unmount();
 });
 
 test('registration form preserves edits across metadata refresh and resets on account change', async () => {
-  const h = hooks(); let owner = 'one', draft = registrationDraft;
-  const enrollment = { status: 'ready', options: [registrationOption], isRefreshing: false };
-  const mod = load('src/hooks/use-registration-form.ts', { react: h.react, '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation });
-  h.mount(() => mod.useRegistrationForm({ owner, draft, enrollment }));
-  h.value.change({ ...h.value.student, name: 'Edited Student' }, 'name'); await flush();
-  draft = { ...registrationDraft, student: { ...registrationDraft.student, name: 'Remote Student' } }; h.render();
-  assert.equal(h.value.student.name, 'Edited Student'); assert.equal(h.value.validate().student.name, 'Edited Student');
-  enrollment.isRefreshing = true; h.render(); assert.equal(h.value.validate(), null);
-  enrollment.isRefreshing = false; owner = 'two'; h.render(); await flush();
-  assert.equal(h.value.student.name, 'Remote Student'); assert.equal(h.value.submitted, false); h.unmount();
+  const h = hooks(); let owner = 'one', draft = studentIdentity;
+  const mod = load('src/hooks/use-registration-form.ts', { react: h.react, '@/lib/student-validation': validation });
+  h.mount(() => mod.useRegistrationForm({ owner, draft }));
+  h.value.change({ ...studentIdentity, name: 'Local Name' }); await flush();
+  draft = { ...studentIdentity, name: 'Remote Name' }; h.render();
+  assert.equal(h.value.student.name, 'Local Name');
+  owner = 'two'; h.render(); await flush();
+  assert.equal(h.value.student.name, 'Remote Name'); h.unmount();
 });
 
-test('registration validation focuses invalid input and changing a parent clears its children', async () => {
-  const h = hooks();
-  const mod = load('src/hooks/use-registration-form.ts', { react: h.react, '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation });
-  h.mount(() => mod.useRegistrationForm({ owner: 'one', enrollment: { status: 'ready', options: [registrationOption], isRefreshing: false } }));
-  let focused = false; h.value.registerInput('name', { focus() { focused = true; } });
-  assert.equal(h.value.validate(), null); await flush(); assert.equal(focused, true); assert.equal(h.value.submitted, true);
-  h.value.change(registrationDraft.student, 'section'); await flush(); assert.equal(h.value.valid, true);
-  h.value.change({ ...h.value.student, course: 'BSIT' }, 'course'); await flush();
-  assert.equal(h.value.student.year_level, ''); assert.equal(h.value.student.campus, ''); assert.equal(h.value.student.section, ''); assert.equal(h.value.selected, undefined);
-  h.unmount();
-});
-
-test('new profile saves do not submit an email projection', async () => {
+test('profile saves send only the student ID and name', async () => {
   const p = provider(); await flush(); let payload;
   p.state.query = (table, action, value) => {
     if (table === 'students' && action === 'update') { payload = value; return ok({ id: 'a', name: value.name, status: 'Active' }); }
   };
-  assert.equal((await p.h.value.updateProfile({ ...registrationDraft.student })).success, true);
-  assert.equal(Object.hasOwn(payload, 'email'), false); p.close();
-});
-
-test('signup refuses malformed server catalogue data without creating an account', async () => {
-  const p = provider(null); await flush();
-  p.state.rpc = name => name === 'registration_enrollment_options_v2' ? ok([{ ...registrationOption, semester_id: null }]) : undefined;
-  assert.equal((await p.h.value.signUp('a@example.test', 'a'.repeat(15), registrationDraft)).code, 'registration_unavailable');
-  assert.equal(p.state.authCalls, 0); p.close();
-});
-
-
-test('restored draft aliases render against canonical catalogue choices', async () => {
-  const h = hooks();
-  const mod = load('src/hooks/use-registration-form.ts', { react: h.react, '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation });
-  const draft = { ...registrationDraft, student: { ...registrationDraft.student, course: 'BS Computer Science', year_level: '4' } };
-  h.mount(() => mod.useRegistrationForm({ owner: 'one', draft, enrollment: { status: 'ready', options: [registrationOption], isRefreshing: false } }));
-  assert.equal(h.value.student.course, 'BSCS'); assert.equal(h.value.student.year_level, '4th Year');
-  assert.equal(h.value.valid, true); h.unmount();
-});
-
-test('logout during signup catalogue preflight prevents later account creation', async () => {
-  const p = provider(null); await flush(); const wait = deferred();
-  p.state.rpc = name => name === 'registration_enrollment_options_v2' ? wait.promise : undefined;
-  const signup = p.h.value.signUp('a@example.test', 'a'.repeat(15), registrationDraft);
-  await flush(); assert.equal(p.h.value.authOperation, 'sign_up');
-  const logout = p.h.value.signOut(); wait.resolve(ok([registrationOption]));
-  assert.equal((await signup).code, 'operation_cancelled'); await logout; await flush();
-  assert.equal(p.state.authCalls, 0); assert.equal(p.h.value.authOperation, null); p.close();
+  assert.equal((await p.h.value.updateProfile({ ...registrationDraft.student, name: '' })).success, true);
+  assert.deepEqual({ ...payload }, studentIdentity);
+  p.close();
 });
 
 test('submission exposes empty password feedback without starting Auth', async () => {
   let calls = 0; const s = screen('src/app/auth.tsx', { access: 'signed_out', signIn: async () => { calls++; } });
-  s.find(x => x.props?.accessibilityLabel === 'Email address, required').props.onChangeText('a@example.test'); await flush();
+  s.find(x => x.props?.accessibilityLabel === 'Student ID, required').props.onChangeText(studentIdentity.student_number); await flush();
   await s.button('Sign in').props.onPress(); await flush();
   assert.equal(calls, 0);
   assert(s.find(node => node.props?.accessibilityRole === 'alert' && node.props.children.includes('Enter your password.')));
