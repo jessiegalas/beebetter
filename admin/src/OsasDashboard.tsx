@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { Tabs } from 'radix-ui'
 import { listQuests } from './admin-data'
 import { Status, TableLoading, questStatusLabel } from './AdminTables'
 import type { Quest } from './admin-types'
@@ -12,6 +13,8 @@ const dateKey = (day: number) => new Date(day * DAY).toISOString().slice(0, 10)
 const shortDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const rangeFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
 const labelDate = (date: string) => shortDateFormatter.format(dayNumber(date) * DAY)
+const reportDate = (date: string) => rangeFormatter.format(dayNumber(date) * DAY)
+const reportDates = (from: string, to: string) => rangeFormatter.formatRange(dayNumber(from) * DAY, dayNumber(to) * DAY)
 const count = (value: number) => value.toLocaleString()
 const score = (value: number) => value.toFixed(2) + ' / 5'
 const reportCount = (value: number | null) => value == null ? 'Unavailable' : count(value)
@@ -54,6 +57,7 @@ export function OsasDashboard({ permissions, reportControlsHost, assignmentRevis
   const loading = !timezoneError && !current
   const daySpan = dayNumber(draft.endDate) - dayNumber(draft.startDate)
   const validRange = daySpan >= 0 && daySpan <= 366
+  const availableReport = data && !data.suppressed && data.participation ? data : null
 
   useEffect(() => {
     if (!allowed) return
@@ -122,34 +126,36 @@ export function OsasDashboard({ permissions, reportControlsHost, assignmentRevis
   }
 
   const reportControls = <div className="overview-toolbar">
-        <form className="overview-report-controls" onSubmit={event => {
-          event.preventDefault()
-          if (validRange) requestReport(draft)
-        }}>
-          <label><span className="overview-period-label">Reporting period</span><select value={preset} disabled={!timezone} onChange={event => changePreset(event.target.value as Preset)}>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="custom">Custom</option>
-          </select></label>
-          {preset === 'custom' && <>
-            <label>From<input type="date" required value={draft.startDate} max={draft.endDate || undefined}
-              onChange={event => setDraft({ ...draft, startDate: event.target.value })} /></label>
-            <label>To<input type="date" required value={draft.endDate} min={draft.startDate || undefined}
-              onChange={event => setDraft({ ...draft, endDate: event.target.value })} /></label>
-            <button className="secondary-button" type="submit" disabled={!validRange}>Apply dates</button>
-          </>}
-        </form>
-        <button className="secondary-button overview-export" type="button" onClick={() => void exportCsv()}
-          disabled={!data?.participation || data.suppressed || exporting}>
-          {exporting ? 'Preparing CSV…' : 'Export CSV'}
-        </button>
-      </div>
+    <form className="overview-report-controls" onSubmit={event => {
+      event.preventDefault()
+      if (validRange) requestReport(draft)
+    }}>
+      <label><span className="sr-only">Reporting period</span>
+        <select value={preset} disabled={!timezone} onChange={event => changePreset(event.target.value as Preset)}>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="custom">Custom dates</option>
+        </select>
+      </label>
+      {preset === 'custom' && <>
+        <label>From<input type="date" required value={draft.startDate} max={draft.endDate || undefined}
+          onChange={event => setDraft({ ...draft, startDate: event.target.value })} /></label>
+        <label>To<input type="date" required value={draft.endDate} min={draft.startDate || undefined}
+          onChange={event => setDraft({ ...draft, endDate: event.target.value })} /></label>
+        <button className="secondary-button" type="submit" disabled={!validRange}>Apply dates</button>
+      </>}
+    </form>
+    <button className="secondary-button overview-export" type="button" onClick={() => void exportCsv()}
+      disabled={!availableReport || exporting}>
+      {exporting ? 'Preparing CSV…' : 'Export CSV'}
+    </button>
+  </div>
 
   return <div className="osas-overview">
     {allowed ? <>
       {reportControlsHost ? createPortal(reportControls, reportControlsHost) : reportControls}
       {preset === 'custom' && daySpan > 366 && <p className="overview-error" role="alert">Choose dates no more than 366 days apart.</p>}
-      {range && <p className="overview-report-date">{rangeFormatter.formatRange(dayNumber(range.startDate) * DAY, dayNumber(range.endDate) * DAY)} · {data?.institutional_timezone ?? timezone}</p>}
+      {range && <p className="overview-report-date"><span>{reportDates(range.startDate, range.endDate)}</span><span>{data?.institutional_timezone ?? timezone}</span></p>}
       {exportStatus === 'success' && <p className="overview-report-date" role="status">CSV download started and logged.</p>}
       {exportStatus === 'error' && <SectionError message="Could not export the report." onRetry={() => void exportCsv()} />}
 
@@ -159,28 +165,22 @@ export function OsasDashboard({ permissions, reportControlsHost, assignmentRevis
       }} />}
       {reportError && range && <SectionError message="Could not load student analytics." onRetry={() => requestReport(range)} />}
       {loading && <div className="overview-report-loading" role="status" aria-label="Loading student analytics">
-        <div className="overview-kpis" aria-hidden="true">
-          <div className="overview-skeleton" /><div className="overview-skeleton" /><div className="overview-skeleton" /><div className="overview-skeleton" />
-        </div>
         <div className="overview-skeleton overview-chart-skeleton" aria-hidden="true" />
       </div>}
       {data?.suppressed && <section className="overview-section">
         <h2>Report withheld for privacy</h2>
         <p className="overview-muted">Try a different date range. Reports require at least {data.minimum_cohort} registered students.</p>
       </section>}
-      {data && !data.suppressed && data.participation && <Participation data={data} />}
+      {availableReport && <Participation data={availableReport} />}
     </> : <section className="overview-section">
       <h2>Could not verify reporting access</h2>
       <p className="overview-muted">Reload to check your OSAS reporting permissions.</p>
       <button className="secondary-button" onClick={() => window.location.reload()}>Reload page</button>
     </section>}
 
-    {data && !data.suppressed && <>
-      <CheckIns data={data} />
-      <StudentParticipation data={data} />
-      <AssignmentOutcomes rows={data.assignment_outcomes} />
-    </>}
-    <RecentAssignments revision={assignmentRevision} onOpenQuest={onOpenQuest} onCreateQuest={onCreateQuest} onReviewAssignments={onReviewAssignments} />
+    <ReportTopics data={availableReport} onReviewAssignments={onReviewAssignments}>
+      <RecentAssignments revision={assignmentRevision} onOpenQuest={onOpenQuest} onCreateQuest={onCreateQuest} />
+    </ReportTopics>
   </div>
 }
 
@@ -193,31 +193,48 @@ function SectionError({ message, onRetry }: { message: string; onRetry: () => vo
 
 function Participation({ data }: { data: DashboardAnalytics }) {
   const participation = data.participation!
-  return <>
-    <dl className="overview-kpis">
-      <div className="overview-kpi overview-kpi-lead">
-        <dt>Students participating</dt>
-        <dd>{participation.participating_students == null ? 'Unavailable' : count(participation.participating_students)}</dd>
-        <dd>Created or completed a quest in this period</dd>
-      </div>
-      <div className="overview-kpi">
-        <dt>Quest completions</dt>
-        <dd>{participation.completion_events == null ? 'Unavailable' : count(participation.completion_events)}</dd>
-        <dd>Recorded completions in this period</dd>
-      </div>
-      <div className="overview-kpi">
-        <dt>Registered BeeBetter accounts</dt>
-        <dd>{count(participation.registered_students)}</dd>
-        <dd>Student accounts as of the period end</dd>
-      </div>
-      <div className="overview-kpi">
-        <dt>Check-in respondents</dt>
-        <dd>{data.wellbeing ? count(data.wellbeing.student_count) : 'Unavailable'}</dd>
-        <dd>Students who shared a daily check-in</dd>
-      </div>
-    </dl>
-    <CompletionChart data={data} />
-  </>
+  const repeat = data.repeat_participation.at(-1)
+  return <section className="engagement-summary" aria-label="Engagement summary">
+    <div className="engagement-trend">
+      <dl className="engagement-metrics">
+        <div className="engagement-metric-lead">
+          <dt>Students participating</dt>
+          <dd data-unavailable={participation.participating_students == null || undefined}>{reportCount(participation.participating_students)}</dd>
+          <dd>Created or completed a quest</dd>
+        </div>
+        <div>
+          <dt>Quest completions</dt>
+          <dd data-unavailable={participation.completion_events == null || undefined}>{reportCount(participation.completion_events)}</dd>
+        </div>
+        <div>
+          <dt>Registered accounts</dt>
+          <dd>{count(participation.registered_students)}</dd>
+          <dd>As of {reportDate(data.cohort_as_of)}</dd>
+        </div>
+      </dl>
+      <CompletionChart data={data} />
+    </div>
+    <aside className="engagement-rates" aria-labelledby="engagement-rates-heading">
+      <h2 id="engagement-rates-heading">First and repeat completions</h2>
+      <dl>
+        <div>
+          <dt>First-week completion</dt>
+          <dd data-unavailable={data.first_week?.rate == null || undefined}>{reportPercent(data.first_week?.rate ?? null)}</dd>
+          <dd>{data.first_week?.completed != null && data.first_week.eligible != null
+            ? count(data.first_week.completed) + ' of ' + count(data.first_week.eligible) + ' eligible new accounts'
+            : 'Requires seven days of follow-up and enough data to report.'}</dd>
+        </div>
+        <div>
+          <dt>Completed again next week</dt>
+          <dd data-unavailable={repeat?.rate == null || undefined}>{reportPercent(repeat?.rate ?? null)}</dd>
+          {repeat && <dd>Weeks starting {labelDate(repeat.week_start)} and {labelDate(repeat.next_week_start)}</dd>}
+          <dd>{repeat?.completed != null && repeat.eligible != null
+            ? count(repeat.completed) + ' of ' + count(repeat.eligible) + ' prior-week completers'
+            : repeat ? 'No publishable rate for these weeks.' : 'Select a period with two complete weeks.'}</dd>
+        </div>
+      </dl>
+    </aside>
+  </section>
 }
 
 type CompletionRow = { date: string; activity?: DashboardAnalytics['activity_trends'][number] }
@@ -300,9 +317,11 @@ function CompletionChart({ data }: { data: DashboardAnalytics }) {
   const tick = Math.ceil(peak / 4)
   const ticks = [tick * 4, tick * 3, tick * 2, tick, 0]
 
-  return <section className="overview-section overview-chart" aria-labelledby="completion-heading">
-    <h2 id="completion-heading">Quest completions over time</h2>
-    <p className="overview-muted">Gaps indicate periods without a publishable count.</p>
+  return <section className="engagement-chart" aria-labelledby="completion-heading">
+    <div className="engagement-chart-heading">
+      <h2 id="completion-heading">Quest completions over time</h2>
+      {data.activity_trends.length > 0 && rows.some(row => !row.activity) && <p>Gaps indicate unavailable counts</p>}
+    </div>
     {data.activity_trends.length > 0 ? <CompletionPlot rows={rows} weekly={weekly} ticks={ticks} />
       : <p className="overview-empty">No publishable completion trend. Choose a different reporting period to check for activity.</p>}
     <details className="overview-disclosure">
@@ -320,11 +339,10 @@ function CompletionChart({ data }: { data: DashboardAnalytics }) {
   </section>
 }
 
-function RecentAssignments({ revision, onOpenQuest, onCreateQuest, onReviewAssignments }: {
+function RecentAssignments({ revision, onOpenQuest, onCreateQuest }: {
   revision: number
   onOpenQuest: (quest: Quest) => void
   onCreateQuest: () => void
-  onReviewAssignments?: () => void
 }) {
   const [rows, setRows] = useState<Quest[] | null>(null)
   const [error, setError] = useState(false)
@@ -343,11 +361,9 @@ function RecentAssignments({ revision, onOpenQuest, onCreateQuest, onReviewAssig
     return () => { active = false }
   }, [revision, retry])
 
-  return <section className="overview-section" aria-labelledby="assignments-heading">
-    <div className="overview-section-heading">
-      <div><h2 id="assignments-heading">Recent OSAS assignments</h2><p className="overview-muted">Latest assignments across all dates</p></div>
-      {onReviewAssignments && <button className="secondary-button" onClick={onReviewAssignments}>Review assignments</button>}
-    </div>
+  return <section className="report-section" aria-labelledby="assignments-heading">
+    <h2 id="assignments-heading">Recent OSAS assignments</h2>
+    <p className="overview-muted">Latest assignments across all dates</p>
     {error && <SectionError message="Could not load recent assignments." onRetry={() => {
       setError(false)
       setRetry(value => value + 1)
@@ -372,77 +388,144 @@ function RecentAssignments({ revision, onOpenQuest, onCreateQuest, onReviewAssig
   </section>
 }
 
+function ReportTopics({ data, onReviewAssignments, children }: {
+  data: DashboardAnalytics | null
+  onReviewAssignments?: () => void
+  children: ReactNode
+}) {
+  const [topic, setTopic] = useState('activities')
+
+  return <Tabs.Root value={data ? topic : 'activities'} onValueChange={setTopic} activationMode="manual" className="report-topics">
+    <Tabs.List className="report-tab-list" aria-label="Reporting topics">
+      <Tabs.Trigger value="activities">OSAS activities</Tabs.Trigger>
+      <Tabs.Trigger value="participation" disabled={!data}>Participation</Tabs.Trigger>
+      <Tabs.Trigger value="interests" disabled={!data}>Student interests</Tabs.Trigger>
+      <Tabs.Trigger value="wellbeing" disabled={!data}>Well-being</Tabs.Trigger>
+    </Tabs.List>
+    <Tabs.Content value="activities" forceMount className="report-topic-panel">
+      <div className="report-section">
+        <div className="overview-section-heading">
+          <h2>OSAS activity outcomes</h2>
+          {onReviewAssignments && <button className="secondary-button" onClick={onReviewAssignments}>Review assignments</button>}
+        </div>
+        {data && <AssignmentOutcomes rows={data.assignment_outcomes} />}
+      </div>
+      {children}
+    </Tabs.Content>
+    <Tabs.Content value="participation" className="report-topic-panel">
+      {data && <StudentParticipation data={data} />}
+    </Tabs.Content>
+    <Tabs.Content value="interests" className="report-topic-panel">
+      {data && <StudentInterests rows={data.student_interests} />}
+    </Tabs.Content>
+    <Tabs.Content value="wellbeing" className="report-topic-panel">
+      {data && <CheckIns data={data} />}
+    </Tabs.Content>
+  </Tabs.Root>
+}
+
 function CheckIns({ data }: { data: DashboardAnalytics }) {
   const checkIns = data.wellbeing
-  return <section className="overview-section" aria-labelledby="check-ins-heading">
-    <h2 id="check-ins-heading">Weekly wellness trends</h2>
-    <p className="overview-muted">Voluntary ratings give each respondent equal weight. Coverage is the share of registered accounts that responded.</p>
-    {checkIns ? <dl className="overview-check-in-stats">
-        <div><dt>Well-being</dt><dd>{score(checkIns.average_wellbeing)}</dd></div>
-        <div><dt>Stress</dt><dd>{score(checkIns.average_stress)}</dd></div>
-        <div><dt>Energy</dt><dd>{score(checkIns.average_energy)}</dd></div>
-      </dl> : <p className="overview-muted">Check-in summary unavailable for this period.</p>}
-    {data.wellbeing_trends.length > 0 && <ReportTable label="Weekly check-in ratings" columns={['Dates covered', 'Respondents', 'Accounts', 'Coverage', 'Well-being / 5', 'Stress / 5', 'Energy / 5']}>
-      {data.wellbeing_trends.map(row => <tr key={row.bucket_start}>
-        <th scope="row">{rangeFormatter.formatRange(dayNumber(row.from_date) * DAY, dayNumber(row.through_date) * DAY)}{row.partial && ' (partial)'}</th>
-        <td>{reportCount(row.student_count)}</td><td>{reportCount(row.registered_students)}</td><td>{reportPercent(row.coverage)}</td>
-        <td>{reportDecimal(row.average_wellbeing, 2)}</td><td>{reportDecimal(row.average_stress, 2)}</td><td>{reportDecimal(row.average_energy, 2)}</td>
-      </tr>)}
-    </ReportTable>}
+  return <section className="report-section" aria-labelledby="check-ins-heading">
+    <h2 id="check-ins-heading">Check-in participation and ratings</h2>
+    <p className="overview-muted">Ratings are voluntary and give each respondent equal weight. Weekly coverage is the share of registered accounts that responded.</p>
+    {checkIns ? <dl className="wellbeing-summary">
+      <div><dt>Check-in respondents</dt><dd>{count(checkIns.student_count)}</dd></div>
+      <div><dt>Well-being</dt><dd>{score(checkIns.average_wellbeing)}</dd></div>
+      <div><dt>Stress</dt><dd>{score(checkIns.average_stress)}</dd></div>
+      <div><dt>Energy</dt><dd>{score(checkIns.average_energy)}</dd></div>
+    </dl> : <p className="overview-empty">Check-in summary unavailable for this period.</p>}
+    {data.wellbeing_trends.length > 0 ? <ReportTable label="Weekly check-in ratings"
+      columns={['Dates covered', 'Respondents', 'Accounts', 'Coverage', 'Well-being / 5', 'Stress / 5', 'Energy / 5']}
+      rows={data.wellbeing_trends.map(row => ({
+        id: row.bucket_start,
+        heading: <>{reportDates(row.from_date, row.through_date)}{row.partial && <small className="report-row-note">Partial week</small>}</>,
+        cells: [reportCount(row.student_count), reportCount(row.registered_students), reportPercent(row.coverage),
+          reportDecimal(row.average_wellbeing, 2), reportDecimal(row.average_stress, 2), reportDecimal(row.average_energy, 2)],
+      }))} />
+      : <p className="overview-empty">No weekly check-in figures are available for these dates.</p>}
+  </section>
+}
+
+function StudentInterests({ rows }: { rows: DashboardAnalytics['student_interests'] }) {
+  const maximum = Math.max(1, ...rows.map(row => row.creators ?? 0))
+  return <section className="report-section" aria-labelledby="interests-heading">
+    <h2 id="interests-heading">Student-chosen interests</h2>
+    <p className="overview-muted">Distinct students by category, based on quests with a recorded student creator.</p>
+    {rows.length > 0 ? <ReportTable label="Student-created quest participation" numericFrom={2}
+      columns={['Category', 'Students creating', 'Students completing']}
+      rows={rows.map(row => ({
+        id: row.category,
+        heading: row.category,
+        cells: [<div className="interest-volume">
+          {row.creators != null && <span className="interest-track" aria-hidden="true"><span style={{ width: row.creators / maximum * 100 + '%' }} /></span>}
+          <span>{reportCount(row.creators)}</span>
+        </div>, reportCount(row.completers)],
+      }))} />
+      : <p className="overview-empty">No student interest breakdown is available for these dates.</p>}
   </section>
 }
 
 function StudentParticipation({ data }: { data: DashboardAnalytics }) {
   return <>
-    <section className="overview-section" aria-labelledby="interests-heading">
-      <h2 id="interests-heading">Student-chosen interests</h2>
-      <p className="overview-muted">Distinct students by quest category. This measures quests with a recorded student creator.</p>
-      <ReportTable label="Student-created quest participation" columns={['Category', 'Students creating', 'Students completing']}>
-        {data.student_interests.map(row => <tr key={row.category}>
-          <th scope="row">{row.category}</th><td>{reportCount(row.creators)}</td><td>{reportCount(row.completers)}</td>
-        </tr>)}
-      </ReportTable>
+    <section className="report-section" aria-labelledby="first-week-heading">
+      <h2 id="first-week-heading">First-week completion</h2>
+      <p className="overview-muted">New accounts that had a full seven days to complete their first quest.</p>
+      <ReportTable label="First-week quest completion" columns={['Cohort', 'Eligible accounts', 'Completed', 'Completion rate']}
+        rows={[{ id: 'first-week', heading: 'New accounts', cells: [
+          reportCount(data.first_week?.eligible ?? null), reportCount(data.first_week?.completed ?? null), reportPercent(data.first_week?.rate ?? null),
+        ] }]} />
     </section>
-    <section className="overview-section" aria-labelledby="student-participation-heading">
-      <h2 id="student-participation-heading">First-week and repeat participation</h2>
-      <dl className="overview-check-in-stats">
-        <div><dt>Completed a quest in their first seven days</dt><dd>{reportPercent(data.first_week?.rate ?? null)}</dd></div>
-        <div><dt>New accounts with seven days to participate</dt><dd>{reportCount(data.first_week?.eligible ?? null)}</dd></div>
-        <div><dt>New students completing a quest</dt><dd>{reportCount(data.first_week?.completed ?? null)}</dd></div>
-      </dl>
-      <h3>Completed a quest again the following week</h3>
-      {data.repeat_participation.length > 0 ? <ReportTable label="Participation across consecutive completed weeks" columns={['First week of', 'Following week of', 'First-week completers', 'Completed both weeks', 'Repeat rate']}>
-        {data.repeat_participation.map(row => <tr key={row.week_start}>
-          <th scope="row">{labelDate(row.week_start)}</th><td>{labelDate(row.next_week_start)}</td>
-          <td>{reportCount(row.eligible)}</td><td>{reportCount(row.completed)}</td><td>{reportPercent(row.rate)}</td>
-        </tr>)}
-      </ReportTable> : <p className="overview-muted">Select a range with two consecutive completed Monday–Sunday weeks.</p>}
+    <section className="report-section" aria-labelledby="repeat-heading">
+      <h2 id="repeat-heading">Completed again next week</h2>
+      <p className="overview-muted">Of the students who completed a quest in the first week, how many completed one the following week?</p>
+      {data.repeat_participation.length > 0 ? <ReportTable label="Participation across consecutive completed weeks" numericFrom={2}
+        columns={['First week of', 'Following week of', 'First-week completers', 'Completed both weeks', 'Repeat rate']}
+        rows={data.repeat_participation.map(row => ({
+          id: row.week_start,
+          heading: reportDate(row.week_start),
+          cells: [reportDate(row.next_week_start), reportCount(row.eligible), reportCount(row.completed), reportPercent(row.rate)],
+        }))} /> : <p className="overview-empty">Select a range with two consecutive completed Monday–Sunday weeks.</p>}
     </section>
   </>
 }
 
 function AssignmentOutcomes({ rows }: { rows: DashboardAnalytics['assignment_outcomes'] }) {
-  return <section className="overview-section" aria-labelledby="assignment-outcomes-heading">
-    <h2 id="assignment-outcomes-heading">OSAS activity outcomes</h2>
-    <p className="overview-muted">Outcomes cover the first 14 days after publication. Match an activity code in Quest Details.</p>
-    {rows.length > 0 ? <ReportTable label="OSAS assignment outcomes" columns={['Activity', 'Category', 'Published', 'Students assigned', 'Completed in 14 days', 'Completion rate', 'Median hours to complete']}>
-      {rows.map(row => <tr key={row.activity_code ?? row.category}>
-        <th scope="row">{row.activity_code ? <code>{row.activity_code}</code> : 'Historical assignments'}</th>
-        <td>{row.category}</td><td>{row.published_date ? labelDate(row.published_date) : 'Multiple dates'}</td><td>{count(row.assigned)}</td>
-        {row.in_progress ? <td colSpan={3}>In progress</td> : <>
-          <td>{reportCount(row.completed)}</td><td>{reportPercent(row.rate)}</td><td>{reportDecimal(row.median_hours, 1)}</td>
-        </>}
-      </tr>)}
-    </ReportTable> : <p className="overview-muted">No OSAS activity outcomes are available for these dates.</p>}
-  </section>
+  return <>
+    <p className="overview-muted">Outcomes cover the first 14 days after publication. Activity codes match the codes in Quest Details.</p>
+    {rows.length > 0 ? <ReportTable label="OSAS assignment outcomes" numericFrom={3}
+      columns={['Activity', 'Category', 'Published', 'Assigned', 'Completed', 'Completion rate', 'Median hours']}
+      rows={rows.map(row => ({
+        id: row.activity_code ?? row.category,
+        heading: row.activity_code ? <code>{row.activity_code}</code> : 'Historical assignments',
+        cells: [row.category, row.published_date ? reportDate(row.published_date) : 'Multiple dates', count(row.assigned),
+          ...(row.in_progress ? [<span className="outcome-window">Window open</span>, '—', '—']
+            : [reportCount(row.completed), reportPercent(row.rate), reportDecimal(row.median_hours, 1)])],
+      }))} /> : <p className="overview-empty">No OSAS activity outcomes are available for these dates.</p>}
+  </>
 }
 
-function ReportTable({ label, columns, children }: { label: string; columns: string[]; children: ReactNode }) {
+type ReportRow = { id: string; heading: ReactNode; cells: ReactNode[] }
+
+function ReportTable({ label, columns, rows, numericFrom = 1 }: {
+  label: string
+  columns: string[]
+  rows: ReportRow[]
+  numericFrom?: number
+}) {
   return <div className="console-table-scroll" role="region" aria-label={label} tabIndex={0}>
-    <table className={columns.length > 4 ? 'overview-table overview-wide-results-table' : 'overview-table'}>
+    <table className="overview-table report-table" role="table">
       <caption className="sr-only">{label}</caption>
-      <thead><tr>{columns.map(column => <th scope="col" key={column}>{column}</th>)}</tr></thead>
-      <tbody>{children}</tbody>
+      <thead role="rowgroup"><tr role="row">{columns.map((column, index) =>
+        <th scope="col" role="columnheader" className={index >= numericFrom ? 'report-number' : undefined} key={column}>{column}</th>
+      )}</tr></thead>
+      <tbody role="rowgroup">{rows.map(row => <tr key={row.id} role="row">
+        <th scope="row" role="rowheader">{row.heading}</th>
+        {row.cells.map((value, index) => <td role="cell" className={index + 1 >= numericFrom ? 'report-number' : undefined} key={columns[index + 1]}>
+          <span className="overview-cell-label" aria-hidden="true">{columns[index + 1]}</span>
+          <div>{value}</div>
+        </td>)}
+      </tr>)}</tbody>
     </table>
   </div>
 }

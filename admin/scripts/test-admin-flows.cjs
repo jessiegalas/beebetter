@@ -58,7 +58,12 @@ async function reports() {
   h.mount(() => mod.exports.OsasDashboard({ permissions, assignmentRevision: 0, onOpenQuest() {}, onCreateQuest() {} }));
   const result = (index, id) => ({
     id, suppressed: false, participation: { registered_students: 10, participating_students: 6, completion_events: 7 }, activity_trends: [], wellbeing_trends: [],
-    student_interests: [], first_week: null, repeat_participation: [], assignment_outcomes: [],
+    student_interests: [], first_week: null, assignment_outcomes: [],
+    repeat_participation: [
+      { week_start: '2026-01-05', next_week_start: '2026-01-12', eligible: 16, completed: 8, rate: 50 },
+      { week_start: '2026-01-12', next_week_start: '2026-01-19', eligible: null, completed: null, rate: null },
+    ],
+    cohort_as_of: '2026-02-28',
     period_start: requests[index].filters.startDate, period_end: requests[index].filters.endDate,
   });
   const applyDate = async date => {
@@ -76,7 +81,11 @@ async function reports() {
   requests[0].pending.resolve(result(0, 'stale')); await flush();
   const displayed = nodes(h.value).find(node => typeof node.type === 'function' && node.props.data);
   assert.equal(displayed.props.data.id, 'current');
-  const chart = nodes(displayed.type(displayed.props)).find(node => node.type?.name === 'CompletionChart');
+  const summary = displayed.type(displayed.props);
+  const repeatSummary = find(summary, 'div', node => text(node).startsWith('Completed again next week'));
+  assert(text(repeatSummary).includes('Unavailable'));
+  assert(!text(repeatSummary).includes('50%'), 'A withheld latest pair must not be replaced by an older released pair.');
+  const chart = nodes(summary).find(node => node.type?.name === 'CompletionChart');
   const chartTable = find(chart.type({ data: {
     ...displayed.props.data, period_start: '2026-09-01', period_end: '2026-09-03',
     activity_trends: [{ bucket_start: '2026-09-01', student_count: 5, completion_events: 6 }, { bucket_start: '2026-09-03', student_count: 5, completion_events: 8 }],

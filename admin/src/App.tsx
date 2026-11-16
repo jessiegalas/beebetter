@@ -390,7 +390,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
                 <Dialog.Trigger asChild><button className="icon-button workspace-menu-trigger" aria-label="Open navigation"><AppIcon name="menu" /></button></Dialog.Trigger>
                 <Dialog.Portal>
                   <Dialog.Overlay className="workspace-nav-overlay" />
-                  <Dialog.Content className="sidebar workspace-nav-drawer" aria-describedby={undefined}>
+                  <Dialog.Content className={dark ? 'sidebar workspace-nav-drawer dark' : 'sidebar workspace-nav-drawer'} aria-describedby={undefined}>
                     <Dialog.Title className="sr-only">Admin navigation</Dialog.Title>
                     <div className="workspace-drawer-heading">
                       <Brand /><Dialog.Close className="icon-button" aria-label="Close navigation"><AppIcon name="close" /></Dialog.Close>
@@ -412,12 +412,12 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
               <button className="avatar-button workspace-avatar" aria-label={`Open admin information for ${adminIdentity.name}`} onClick={() => setProfileOpen((value) => !value)}><span className="avatar">{initials(adminIdentity.name)}</span></button>
             </div>
           </div>
-          <div className="workspace-report-controls" ref={setReportControlsHost} />
         </header>
         <div className="content">
           {operationError && <p className="form-error" role="alert">{operationError}</p>}
-          <div className="heading-row">
-            <h1 id="console-heading" tabIndex={-1}>{section === 'Overview' ? 'Student analytics' : sectionLabel}</h1>
+          <div className={section === 'Overview' ? 'heading-row engagement-heading' : 'heading-row'}>
+            <h1 id="console-heading" tabIndex={-1}>{section === 'Overview' ? 'Student engagement' : sectionLabel}</h1>
+            {section === 'Overview' && <div className="workspace-report-controls" ref={setReportControlsHost} />}
             {section === 'Quests' && <button className="primary-button" onClick={() => setNewQuestOpen(true)}>＋ New quest</button>}
           </div>
           <Suspense fallback={<div className="overview-skeleton overview-chart-skeleton" role="status" aria-label="Loading section" />}>
