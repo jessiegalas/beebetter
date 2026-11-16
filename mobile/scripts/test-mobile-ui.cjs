@@ -6,6 +6,15 @@ function priorityFixture(state) {
  return {snoozesReady:true,snoozedCount:0,contextError:null,retryContext(){},snoozeQuest(){},undoSnooze(){},restoreSnoozes(){},lastSnoozedId:null,recordEvent(){},...state,ranked,recommendations:state.recommendations??discovery.recommendedQuests(ranked)};
 }
 function load(relative,mocks={},globals={}) {
+ if(relative==='src/app/(tabs)/index.tsx') mocks={
+  ...mocks,
+  'expo-router':{useLocalSearchParams:()=>({}),...mocks['expo-router']},
+  '@/components/daily-check-in':{DailyCheckIn:'DailyCheckIn'},
+  '@/hooks/use-daily-check-in':{checkInDateKey:()=> '2026-11-16',useDailyCheckIn:(studentId)=>{
+   const [day,setDay]=mocks.react.useState(null);
+   return {day,open:()=>{if(studentId)setDay(new Date());},close:()=>setDay(null)};
+  }},
+ };
  if(relative==='src/components/xp-visuals.tsx') mocks={...mocks,'react-native-reanimated':{},'react-native-svg':{__esModule:true,default:'Svg',Path:'Path'}};
  if(mocks['@/context/quest-priority-context']) { const original=mocks['@/context/quest-priority-context']; mocks={...mocks,'@/context/quest-priority-context':{...original,useQuestPriority:()=>priorityFixture(original.useQuestPriority())}}; }
  if(relative==='src/app/(tabs)/quests.tsx'||relative==='src/app/notifications.tsx') mocks={...mocks,'@/hooks/use-quest-browsing':rawLoad('src/hooks/use-quest-browsing.ts',{
@@ -400,17 +409,106 @@ test('Home keeps cached progress, scoped retries and the recommended quest desti
  button(h.value,'View quest').props.onPress();assert.equal(routes[0].pathname,'/quests');assert.equal(routes[0].params.questId,'q1');h.unmount();
 });
 test('retained Home wellness disclosure preserves destinations when explicitly enabled',async()=>{const h=hooks(),routes=[];const data={profile:{display_name:'Student'},progressSummary:{totalCompleted:1},levelProgress:{},workspaceErrors:{},isLoading:false,isRefreshing:false,refresh(){},retryWorkspace(){}};const mod=load('src/app/(tabs)/index.tsx',{...basics(h),'@/constants/features':{MOBILE_WELLNESS_AND_SUPPORT_ENABLED:true},'expo-router':{router:{push:r=>routes.push(r)}},'@/hooks/use-user-data':{useUserData:()=>data},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:[],locationAvailable:false})},'@/lib/quest-discovery':load('src/lib/quest-discovery.ts', { './quest-time': load('src/lib/quest-time.ts') })});h.mount(()=>mod.default());const entry=find(h.value,n=>typeof n.type==='function'&&n.props.title==='Wellness');entry.props.onPress();await flush();const sheet=find(h.value,n=>n.type==='Sheet'&&n.props.title==='Wellness');assert.equal(sheet.props.visible,true);for(const label of ['Daily check-in','Self-management reflection','My history and trends'])button(h.value,label).props.onPress();assert.deepEqual(routes,['/wellness-check-in','/self-management-reflection','/wellness-history']);h.unmount();});
-test('provisional wellness and support are absent from Home',()=>{
+test('Home opens the daily check-in sheet while broader wellness and support stay gated',async()=>{
  const h=hooks(),routes=[];
- const mod=load('src/app/(tabs)/index.tsx',{...basics(h),'expo-router':{router:{push:r=>routes.push(r)}},'@/hooks/use-user-data':{useUserData:()=>({profile:{display_name:'Student'},progressSummary:{totalCompleted:1},levelProgress:{},workspaceErrors:{},isLoading:false,isRefreshing:false,refresh(){},retryWorkspace(){}})},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:[],locationAvailable:false})},'@/lib/quest-discovery':load('src/lib/quest-discovery.ts',{'./quest-time':load('src/lib/quest-time.ts')})});
+ const mod=load('src/app/(tabs)/index.tsx',{...basics(h),'expo-router':{router:{push:r=>routes.push(r)}},'@/hooks/use-user-data':{useUserData:()=>({user:{id:'student-a'},profile:{display_name:'Student'},progressSummary:{totalCompleted:1},levelProgress:{},workspaceErrors:{},isLoading:false,isRefreshing:false,refresh(){},retryWorkspace(){}})},'@/context/quest-priority-context':{useQuestPriority:()=>({ranked:[],locationAvailable:false})},'@/lib/quest-discovery':load('src/lib/quest-discovery.ts',{'./quest-time':load('src/lib/quest-time.ts')})});
  h.mount(()=>mod.default());
  assert.equal(features.MOBILE_WELLNESS_AND_SUPPORT_ENABLED,false);
  assert.equal(find(h.value,n=>n.type==='Sheet'&&n.props.title==='Wellness'),undefined);
  assert.equal(find(h.value,n=>typeof n.type==='function'&&['Wellness','Request OSAS support'].includes(n.props.title)),undefined);
  assert.equal(text(h.value).includes('A moment for you'),false);
+ const checkIn=find(h.value,n=>typeof n.type==='function'&&n.props.title==='Daily check-in');
+ const sheet=()=>find(h.value,n=>n.type==='Sheet'&&n.props.title==='Daily check-in');
+ checkIn.props.onPress();await flush();assert.equal(sheet().props.visible,true);
+ find(sheet(),n=>n.type==='DailyCheckIn').props.onHistory();await flush();assert.equal(sheet().props.visible,false);
  button(h.value,'Explore quests').props.onPress();
  find(h.value,n=>n.props?.label==='Open menu').props.onPress();
- assert.deepEqual(routes,['/quests']);h.unmount();
+ assert.deepEqual(routes,['/wellness-history','/quests']);h.unmount();
+});
+test('daily prompt persists per account and local day and waits for foreground Home',async()=>{
+ const storage=new Map();let now=new Date(2026,10,16,23,59,30).getTime(),focused=false,owner='a';
+ class TestDate extends Date {constructor(...args){super(...(args.length?args:[now]));}}
+ const listeners=new Set();
+ const appState={currentState:'active',addEventListener(_,listener){listeners.add(listener);return{remove(){listeners.delete(listener);}}}};
+ const changeState=state=>{appState.currentState=state;for(const listener of listeners)listener(state);};
+ const mount=()=>{
+  const h=hooks();
+  const mod=load('src/hooks/use-daily-check-in.ts',{
+   react:h.react,'react-native':{AppState:appState},'expo-router':{useIsFocused:()=>focused},
+   '@react-native-async-storage/async-storage':{getItem:async key=>storage.get(key)??null,setItem:async(key,value)=>storage.set(key,value)},
+  },{Date:TestDate,setTimeout:()=>1,clearTimeout(){}});
+  h.mount(()=>mod.useDailyCheckIn(owner,true));return h;
+ };
+ let h=mount();await flush();assert.equal(h.value.day,null);
+ focused=true;h.render();await flush();assert.equal(h.value.day.getDate(),16);
+ h.value.close();await flush();assert.equal(h.value.day,null);h.unmount();
+ h=mount();await flush();assert.equal(h.value.day,null);
+ h.value.open();await flush();assert.equal(h.value.day.getDate(),16);
+ h.value.close();await flush();
+ owner='b';h.render();await flush();assert.equal(h.value.day.getDate(),16);
+ h.value.close();await flush();
+ changeState('background');now=new Date(2026,10,17,0,1).getTime();
+ await flush();assert.equal(h.value.day,null);
+ changeState('active');await flush();assert.equal(h.value.day.getDate(),17);
+ assert.deepEqual([...storage.values()],['2026-11-16','2026-11-17']);h.unmount();
+});
+test('daily check-in retries loading before editing and saves once per tap sequence',async()=>{
+ const h=hooks(),pending=deferred(),writes=[],routes=[];
+ let attempts=0,closed=0;
+ const mod=load('src/components/daily-check-in.tsx',{
+  ...basics(h),
+  '@/hooks/use-daily-check-in':{checkInDateKey:()=> '2026-11-16'},
+  '@/components/pixel/pixel-choice':{PixelChoice:'PixelChoice'},
+  '@/lib/wellbeing-data':{
+   async getMyCheckIn(id,date){
+    assert.equal(id,'student-a');assert.match(date,/^\d{4}-\d{2}-\d{2}$/);
+    if(!attempts++)throw new Error('Offline');
+    return null;
+   },
+   async saveMyCheckIn(id,entry){writes.push({id,entry});return pending.promise;},
+  },
+ });
+ h.mount(()=>mod.DailyCheckIn({studentId:'student-a',day:new Date(2026,10,16),onClose:()=>closed++,onHistory:()=>routes.push('/wellness-history')}));await flush();
+ button(h.value,'Skip today').props.onPress();assert.equal(closed,1);assert.equal(writes.length,0);
+ assert.equal(button(h.value,'Save check-in').props.disabled,true);
+ const preparing=find(h.value,n=>n.props?.importantForAccessibility==='no-hide-descendants');
+ assert.equal(preparing.props.pointerEvents,'none');
+ button(h.value,'Try again').props.onPress();await flush();
+ button(h.value,'Save check-in').props.onPress();await flush();
+ assert.equal(writes.length,0);
+ for(const [label,value] of [['Overall well-being',4],['Stress',2],['Energy',3]]){
+  const scale=find(h.value,n=>typeof n.type==='function'&&n.props.label===label);
+  scale.props.onChange(value);
+ }
+ find(h.value,n=>n.type==='Field').props.onChangeText('Remember this');await flush();
+ const save=button(h.value,'Save check-in');save.props.onPress();save.props.onPress();await flush();
+ assert.equal(button(h.value,'Save check-in').props.loading,true);
+ assert.equal(writes.length,1);assert.equal(writes[0].id,'student-a');
+ assert.equal(writes[0].entry.overall_wellbeing,4);assert.equal(writes[0].entry.stress_level,2);
+ assert.equal(writes[0].entry.energy_level,3);assert.equal(writes[0].entry.motivation_level,null);
+ assert.equal(writes[0].entry.note,'Remember this');
+ pending.resolve();await flush();assert(button(h.value,'Update check-in'));
+ button(h.value,'View check-in history').props.onPress();assert.deepEqual(routes,['/wellness-history']);h.unmount();
+});
+test('check-in history shows saved ratings and skips provisional reflection reads',async()=>{
+ const h=hooks(),reads=[];
+ const user={id:'student-a'};
+ const mod=load('src/app/wellness-history.tsx',{
+  ...basics(h),'expo-router':{router:{},useIsFocused:()=>true},
+  '@/hooks/use-user-data':{useUserData:()=>({user,quests:[]})},
+  '@/lib/wellbeing-data':{
+   async listMyCheckIns(id){
+    reads.push(id);
+    return [{id:'entry',check_in_date:'2026-11-16',overall_wellbeing:4,stress_level:2,energy_level:3,motivation_level:null,note:'Private note text'}];
+   },
+   async listMyReflections(){reads.push('reflections');return [];},
+  },
+ });
+ const screen=mod.default();h.mount(()=>screen.type(screen.props));await flush();
+ const entry=find(h.value,n=>n.type==='Disclosure');
+ assert.ok(text(entry).includes('Private note text'));
+ assert.ok(text(entry).includes('Well-being · 4/5'));
+ assert.deepEqual(reads,['student-a']);h.unmount();
 });
 test('disabled wellness performs no recommendation reads or subscriptions across accounts',async()=>{
  const h=hooks();let user={id:'a'},reads=0,subscriptions=0;const contexts=[];
@@ -448,6 +546,25 @@ test('two-step creation preserves its draft after failure and deduplicates save 
 });
 test('new sheets honor reduced motion and clean up the listener',async()=>{
  const h=hooks();let removed=false;const mod=load('src/components/mobile-ui.tsx',{...basics(h),'react-native':{...native,AccessibilityInfo:{isReduceMotionEnabled:async()=>true,addEventListener:()=>({remove(){removed=true}})}}});h.mount(()=>mod.Sheet({title:'Wellness',visible:true,onClose(){},children:'Private choices'}));await flush();assert.equal(h.value.props.animationType,'none');h.unmount();assert.equal(removed,true);
+});
+test('expanded sheets slide only the panel and keep their height while presented',async()=>{
+ const h=hooks(),animations=[];let visible=false,onMotionChange;
+ class Progress extends native.Animated.Value {interpolate(config){return config;}}
+ const animated={...native.Animated,Value:Progress,timing:(_,config)=>({start(){animations.push(config);}})};
+ const mod=load('src/components/mobile-ui.tsx',{...basics(h),'react-native':{...native,Animated:animated,useWindowDimensions:()=>({height:812}),AccessibilityInfo:{
+  isReduceMotionEnabled:async()=>false,addEventListener:(_,listener)=>{onMotionChange=listener;return{remove(){}};},
+ }}});
+ h.mount(()=>mod.Sheet({title:'Daily check-in',visible,expanded:true,onClose(){},children:'Ratings'}));await flush();
+ visible=true;h.render();await flush();assert.equal(h.value.props.animationType,'none');
+ const panel=find(h.value,n=>n.type==='AnimatedView'&&n.props.style.some(style=>style?.height==='88%'));
+ const scrim=find(h.value,n=>n.type==='AnimatedView'&&n.props.pointerEvents==='none');
+ assert.equal(panel.props.style.find(style=>style?.transform).transform[0].translateY.outputRange[0],812);
+ assert.equal(scrim.props.style.some(style=>style?.transform),false);
+ assert.equal(animations.length,0);h.value.props.onShow();assert.equal(animations[0].useNativeDriver,true);
+ onMotionChange(true);await flush();assert.ok(find(h.value,n=>n.type==='AnimatedView'&&n.props.style.some(style=>style?.transform)));
+ visible=false;h.render();await flush();visible=true;h.render();await flush();
+ h.value.props.onShow();assert.equal(animations.length,1);
+ assert.equal(find(h.value,n=>n.type==='AnimatedView'&&n.props.style.some(style=>style?.transform)),undefined);h.unmount();
 });
 function backgroundHarness(width = 375, height = 812) {
  const h = hooks(), calls = []; let phase, animatedStyle, stateListener, removed = false, setReduced;

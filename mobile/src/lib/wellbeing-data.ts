@@ -63,6 +63,12 @@ export async function listMyCheckIns(studentId: string): Promise<WellbeingCheckI
   if (error) throw error;
   return (data ?? []) as WellbeingCheckIn[];
 }
+export async function getMyCheckIn(studentId: string, date: string): Promise<WellbeingCheckIn | null> {
+  const { data, error } = await supabase.from('student_check_ins').select('*')
+    .eq('student_id', studentId).eq('check_in_date', date).maybeSingle();
+  if (error) throw error;
+  return data as WellbeingCheckIn | null;
+}
 export async function saveMyCheckIn(studentId: string, input: CheckInInput): Promise<WellbeingCheckIn> {
   const { data, error } = await supabase.from('student_check_ins')
     .upsert({ ...input, note: input.note?.trim() || null, student_id: studentId }, { onConflict: 'student_id,check_in_date' }).select('*').single();

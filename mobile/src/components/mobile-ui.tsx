@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions, type RefreshControlProps, type TextInputProps, type ViewStyle, type StyleProp } from 'react-native';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions, type RefreshControlProps, type TextInputProps, type ViewStyle, type StyleProp } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from './themed-text';
@@ -124,27 +124,55 @@ export function useReducedMotion() {
     }, []);
     return reduced;
 }
-export function Sheet({ title, visible, onClose, children }: {
+export function Sheet({ title, visible, onClose, children, adjustKeyboardInsets = false, expanded = false }: {
     title: string;
     visible: boolean;
     onClose: () => void;
     children: ReactNode;
+    adjustKeyboardInsets?: boolean;
+    expanded?: boolean;
 }) {
     const c = useBeePalette(), reduced = useReducedMotion();
-    return <Modal transparent visible={visible} animationType={reduced ? 'none' : 'slide'} onRequestClose={onClose}>
-    <View style={[s.scrim, { backgroundColor: c.scrim }]}>
-    <Pressable cssInterop={false} style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={'Close ' + title}/>
-    <SafeAreaView accessibilityViewIsModal style={[s.sheet, { backgroundColor: c.background }]} edges={['bottom']}>
+    const { height } = useWindowDimensions();
+    const [progress] = useState(() => new Animated.Value(0));
+    const [presentation, setPresentation] = useState({ visible, reduced });
+    // Android recreates a visible dialog when its animation type changes.
+    if (presentation.visible !== visible) {
+        setPresentation({ visible, reduced: visible ? reduced : presentation.reduced });
+    }
+    const animatePanel = expanded && !presentation.reduced;
+    useLayoutEffect(() => {
+        if (!visible) {
+            progress.stopAnimation();
+            progress.setValue(0);
+        }
+        return () => progress.stopAnimation();
+    }, [progress, visible]);
+
+    function showPanel() {
+        if (!visible || !animatePanel) return;
+        Animated.timing(progress, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    }
+
+    const panel = <SafeAreaView accessibilityViewIsModal style={[expanded ? s.panelFill : s.sheet, s.panelCorners, { backgroundColor: c.background }]} edges={['bottom']}>
     <View style={s.heading}>
     <ThemedText type="subtitle" style={{ flex: 1 }}>
     {title}
     </ThemedText>
     <IconButton icon="close" label={'Close ' + title} onPress={onClose}/>
     </View>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: Spacing.gutter, gap: Spacing.lg }}>
+    <ScrollView keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={adjustKeyboardInsets} contentContainerStyle={{ padding: Spacing.gutter, gap: Spacing.lg }}>
     {children}
     </ScrollView>
-    </SafeAreaView>
+    </SafeAreaView>;
+    return <Modal transparent visible={visible} animationType={expanded || presentation.reduced ? 'none' : 'slide'}
+        onShow={expanded ? showPanel : undefined} onRequestClose={onClose}>
+    <View style={s.scrim}>
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim, opacity: animatePanel ? progress : 1 }]} />
+    <Pressable cssInterop={false} style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel={'Close ' + title}/>
+    {expanded ? <Animated.View style={[s.sheet, s.expandedSheet, animatePanel && { transform: [{
+        translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] }),
+    }] }]}>{panel}</Animated.View> : panel}
     </View>
     </Modal>;
 }
@@ -198,7 +226,10 @@ const s = StyleSheet.create({
     field: { gap: Spacing.sm },
     input: { ...Typography.body, fontFamily: Fonts.sans, minHeight: Controls.minHeight, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radii.md, borderWidth: Borders.focus },
     scrim: { flex: 1, justifyContent: 'flex-end' },
-    sheet: { width: '100%', maxWidth: Layout.maxSheetWidth, alignSelf: 'center', maxHeight: '88%', borderTopLeftRadius: Radii.xl, borderTopRightRadius: Radii.xl },
+    sheet: { width: '100%', maxWidth: Layout.maxSheetWidth, alignSelf: 'center', maxHeight: '88%' },
+    expandedSheet: { height: '88%' },
+    panelFill: { flex: 1 },
+    panelCorners: { borderTopLeftRadius: Radii.xl, borderTopRightRadius: Radii.xl },
     heading: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md, paddingHorizontal: Spacing.gutter, paddingTop: Spacing.md },
     disclosure: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm, borderWidth: Borders.focus, borderRadius: Radii.sm },
     badge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: Spacing.xs, borderRadius: Radii.pill, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs },

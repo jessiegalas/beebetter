@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PixelButton } from '@/components/pixel/pixel-button';
 import { PixelGlyph } from '@/components/pixel/pixel-glyph';
@@ -9,6 +9,7 @@ import { XpBadge, XpProgress } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
 import { Button, IconButton, ScreenFrame, Sheet, StatusMessage, Surface } from '@/components/mobile-ui';
 import { HomeMenu } from '@/components/home-menu';
+import { DailyCheckIn } from '@/components/daily-check-in';
 import { Borders, Controls, Layout, PixelBorders, PixelSpacing, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
 import { MOBILE_NOTIFICATIONS_ENABLED, MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
 import { useQuestPriority } from '@/context/quest-priority-context';
@@ -16,12 +17,21 @@ import { useLocationContext } from '@/context/location-context';
 import { useUserData } from '@/hooks/use-user-data';
 import { GROUP_LABELS, recommendationGroup } from '@/lib/quest-discovery';
 import { useHomeRecommendationVisibility, useRecommendationMeasurement } from '@/hooks/use-recommendation-measurement';
+import { checkInDateKey, useDailyCheckIn } from '@/hooks/use-daily-check-in';
 
 export default function HomeScreen() {
   const { user, profile, progressSummary, isLoading, isRefreshing, levelProgress, refresh, workspaceErrors, retryWorkspace } = useUserData();
   const c = useBeePalette();
   const [whyOpen, setWhyOpen] = useState(false);
   const [wellnessOpen, setWellnessOpen] = useState(false), [menuOpen, setMenuOpen] = useState(false);
+  const { checkIn } = useLocalSearchParams<{ checkIn?: string }>();
+  const canPrompt = !whyOpen && !wellnessOpen && !menuOpen && !(isLoading && !profile);
+  const { day: checkInDay, open: openCheckIn, close: closeCheckIn } = useDailyCheckIn(user?.id, canPrompt);
+  useEffect(() => {
+    if (checkIn !== '1' || !canPrompt || !user?.id) return;
+    openCheckIn();
+    router.setParams({ checkIn: '' });
+  }, [checkIn, canPrompt, user?.id, openCheckIn]);
   const { fontScale } = useWindowDimensions();
   const expanded = fontScale >= Layout.largeTextScale;
   const { recommendations, snoozesReady, snoozedCount, contextError, retryContext, undoSnooze, restoreSnoozes, lastSnoozedId } = useQuestPriority();
@@ -29,7 +39,7 @@ export default function HomeScreen() {
   const next = recommendations[0];
   const recommendationRef = useRef<View>(null);
   const viewportRef = useRef<View>(null);
-  const measurement = useRecommendationMeasurement('home', next ? [next] : [], snoozesReady && !menuOpen && !wellnessOpen && !whyOpen && !isLoading);
+  const measurement = useRecommendationMeasurement('home', next ? [next] : [], snoozesReady && canPrompt && !checkInDay && !isLoading);
   useHomeRecommendationVisibility(recommendationRef, viewportRef, next?.quest.id, measurement.active, measurement.setVisible);
   const emptyRecommendationTitle = !snoozesReady && contextError ? 'Recommendations unavailable'
     : !snoozesReady || isLoading ? 'Loading recommendations…'
@@ -127,6 +137,10 @@ export default function HomeScreen() {
             <Shortcut icon="git-network-outline" label="Skill Tree" onPress={() => router.push('/skill-tree')} />
           </View>
         </View>
+        {!MOBILE_WELLNESS_AND_SUPPORT_ENABLED && <View style={s.section}>
+          <View style={[s.divider, { backgroundColor: c.surfaceMuted }]} />
+          <HomeEntry icon="heart-outline" title="Daily check-in" description="Optional well-being, stress, and energy ratings" onPress={() => openCheckIn()} />
+        </View>}
         {MOBILE_WELLNESS_AND_SUPPORT_ENABLED && <View style={s.section}>
           <ThemedText type="subtitle">A moment for you</ThemedText>
           <HomeEntry icon="heart-outline" title="Wellness" description="Optional, private check-ins and reflections" onPress={() => setWellnessOpen(true)} />
@@ -153,6 +167,13 @@ export default function HomeScreen() {
         {[{ label: 'Daily check-in', route: '/wellness-check-in' }, { label: 'Self-management reflection', route: '/self-management-reflection' }, { label: 'My history and trends', route: '/wellness-history' }].map(item => <Button key={item.route} intent="secondary" label={item.label} onPress={() => { setWellnessOpen(false); router.push(item.route as '/wellness-check-in'); }} />)}
       </Sheet>}
     </ScreenFrame>
+    <Sheet title="Daily check-in" visible={!!checkInDay} onClose={closeCheckIn} adjustKeyboardInsets expanded>
+      {user && checkInDay && <DailyCheckIn key={`${user.id}:${checkInDateKey(checkInDay)}`} studentId={user.id} day={checkInDay}
+        onClose={closeCheckIn} onHistory={() => {
+          closeCheckIn();
+          router.push('/wellness-history');
+        }} />}
+    </Sheet>
     <HomeMenu visible={menuOpen} onClose={() => setMenuOpen(false)} displayName={displayName} avatarUri={avatarUri} />
   </>;
 }
@@ -167,7 +188,8 @@ function Shortcut({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphM
 
 function HomeEntry({ icon, title, description, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string; onPress: () => void }) {
   const c = useBeePalette();
-  return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={title} onPress={onPress} style={({ pressed }) => [s.entry, { opacity: pressed ? States.pressedOpacity : 1 }]}>
+  const [focused, setFocused] = useState(false);
+  return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={title} accessibilityHint={description} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.entry, { borderColor: focused ? c.focus : 'transparent', backgroundColor: pressed ? c.surfaceMuted : 'transparent' }]}>
     <Ionicons name={icon} size={Controls.iconSize} color={c.foreground} accessible={false} />
     <View style={s.copy}><ThemedText type="item">{title}</ThemedText><ThemedText type="small" style={{ color: c.muted }}>{description}</ThemedText></View>
     <Ionicons name="chevron-forward" size={Controls.iconSize} color={c.muted} accessible={false} />
@@ -200,5 +222,5 @@ const s = StyleSheet.create({
   shortcutIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.pill },
   shortcutLabel: { minHeight: (Typography.metadata.lineHeight ?? 20) * 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.xs },
   shortcutText: { ...Typography.label, flex: 1, minWidth: 0 },
-  entry: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, paddingVertical: Spacing.md },
+  entry: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.sm, borderWidth: Borders.focus, borderRadius: Radii.md },
 });

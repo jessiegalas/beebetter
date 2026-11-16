@@ -38,7 +38,7 @@ node scripts/test-quest-notifications.cjs
 
 ## System note: provisional features
 
-Wellness/check-ins, reflections/history and student OSAS support are temporarily disabled in the mobile frontend because their inclusion in the final product is undecided. Keep `MOBILE_WELLNESS_AND_SUPPORT_ENABLED` false during unrelated work; retain implementations and records for possible future use. See [mobile UI system note](../docs/agent/mobile-ui.md#system-note-provisional-features-disabled) for scope and re-enablement requirements.
+Daily check-in and check-in history are available to admitted students. Reflections, student OSAS support, and wellness-based quest recommendations remain provisional. Keep `MOBILE_WELLNESS_AND_SUPPORT_ENABLED` false during unrelated work; retain implementations and records for possible future use. See [mobile UI system note](../docs/agent/mobile-ui.md#daily-check-in-and-provisional-wellness-features) for scope and re-enablement requirements.
 
 ## Documentation Map
 

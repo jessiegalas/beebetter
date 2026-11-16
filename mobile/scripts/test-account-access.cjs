@@ -413,7 +413,7 @@ test('all private routes are excluded for every non-active access state', () => 
   const privateRoutes = routes(layout.default());
   assert(privateRoutes.includes('(tabs)')); assert(privateRoutes.includes('add-quest'));
   assert(!privateRoutes.includes('auth'));
-  assert.deepEqual(privateRoutes, ['(tabs)', 'notifications', 'add-quest', 'manage-locations', 'skill-tree-prototype', 'settings/index', 'settings/general']);
+  assert.deepEqual(privateRoutes, ['(tabs)', 'notifications', 'add-quest', 'manage-locations', 'skill-tree-prototype', 'settings/index', 'settings/general', 'wellness-check-in', 'wellness-history']);
   features.MOBILE_NOTIFICATIONS_ENABLED = false;
   assert.deepEqual(routes(layout.default()), privateRoutes.filter(route => route !== 'notifications'));
   features.MOBILE_NOTIFICATIONS_ENABLED = true;

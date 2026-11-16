@@ -3,8 +3,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controls, PixelSpacing, TypographyRoles, useBeePalette } from '@/constants/theme';
 import { PixelFrame } from './pixel-frame';
 
-export function PixelChoice({ label, selected, disabled = false, role = 'button', leading, onPress }: {
+export function PixelChoice({ label, accessibilityLabel = label, selected, disabled = false, role = 'button', leading, onPress }: {
   label: string;
+  accessibilityLabel?: string;
   selected: boolean;
   disabled?: boolean;
   role?: 'button' | 'tab';
@@ -15,7 +16,7 @@ export function PixelChoice({ label, selected, disabled = false, role = 'button'
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const fill = disabled ? 'disabled' : pressed ? 'surfaceMuted' : selected ? 'surface' : 'card';
-  return <Pressable cssInterop={false} accessibilityRole={role} accessibilityLabel={label}
+  return <Pressable cssInterop={false} accessibilityRole={role} accessibilityLabel={accessibilityLabel}
     accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress}
     onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
     onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)}
@@ -33,7 +34,7 @@ export function PixelChoice({ label, selected, disabled = false, role = 'button'
 const styles = StyleSheet.create({
   root: { maxWidth: '100%' },
   tab: { flexGrow: 1, flexBasis: 0, minWidth: Controls.minHeight },
-  content: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: PixelSpacing.px2, paddingHorizontal: PixelSpacing.px6, paddingVertical: PixelSpacing.px3 },
+  content: { minWidth: Controls.minHeight, minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: PixelSpacing.px2, paddingHorizontal: PixelSpacing.px6, paddingVertical: PixelSpacing.px3 },
   label: { ...TypographyRoles.label, textAlign: 'center', flexShrink: 1 },
   marker: { position: 'absolute', bottom: PixelSpacing.px1, alignSelf: 'center', width: PixelSpacing.px6, height: PixelSpacing.px1 },
 });

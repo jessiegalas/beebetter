@@ -38,10 +38,10 @@ function AppNavigator() {
         <Stack.Screen name="skill-tree-prototype" options={{ headerShown: true, title: 'Skill Tree Prototype', gestureEnabled: false }} />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="settings/general" />
+        <Stack.Screen name="wellness-check-in" />
+        <Stack.Screen name="wellness-history" />
         <Stack.Protected guard={MOBILE_WELLNESS_AND_SUPPORT_ENABLED}>
-          <Stack.Screen name="wellness-check-in" />
           <Stack.Screen name="self-management-reflection" />
-          <Stack.Screen name="wellness-history" />
           <Stack.Screen name="support-requests" />
         </Stack.Protected>
       </Stack.Protected>

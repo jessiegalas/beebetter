@@ -1,127 +1,122 @@
-import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
-
+import { useEffect, useState } from 'react';
+import { RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { router, useIsFocused } from 'expo-router';
+import { Button, Disclosure, IconButton, ScreenFrame, StatusMessage } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
-import { InlineMessage, PrivacyNote, WellnessHeader } from '@/components/wellness-ui';
-import { useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
+import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
+import { Spacing, TypographyRoles, useBeePalette } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
 import { listMyCheckIns, listMyReflections, type SelfManagementReflection, type WellbeingCheckIn } from '@/lib/wellbeing-data';
 
-type ViewMode = 'check-ins' | 'reflections';
+const RATINGS = [
+  ['overall_wellbeing', 'Well-being'],
+  ['stress_level', 'Stress'],
+  ['energy_level', 'Energy'],
+] as const;
+
+type History = { checkIns: WellbeingCheckIn[]; reflections: SelfManagementReflection[] };
 
 export default function WellnessHistoryScreen() {
-  const COLORS = useBeePalette();
-  const styles = useBeeStyles(makeStyles);
-  const { user, quests } = useUserData();
-  const [mode, setMode] = useState<ViewMode>('check-ins');
-  const [checkIns, setCheckIns] = useState<WellbeingCheckIn[]>([]);
-  const [reflections, setReflections] = useState<SelfManagementReflection[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useUserData();
+  return user ? <CheckInHistory key={user.id} studentId={user.id} /> : null;
+}
+
+function CheckInHistory({ studentId }: { studentId: string }) {
+  const c = useBeePalette();
+  const focused = useIsFocused();
+  const { quests } = useUserData();
+  const [history, setHistory] = useState<History | null>(null);
+  const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
-  const load = useCallback(async (refresh = false) => {
-    if (!user) { setLoading(false); return; }
-    if (refresh) setRefreshing(true); else setLoading(true);
-    setError('');
-    try {
-      const [nextCheckIns, nextReflections] = await Promise.all([listMyCheckIns(user.id), listMyReflections(user.id)]);
-      setCheckIns(nextCheckIns);
-      setReflections(nextReflections);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Could not load your private history.');
-    } finally { setLoading(false); setRefreshing(false); }
-  }, [user]);
+  useEffect(() => {
+    if (!focused) return;
+    let active = true;
+    void Promise.all([
+      listMyCheckIns(studentId),
+      MOBILE_WELLNESS_AND_SUPPORT_ENABLED ? listMyReflections(studentId) : [],
+    ]).then(([checkIns, reflections]) => {
+      if (active) {
+        setHistory({ checkIns, reflections });
+        setError(false);
+      }
+    }).catch(() => {
+      if (active) setError(true);
+    }).finally(() => {
+      if (active) setRefreshing(false);
+    });
+    return () => { active = false; };
+  }, [studentId, focused, attempt]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
-
-  const averages = useMemo(() => {
-    if (!checkIns.length) return null;
-    const average = (key: 'overall_wellbeing' | 'stress_level' | 'energy_level') =>
-      checkIns.reduce((sum, record) => sum + record[key], 0) / checkIns.length;
-    return { wellbeing: average('overall_wellbeing'), stress: average('stress_level'), energy: average('energy_level') };
-  }, [checkIns]);
-
-  return (
-    <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <WellnessHeader title="My private history" subtitle="Review your check-ins and self-management reflections" />
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} colors={[COLORS.honeyDark]} tintColor={COLORS.honeyDark} />}>
-          <PrivacyNote>Only you can open these individual entries. Trend scores summarize your own responses and are not clinical assessments.</PrivacyNote>
-          <View style={styles.tabs}>
-            {(['check-ins', 'reflections'] as const).map(value => <TouchableOpacity key={value} style={[styles.tab, mode === value && styles.tabSelected]} onPress={() => setMode(value)} accessibilityRole="tab" accessibilityState={{ selected: mode === value }}><Ionicons name={value === 'check-ins' ? 'pulse-outline' : 'compass-outline'} size={17} color={mode === value ? COLORS.honeyDeep : COLORS.muted} /><ThemedText style={[styles.tabText, mode === value && styles.tabTextSelected]}>{value === 'check-ins' ? 'Check-ins' : 'Reflections'}</ThemedText></TouchableOpacity>)}
-          </View>
-          {error ? <><InlineMessage message={error} tone="error" /><TouchableOpacity style={styles.retryButton} onPress={() => void load()}><ThemedText style={styles.retryText}>Try again</ThemedText></TouchableOpacity></> : loading ? <View style={styles.loading}><ActivityIndicator color={COLORS.honeyDark} /><ThemedText style={styles.body}>Loading your history…</ThemedText></View> : mode === 'check-ins' ? (
-            checkIns.length ? <>
-              {averages && <View style={styles.trendCard}><View style={styles.sectionHeading}><View><ThemedText style={styles.sectionTitle}>Your trend snapshot</ThemedText><ThemedText style={styles.body}>Average across {checkIns.length} check-in{checkIns.length === 1 ? '' : 's'}</ThemedText></View><Ionicons name="stats-chart-outline" size={22} color={COLORS.honeyDeep} /></View><View style={styles.averageRow}><AverageStat label="Well-being" value={averages.wellbeing} tone={COLORS.honey} /><AverageStat label="Stress" value={averages.stress} tone={COLORS.lavender} /><AverageStat label="Energy" value={averages.energy} tone={COLORS.mint} /></View><ThemedText style={styles.disclaimer}>Higher stress means greater reported stress. These patterns help with personal reflection and do not diagnose a condition.</ThemedText></View>}
-              <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle}>Recent check-ins</ThemedText><ThemedText style={styles.count}>{checkIns.length} total</ThemedText></View>
-              {checkIns.map(record => <CheckInCard key={record.id} record={record} />)}
-            </> : <EmptyState icon="pulse-outline" title="No check-ins yet" body="When you choose to check in, your entries and personal trends will appear here." />
-          ) : reflections.length ? <>
-            <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle}>Your reflections</ThemedText><ThemedText style={styles.count}>{reflections.length} total</ThemedText></View>
-            {reflections.map(reflection => <ReflectionCard key={reflection.id} reflection={reflection} questTitle={quests.find(quest => quest.id === reflection.quest_id)?.title} />)}
-          </> : <EmptyState icon="compass-outline" title="No reflections yet" body="Your private planning and follow-through reflections will appear here when you decide to add one." />}
-        </ScrollView>
-      </SafeAreaView>
+  return <ScreenFrame refreshControl={<RefreshControl refreshing={refreshing} tintColor={c.primary} colors={[c.primary]}
+    onRefresh={() => {
+      setRefreshing(true);
+      setAttempt(value => value + 1);
+    }} />}>
+    <View style={styles.header}>
+      <IconButton icon="arrow-back" label="Go back"
+        onPress={() => router.canGoBack() ? router.back() : router.replace('/wellness-check-in')} />
+      <Text accessibilityRole="header" style={[TypographyRoles.heading, styles.title, { color: c.foreground }]}>
+        {MOBILE_WELLNESS_AND_SUPPORT_ENABLED ? 'My wellness history' : 'Check-in history'}
+      </Text>
     </View>
-  );
+    {error && <StatusMessage error message="Could not load your history.">
+      <Button label="Try again" intent="secondary" onPress={() => {
+        setError(false);
+        setAttempt(value => value + 1);
+      }} />
+    </StatusMessage>}
+    {!error && !history && <StatusMessage loading message="Loading your history…" />}
+    {history && (history.checkIns.length > 0 ? <>
+      <View style={styles.section}>
+        <ThemedText type="subtitle" accessibilityRole="header">Your averages</ThemedText>
+        <ThemedText style={{ color: c.muted }}>Based on {history.checkIns.length} saved {history.checkIns.length === 1 ? 'check-in' : 'check-ins'}.</ThemedText>
+        {RATINGS.map(([field, label]) => {
+          const mean = history.checkIns.reduce((sum, entry) => sum + entry[field], 0) / history.checkIns.length;
+          return <ThemedText key={field}>{label} · {mean.toFixed(1)}/5</ThemedText>;
+        })}
+      </View>
+      <View style={styles.section}>
+        <ThemedText type="subtitle" accessibilityRole="header">Saved check-ins</ThemedText>
+        {history.checkIns.map(entry => <Disclosure key={entry.id} title={formatDate(entry.check_in_date)}>
+          {RATINGS.map(([field, label]) => <ThemedText key={field}>{label} · {entry[field]}/5</ThemedText>)}
+          {entry.motivation_level !== null && <ThemedText>Motivation · {entry.motivation_level}/5</ThemedText>}
+          {entry.note && <View style={styles.section}>
+            <ThemedText type="label">Private note</ThemedText>
+            <ThemedText>{entry.note}</ThemedText>
+          </View>}
+        </Disclosure>)}
+      </View>
+    </> : <StatusMessage message="No check-ins yet. Your saved entries will appear here.">
+      <Button label="Open daily check-in" intent="secondary" onPress={() => router.navigate('/wellness-check-in')} />
+    </StatusMessage>)}
+    {MOBILE_WELLNESS_AND_SUPPORT_ENABLED && history && <View style={styles.section}>
+      <ThemedText type="subtitle" accessibilityRole="header">Reflections</ThemedText>
+      {history.reflections.length === 0 && <ThemedText>No reflections yet.</ThemedText>}
+      {history.reflections.map(entry => <Disclosure key={entry.id} title={formatPeriod(entry.period_start, entry.period_end)}>
+        <ThemedText>{quests.find(quest => quest.id === entry.quest_id)?.title ?? 'General reflection'}</ThemedText>
+        <ThemedText>Planning · {entry.planning_score}/5</ThemedText>
+        <ThemedText>Follow-through · {entry.follow_through_score}/5</ThemedText>
+        <ThemedText>Confidence · {entry.confidence_score}/5</ThemedText>
+        {entry.accomplishment && <ThemedText>Accomplishment · {entry.accomplishment}</ThemedText>}
+        {entry.challenge && <ThemedText>Challenge · {entry.challenge}</ThemedText>}
+        {entry.next_step && <ThemedText>Next step · {entry.next_step}</ThemedText>}
+      </Disclosure>)}
+    </View>}
+  </ScreenFrame>;
 }
 
-function AverageStat({ label, value, tone }: { label: string; value: number; tone: string }) {
-  const styles = useBeeStyles(makeStyles);
-  return <View style={styles.averageStat}><View style={[styles.averageDot, { backgroundColor: tone }]} /><ThemedText style={styles.averageValue}>{value.toFixed(1)}</ThemedText><ThemedText style={styles.averageLabel}>{label}</ThemedText></View>;
+function formatDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
-  const styles = useBeeStyles(makeStyles);
-  return <View style={styles.scoreLine}><ThemedText style={styles.scoreLabel}>{label}</ThemedText><View style={styles.scoreTrack}><View style={[styles.scoreFill, { width: `${value * 20}%`, backgroundColor: color }]} /></View><ThemedText style={styles.scoreValue}>{value}/5</ThemedText></View>;
+function formatPeriod(start: string, end: string) {
+  return start === end ? formatDate(end) : `${formatDate(start)} – ${formatDate(end)}`;
 }
 
-function CheckInCard({ record }: { record: WellbeingCheckIn }) {
-  const COLORS = useBeePalette();
-  const styles = useBeeStyles(makeStyles);
-  return <View style={styles.entryCard}><View style={styles.entryHeader}><View><ThemedText style={styles.entryTitle}>{formatDate(record.check_in_date)}</ThemedText><ThemedText style={styles.entryMeta}>Daily check-in</ThemedText></View><View style={styles.wellbeingBadge}><ThemedText style={styles.wellbeingBadgeText}>{record.overall_wellbeing}/5</ThemedText></View></View><ScoreBar label="Well-being" value={record.overall_wellbeing} color={COLORS.honey} /><ScoreBar label="Stress" value={record.stress_level} color={COLORS.lavender} /><ScoreBar label="Energy" value={record.energy_level} color={COLORS.mint} />{record.note && <View style={styles.note}><Ionicons name="lock-closed-outline" size={14} color={COLORS.muted} /><ThemedText style={styles.noteText}>{record.note}</ThemedText></View>}</View>;
-}
-
-function ReflectionCard({ reflection, questTitle }: { reflection: SelfManagementReflection; questTitle?: string }) {
-  const COLORS = useBeePalette();
-  const styles = useBeeStyles(makeStyles);
-  return <View style={styles.entryCard}><View style={styles.entryHeader}><View style={styles.flex}><ThemedText style={styles.entryTitle}>{formatPeriod(reflection.period_start, reflection.period_end)}</ThemedText><ThemedText style={styles.entryMeta}>{questTitle ? `Related to: ${questTitle}` : 'General reflection'}</ThemedText></View><Ionicons name="compass-outline" size={21} color={COLORS.honeyDeep} /></View><ScoreBar label="Planning" value={reflection.planning_score} color={COLORS.honey} /><ScoreBar label="Follow-through" value={reflection.follow_through_score} color={COLORS.lavender} /><ScoreBar label="Confidence" value={reflection.confidence_score} color={COLORS.mint} />{reflection.accomplishment && <ReflectionText label="Accomplishment" value={reflection.accomplishment} />}{reflection.challenge && <ReflectionText label="Challenge" value={reflection.challenge} />}{reflection.next_step && <ReflectionText label="Next step" value={reflection.next_step} />}</View>;
-}
-
-function ReflectionText({ label, value }: { label: string; value: string }) {
-  const styles = useBeeStyles(makeStyles);
-  return <View style={styles.reflectionText}><ThemedText style={styles.reflectionLabel}>{label}</ThemedText><ThemedText style={styles.noteText}>{value}</ThemedText></View>;
-}
-
-function EmptyState({ icon, title, body }: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }) {
-  const COLORS = useBeePalette();
-  const styles = useBeeStyles(makeStyles);
-  return <View style={styles.empty}><View style={styles.emptyIcon}><Ionicons name={icon} size={28} color={COLORS.honeyDeep} /></View><ThemedText style={styles.sectionTitle}>{title}</ThemedText><ThemedText style={styles.emptyBody}>{body}</ThemedText></View>;
-}
-
-function formatDate(value: string) { return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }); }
-function formatPeriod(start: string, end: string) { return start === end ? formatDate(end) : `${formatDate(start)} – ${formatDate(end)}`; }
-
-const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'transparent' }, safeArea: { flex: 1 },
-  content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 32 },
-  tabs: { flexDirection: 'row', gap: 8, padding: 4, borderRadius: Radii.md, backgroundColor: COLORS.surfaceMuted },
-  tab: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12 }, tabSelected: { backgroundColor: COLORS.card },
-  tabText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20}, tabTextSelected: { color: COLORS.ink },
-  loading: { minHeight: 240, alignItems: 'center', justifyContent: 'center', gap: 10 }, body: { color: COLORS.muted, fontSize: 16, lineHeight: 24 },
-  retryButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honey, borderRadius: Radii.md }, retryText: { color: COLORS.ink, fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  trendCard: { padding: 20, borderRadius: 24, backgroundColor: COLORS.surfaceWarm, gap: 15 },
-  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sectionTitle: { color: COLORS.ink, fontSize: 20, lineHeight: 28, fontWeight: '700' }, count: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  averageRow: { flexDirection: 'row', gap: 8 }, averageStat: { flex: 1, alignItems: 'center', padding: 11, borderRadius: Radii.md, backgroundColor: COLORS.card },
-  averageDot: { width: 7, height: 7, borderRadius: 4, marginBottom: 5 }, averageValue: { color: COLORS.ink, fontSize: 21, fontWeight: '700' , lineHeight: 34}, averageLabel: { color: COLORS.muted, fontSize: 14, marginTop: 2 , lineHeight: 20},
-  disclaimer: { color: COLORS.muted, fontSize: 14, lineHeight: 20 }, entryCard: { padding: 20, borderRadius: 24, backgroundColor: COLORS.card, gap: 11, borderWidth: 0, borderColor: COLORS.surfaceMuted },
-  entryHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }, flex: { flex: 1 }, entryTitle: { color: COLORS.ink, fontSize: 17, lineHeight: 24, fontWeight: '700' }, entryMeta: { color: COLORS.muted, fontSize: 14, lineHeight: 20, marginTop: 1 },
-  wellbeingBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radii.pill, backgroundColor: COLORS.honeySoft }, wellbeingBadgeText: { color: COLORS.honeyDeep, fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  scoreLine: { flexDirection: 'row', alignItems: 'center', gap: 8 }, scoreLabel: { width: 85, color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20}, scoreTrack: { flex: 1, height: 7, borderRadius: Radii.pill, backgroundColor: COLORS.surfaceMuted, overflow: 'hidden' }, scoreFill: { height: '100%', borderRadius: Radii.pill }, scoreValue: { width: 25, color: COLORS.ink, fontSize: 14, fontWeight: '700', textAlign: 'right' , lineHeight: 20},
-  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.surfaceMuted }, noteText: { flex: 1, color: COLORS.ink, fontSize: 16, lineHeight: 24 },
-  reflectionText: { paddingTop: 9, borderTopWidth: 1, borderTopColor: COLORS.surfaceMuted }, reflectionLabel: { color: COLORS.muted, fontSize: 14, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 3 , lineHeight: 20},
-  empty: { minHeight: 260, alignItems: 'center', justifyContent: 'center', padding: 28 }, emptyIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.honeySoft, marginBottom: 12 }, emptyBody: { color: COLORS.muted, fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 5, maxWidth: 300 } });
+const styles = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  title: { flex: 1, minWidth: 0 },
+  section: { gap: Spacing.sm },
+});

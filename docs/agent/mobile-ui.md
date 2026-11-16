@@ -1,10 +1,10 @@
 # Mobile presentation system
 
-## System note: provisional features disabled
+## Daily check-in and provisional wellness features
 
-Wellness, daily check-ins, self-management reflections/history and student OSAS support are not confirmed final features. They are temporarily disabled in the mobile frontend pending a future product decision.
+Daily check-in opens in a Home bottom sheet the first time an admitted student reaches Home each local calendar day. The last prompted date is stored on the device per account. Opening it manually also counts as that day's prompt. Students can skip it or reopen it from Home. Optional details and private check-in history are available in the sheet. The form uses the existing student-owned check-in contract. OSAS reporting uses aggregate ratings.
 
-MOBILE_WELLNESS_AND_SUPPORT_ENABLED in mobile/src/constants/features.ts is currently false. It hides Home entries and the wellness sheet, excludes the four screens through nested protected routes (including direct/deep links), and stops wellness recommendation reads/subscriptions. Existing screen implementations, data contracts and historical records are retained for future use. Admin OSAS functionality is unchanged.
+`MOBILE_WELLNESS_AND_SUPPORT_ENABLED` remains false for the broader wellness sheet, self-management reflection and student support routes, reflection history, and wellness recommendation reads/subscriptions. Check-in history and the legacy check-in link use the active-student guard independently of this flag. The legacy link opens the Home sheet.
 
 Do not re-enable these features as part of unrelated UI work. Re-enabling requires an explicit product decision and verification of navigation, admission, privacy/consent and recommendation behavior. The synthetic preview adapter can render retained screens independently; it does not make them available in the application.
 
