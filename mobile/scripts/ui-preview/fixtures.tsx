@@ -12,7 +12,7 @@ export const router={push:(v:any)=>actions.push(['push',v]),back:()=>actions.pus
 export function useLocalSearchParams(){useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>revision);return params}
 export function useFocusEffect(fn:any){React.useEffect(fn,[fn])}
 export const catalogue={options:[{id:'03400000-0000-4000-8000-000000000101',semester_id:'03400000-0000-4000-8000-000000000102',academic_year:'2026-2027',term:'1st Semester',course:'BSCS',year_level:'4th Year',section:'2',campus:'Cavite State University Bacoor City Campus'}],status:'ready',isRefreshing:false,loading:false,error:null as string|null,retry:ok};
-export function useEnrollmentOptions(settings?:{enabled?:boolean}){return settings?.enabled===false?{...catalogue,options:[],status:'idle',loading:false,isRefreshing:false,error:null}:catalogue}
+export function useEnrollmentOptions(settings?:{enabled?:boolean}){return settings?.enabled===false?{...catalogue,options:[],status:'idle',loading:false,isRefreshing:false,error:null,ready:false}:{...catalogue,ready:catalogue.status==='ready'&&!catalogue.isRefreshing}}
 data.registrationDraft={version:1,semesterId:catalogue.options[0].semester_id,enrollmentOptionId:catalogue.options[0].id,student:{name:'Alex Reyes',student_number:'123456789',goal:'Build a steady study routine',course:'BSCS',year_level:'4th Year',section:'2',campus:catalogue.options[0].campus}};
 
 export function useQuestCategories(){return {categories:['Academics','Habits','Social','Health'].map((name,i)=>({id:String(i),name})),loading:false,error:null,refresh:ok,createCategory:ok}}

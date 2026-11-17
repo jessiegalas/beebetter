@@ -1,66 +1,34 @@
-import { useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity, View, ScrollView } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, BackHandler, Keyboard, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity, View, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUserData } from '@/hooks/use-user-data';
-import { Field, IconButton } from '@/components/mobile-ui';
+import { Field, IconButton, useReducedMotion } from '@/components/mobile-ui';
 import { PixelButton } from '@/components/pixel/pixel-button';
 import { ThemedText } from '@/components/themed-text';
 import { BeeMark } from '@/components/bee-visuals';
-import { StudentInformationFields } from '@/components/student-information-fields';
+import { StudentEnrollmentFields } from '@/components/student-enrollment-fields';
+import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 import { useRegistrationForm } from '@/hooks/use-registration-form';
-import { StudentOnboarding } from '@/components/student-onboarding';
 import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Borders, Controls, Radii, Typography } from '@/constants/theme';
-import { studentLoginIdError, passwordError, LIMITS } from '@/lib/student-validation';
+import { cleanName, cleanStudentNumber, passwordError, requiredStudentNameError, studentGoalError, studentLoginIdError, LIMITS } from '@/lib/student-validation';
+
+type Step = 'id' | 'password' | 'name' | 'enrollment' | 'goal';
+const signInSteps: Step[] = ['id', 'password'];
+const signupSteps: Step[] = ['id', 'password', 'name', 'enrollment', 'goal'];
+const enrollmentSteps: Step[] = ['name', 'enrollment', 'goal'];
+const recoverySteps: Step[] = ['password'];
+const nameFields = [
+  { key: 'first', label: 'First name', autoComplete: 'given-name', required: true },
+  { key: 'middle', label: 'Middle name', autoComplete: 'additional-name', required: false },
+  { key: 'last', label: 'Last name', autoComplete: 'family-name', required: true },
+  { key: 'suffix', label: 'Suffix', autoComplete: 'name-suffix', required: false },
+] as const;
 
 export default function AuthScreen() {
   const colors = useBeePalette();
   const styles = useBeeStyles(makeStyles);
-  const { access, accessMessage, isSigningOut, isRefreshing, isAuthBusy, refresh, signIn, signUp, updateRecoveryPassword, signOut } = useUserData();
-  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
-  const [password, setPassword] = useState('');
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
-  const [idTouched, setIdTouched] = useState(false);
-  const [passwordTouched, setPasswordTouched] = useState(false);
-  const submitting = useRef(false);
-  const recovery = access === 'recovery_required';
-  const signup = mode === 'sign-up' && !recovery;
-  const newPassword = signup || recovery;
-  const form = useRegistrationForm({ owner: recovery ? 'recovery' : 'credentials' });
+  const { access, accessMessage, registrationOwner, isSigningOut, isRefreshing, isAuthBusy, refresh, signOut } = useUserData();
   const busy = isAuthBusy || isSigningOut;
-  const idError = studentLoginIdError(form.student.student_number);
-  const invalidPassword = newPassword ? passwordError(password) : !password ? 'Enter your password.' : undefined;
-
-  const submit = async () => {
-    if (submitting.current || busy) return;
-    setIdTouched(true);
-    setPasswordTouched(true);
-    const draft = signup ? form.validate() : null;
-    if (invalidPassword || (signup ? !draft : !recovery && idError)) return;
-    submitting.current = true;
-    setFeedback(null);
-    try {
-      const result = recovery ? await updateRecoveryPassword(password)
-        : draft ? await signUp(draft, password)
-        : await signIn(form.student.student_number, password);
-      if (result.status === 'error') setFeedback(result.message);
-      else setPassword('');
-    } finally {
-      submitting.current = false;
-    }
-  };
-
-  const changeMode = (next: 'sign-in' | 'sign-up') => {
-    if (submitting.current || busy || next === mode) return;
-    setMode(next);
-    setFeedback(null);
-    setPassword('');
-    setPasswordTouched(false);
-    setShowPassword(false);
-  };
-
-  if (access === 'onboarding_required') return <StudentOnboarding />;
   if (access === 'checking' || access === 'verification_error') return <SafeAreaView style={[styles.container, styles.center]}>
     {access === 'checking' ? <ActivityIndicator color={colors.honeyDark} accessibilityLabel="Checking account" /> : <>
       <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>
@@ -69,54 +37,198 @@ export default function AuthScreen() {
     </>}
   </SafeAreaView>;
 
+  const onboarding = access === 'onboarding_required';
+  const recovery = access === 'recovery_required';
+  return <StudentAuthWizard key={onboarding ? 'enrollment:' + registrationOwner : recovery ? 'recovery' : 'credentials'}
+    onboarding={onboarding} recovery={recovery} />;
+}
+
+function StudentAuthWizard({ onboarding, recovery }: { onboarding: boolean; recovery: boolean }) {
+  const colors = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
+  const data = useUserData();
+  const [signup, setSignup] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>();
+  const [attempted, setAttempted] = useState(false);
+  const [offset] = useState(() => new Animated.Value(0));
+  const reducedMotion = useReducedMotion();
+  const submitting = useRef(false);
+  const scroll = useRef<ScrollView>(null);
+  const catalogue = useEnrollmentOptions({ enabled: signup || onboarding });
+  const draft = onboarding ? data.registrationDraft : null;
+  const form = useRegistrationForm(draft, catalogue.options);
+  const needsStudentId = onboarding && !draft?.existingStudent;
+  const busy = data.isAuthBusy || data.isSigningOut;
+  const steps = onboarding ? enrollmentSteps : recovery ? recoverySteps : signup ? signupSteps : signInSteps;
+  const step = steps[index];
+  const newPassword = signup || recovery;
+  const invalidId = signup || needsStudentId
+    ? (/^[0-9]{9}$/.test(form.studentNumber) ? undefined : 'Enter your 9-digit student ID.')
+    : studentLoginIdError(form.studentNumber);
+  const invalidPassword = newPassword ? passwordError(password) : !password ? 'Enter your password.' : undefined;
+  const nameFieldError = ({ key, label, required }: typeof nameFields[number]) => {
+    const part = form.nameParts[key].trim();
+    if (!part) return required ? `Enter your ${label.toLowerCase()}.` : undefined;
+    return requiredStudentNameError(part);
+  };
+  const nameTooLong = form.name.length > LIMITS.name;
+  const invalidName = nameTooLong || nameFields.some(nameFieldError);
+  const invalidGoal = studentGoalError(form.goal);
+  const message = feedback === undefined && onboarding ? data.registrationError : feedback;
+
+  const goTo = useCallback((next: number) => {
+    Keyboard.dismiss();
+    offset.stopAnimation();
+    offset.setValue(reducedMotion ? 0 : next > index ? 84 : -84);
+    setIndex(next);
+    setAttempted(false);
+    setFeedback(null);
+    setPasswordFocused(false);
+    setShowPassword(false);
+    scroll.current?.scrollTo({ y: 0, animated: false });
+    if (!reducedMotion) {
+      Animated.timing(offset, { toValue: 0, duration: 180, useNativeDriver: Platform.OS !== 'web' }).start();
+    }
+  }, [index, offset, reducedMotion]);
+
+  useEffect(() => {
+    if (reducedMotion) { offset.stopAnimation(); offset.setValue(0); }
+  }, [offset, reducedMotion]);
+
+  useEffect(() => {
+    if (!index) return;
+    const listener = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!submitting.current && !busy) goTo(index - 1);
+      return true;
+    });
+    return () => listener.remove();
+  }, [busy, goTo, index]);
+
+  const changeMode = (next: boolean) => {
+    if (busy || submitting.current || next === signup) return;
+    setSignup(next);
+    if (next) form.setStudentNumber(cleanStudentNumber(form.studentNumber));
+    setPassword('');
+    goTo(0);
+  };
+
+  const submit = async () => {
+    if (busy || submitting.current) return;
+    setAttempted(true);
+    if ((step === 'id' && invalidId) || (step === 'password' && invalidPassword)
+      || (step === 'name' && (invalidName || (needsStudentId && invalidId))) || (step === 'goal' && invalidGoal)) return;
+    if (step === 'enrollment' && !form.selection) {
+      setFeedback('Choose your course, year level, campus, and section to continue.');
+      return;
+    }
+    if (index < steps.length - 1) { goTo(index + 1); return; }
+
+    const enrollment = (signup || onboarding) ? form.selection : null;
+    if ((signup || onboarding) && (!enrollment || !catalogue.ready)) {
+      goTo(steps.indexOf('enrollment'));
+      setFeedback('Check your enrollment choices and select your section again.');
+      return;
+    }
+    submitting.current = true;
+    setFeedback(null);
+    try {
+      const registration = { student_number: form.studentNumber, name: form.name, goal: form.goal, enrollment };
+      const result = enrollment
+        ? onboarding ? await data.completeRegistration({ ...registration, enrollment }) : await data.signUp({ ...registration, enrollment }, password)
+        : recovery ? await data.updateRecoveryPassword(password) : await data.signIn(form.studentNumber, password);
+      if (result.status !== 'error') { setPassword(''); return; }
+      if (result.code === 'enrollment_changed' && enrollment) {
+        form.clearSelection();
+        catalogue.retry();
+        goTo(steps.indexOf('enrollment'));
+      }
+      if (signup && result.code === 'student_number_unavailable') goTo(0);
+      if (signup && result.code === 'student_account_created') { setSignup(false); setPassword(''); goTo(1); }
+      setFeedback(result.message);
+    } finally { submitting.current = false; }
+  };
+
+  const title = recovery ? 'Choose a new password'
+    : step === 'id' ? signup ? 'Create your account' : 'Welcome to BeeBetter'
+    : step === 'password' ? signup ? 'Choose a password' : 'Enter your password'
+    : step === 'name' ? 'Student information' : step === 'enrollment' ? 'Enrollment' : 'Set your goal';
+  const idField = <Field label="Student ID" accessibilityLabel="Student ID, required" value={form.studentNumber}
+    error={attempted ? invalidId : undefined} editable={!busy}
+    hint={signup || needsStudentId ? 'Enter your 9-digit student ID' : undefined}
+    onChangeText={value => { form.setStudentNumber(signup || needsStudentId ? cleanStudentNumber(value) : value); setFeedback(null); }}
+    onSubmitEditing={() => void submit()} keyboardType={signup || needsStudentId ? 'number-pad' : 'default'}
+    autoComplete="username" autoCapitalize="none" autoCorrect={false} maxLength={LIMITS.login_student_id} />;
+
   return <SafeAreaView style={styles.container}>
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.mark}><BeeMark size={48} /></View>
-        <ThemedText type="title" style={styles.title}>{recovery ? 'Choose a new password' : signup ? 'Create your account' : 'Welcome to BeeBetter'}</ThemedText>
-        <ThemedText style={styles.subtitle}>{recovery ? 'Update your password to continue.' : signup ? 'Use your student ID and choose a password.' : 'Sign in with your student ID to continue.'}</ThemedText>
-        {!recovery && <View style={styles.modeRow}>
-          {(['sign-in', 'sign-up'] as const).map(value => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value, disabled: busy }} disabled={busy} style={[styles.modeButton, mode === value && styles.modeButtonActive]} onPress={() => changeMode(value)}>
-            <ThemedText style={styles.modeText}>{value === 'sign-in' ? 'Sign in' : 'Create account'}</ThemedText>
-          </TouchableOpacity>)}
-        </View>}
-        {!recovery && <View style={styles.studentFields}>
-          {signup ? <StudentInformationFields value={form.student} onChange={next => { form.change(next); setFeedback(null); }}
-            errors={form.errors} showErrors={form.submitted} disabled={busy} /> :
-            <Field
-              label="Student ID"
-              accessibilityLabel="Student ID, required"
-              value={form.student.student_number}
-              error={idTouched ? idError : undefined}
-              editable={!busy}
-              onChangeText={student_number => { form.change({ ...form.student, student_number }); setFeedback(null); }}
-              onBlur={() => setIdTouched(true)}
-              autoComplete="username"
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={LIMITS.login_student_id}
-            />}
-        </View>}
-        <ThemedText style={styles.label}>{recovery ? 'New password' : 'Password'}</ThemedText>
-        <View style={[styles.passwordRow, {
-          backgroundColor: busy ? colors.disabled : colors.card,
-          borderColor: (passwordTouched || !!password) && invalidPassword ? colors.danger : passwordFocused ? colors.focus : colors.input,
-        }]}>
-          <TextInput style={[styles.passwordInput, busy && { color: colors.disabledForeground }]} selectionColor={colors.primary}
-            onFocus={() => setPasswordFocused(true)} editable={!busy} value={password} onChangeText={value => { setPassword(value); setFeedback(null); }}
-            onBlur={() => { setPasswordFocused(false); setPasswordTouched(true); }} maxLength={newPassword ? LIMITS.password : undefined}
-            autoComplete={newPassword ? 'new-password' : 'current-password'} textContentType={newPassword ? 'newPassword' : 'password'}
-            autoCorrect={false} accessibilityLabel={recovery ? 'New password, required' : 'Password, required'}
-            placeholder={newPassword ? 'At least 15 characters' : 'Your password'} placeholderTextColor={colors.muted}
-            secureTextEntry={!showPassword} autoCapitalize="none" />
-          <IconButton disabled={busy} onPress={() => setShowPassword(value => !value)} label={showPassword ? 'Hide password' : 'Show password'} icon={showPassword ? 'eye-off-outline' : 'eye-outline'} />
-        </View>
-        {(passwordTouched || !!password) && invalidPassword && <ThemedText accessibilityRole="alert" style={styles.feedback}>{invalidPassword}</ThemedText>}
-        {accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{accessMessage}</ThemedText>}
-        {feedback && <ThemedText accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.feedback}>{feedback}</ThemedText>}
-        <PixelButton label={recovery ? 'Update password' : signup ? 'Create account' : 'Sign in'} loading={busy} onPress={() => void submit()} />
-        {!recovery && !signup && <ThemedText style={styles.help}>Forgot your password? Contact your school administrator.</ThemedText>}
-        {(recovery || access === 'blocked') && <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => void signOut()} style={styles.modeButton}><ThemedText style={styles.modeText}>{isSigningOut ? 'Signing out...' : 'Sign out'}</ThemedText></TouchableOpacity>}
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView ref={scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        {index > 0 && <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => goTo(index - 1)} style={styles.back}>
+          <ThemedText style={styles.modeText}>‹ Back</ThemedText>
+        </TouchableOpacity>}
+        {index === 0 && !onboarding && <View style={styles.mark}><BeeMark size={48} /></View>}
+        {!recovery && <ThemedText style={styles.progress}>Step {index + 1} of {steps.length}</ThemedText>}
+        <Animated.View style={{ transform: [{ translateX: offset }] }}>
+          <ThemedText type="title" accessibilityRole="header" style={styles.title}>{title}</ThemedText>
+          <View style={styles.panel}>
+            {!onboarding && !recovery && index === 0 && <View style={styles.modeRow}>
+              {[false, true].map(value => <TouchableOpacity key={String(value)} accessibilityRole="button"
+                accessibilityState={{ selected: signup === value, disabled: busy }} disabled={busy}
+                style={[styles.modeButton, signup === value && styles.modeButtonActive]} onPress={() => changeMode(value)}>
+                <ThemedText style={styles.modeText}>{value ? 'Create account' : 'Sign in'}</ThemedText>
+              </TouchableOpacity>)}
+            </View>}
+            {step === 'id' && idField}
+            {step === 'password' && <>
+              <ThemedText style={styles.label}>{recovery ? 'New password' : 'Password'}</ThemedText>
+              <View style={[styles.passwordRow, {
+                backgroundColor: busy ? colors.disabled : colors.card,
+                borderColor: (attempted || !!password) && invalidPassword ? colors.danger : passwordFocused ? colors.focus : colors.input,
+              }]}>
+                <TextInput style={[styles.passwordInput, busy && { color: colors.disabledForeground }]} selectionColor={colors.primary}
+                  onFocus={() => setPasswordFocused(true)} editable={!busy} value={password}
+                  onChangeText={value => { setPassword(value); setFeedback(null); }} onBlur={() => setPasswordFocused(false)}
+                  onSubmitEditing={() => void submit()} maxLength={newPassword ? LIMITS.password : undefined}
+                  autoComplete={newPassword ? 'new-password' : 'current-password'} textContentType={newPassword ? 'newPassword' : 'password'}
+                  accessibilityLabel={recovery ? 'New password, required' : 'Password, required'}
+                  placeholder={newPassword ? 'At least 15 characters' : 'Your password'} placeholderTextColor={colors.muted}
+                  secureTextEntry={!showPassword} autoCapitalize="none" autoCorrect={false} />
+                <IconButton disabled={busy} onPress={() => setShowPassword(value => !value)}
+                  label={showPassword ? 'Hide password' : 'Show password'} icon={showPassword ? 'eye-off-outline' : 'eye-outline'} />
+              </View>
+              {(attempted || !!password) && invalidPassword && <ThemedText accessibilityRole="alert" style={styles.feedback}>{invalidPassword}</ThemedText>}
+            </>}
+            {step === 'name' && <>
+              {needsStudentId && idField}
+              {draft?.existingStudent && <ThemedText>Student ID {draft.student_number}</ThemedText>}
+              {!!form.savedNameForReview && <ThemedText>Enter the parts of your saved name, {form.savedNameForReview}.</ThemedText>}
+              {nameFields.map(field => <Field key={field.key}
+                label={field.required ? field.label : field.label + ' (optional)'}
+                accessibilityLabel={field.label + (field.required ? ', required' : ', optional')}
+                value={form.nameParts[field.key]} editable={!busy}
+                error={attempted ? nameFieldError(field) : undefined}
+                onChangeText={value => { form.setNamePart(field.key, cleanName(value)); setFeedback(null); }}
+                autoCapitalize="words" autoComplete={field.autoComplete} autoCorrect={false} maxLength={LIMITS.name} />)}
+              {attempted && nameTooLong && <ThemedText accessibilityRole="alert" style={styles.feedback}>
+                Keep the full name within {LIMITS.name} characters.
+              </ThemedText>}
+            </>}
+            {step === 'enrollment' && <StudentEnrollmentFields form={form} catalogue={catalogue} busy={busy} />}
+            {step === 'goal' && <Field label="Your goal" accessibilityLabel="Your goal, required" hint="What would you like to work on this semester?"
+              editable={!busy} value={form.goal} error={attempted ? invalidGoal : undefined}
+              onChangeText={value => { form.setGoal(value); setFeedback(null); }} maxLength={LIMITS.goal} multiline style={styles.goal} />}
+          </View>
+          {data.accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{data.accessMessage}</ThemedText>}
+          {message && <ThemedText accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.feedback}>{message}</ThemedText>}
+          <PixelButton label={index < steps.length - 1 ? 'Continue' : onboarding ? 'Complete enrollment' : recovery ? 'Update password' : signup ? 'Create account' : 'Sign in'}
+            loading={busy} disabled={step === 'enrollment' && !catalogue.ready} onPress={() => void submit()} />
+        </Animated.View>
+        {!onboarding && !signup && !recovery && step === 'password' && <ThemedText style={styles.help}>Forgot your password? Contact your school administrator.</ThemedText>}
+        {(onboarding || recovery || data.access === 'blocked') && <TouchableOpacity accessibilityRole="button" disabled={busy}
+          onPress={() => void data.signOut()} style={styles.modeButton}><ThemedText style={styles.modeText}>{data.isSigningOut ? 'Signing out...' : 'Sign out'}</ThemedText></TouchableOpacity>}
       </ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;
@@ -128,16 +240,18 @@ const makeStyles = (colors: BeePalette) => StyleSheet.create({
   center: { justifyContent: 'center', padding: 24 },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 30, paddingBottom: 40 },
   mark: { marginBottom: 24 },
-  title: { ...Typography.page, color: colors.foreground },
-  subtitle: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 24 },
-  studentFields: { gap: 12, marginBottom: 16 },
-  modeRow: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: Radii.md, padding: 4, marginBottom: 20 },
+  title: { ...Typography.page, color: colors.foreground, marginBottom: 20 },
+  panel: { gap: 14, marginBottom: 14 },
+  progress: { color: colors.muted, fontSize: 14, marginBottom: 8 },
+  back: { alignSelf: 'flex-start', minHeight: 48, justifyContent: 'center', paddingRight: 16, marginBottom: 8 },
+  goal: { minHeight: 96, paddingTop: 12, textAlignVertical: 'top' },
+  modeRow: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: Radii.md, padding: 4 },
   modeButton: { flex: 1, alignItems: 'center', borderRadius: Radii.sm, minHeight: 48, paddingVertical: 11 },
   modeButtonActive: { backgroundColor: colors.card },
   modeText: { color: colors.muted, fontSize: 14, fontWeight: '700', lineHeight: 20 },
-  label: { color: colors.ink, fontSize: 14, fontWeight: '700', marginBottom: 7, lineHeight: 20 },
+  label: { color: colors.ink, fontSize: 14, fontWeight: '700', lineHeight: 20 },
   feedback: { color: colors.danger, fontSize: 14, lineHeight: 20, marginBottom: 14 },
   help: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 16, textAlign: 'center' },
-  passwordRow: { flexDirection: 'row', alignItems: 'center', borderRadius: Radii.md, marginBottom: 16, borderWidth: Borders.focus, borderColor: colors.input },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', borderRadius: Radii.md, borderWidth: Borders.focus, borderColor: colors.input },
   passwordInput: { ...Typography.body, fontFamily: Fonts.sans, flex: 1, minWidth: 0, minHeight: Controls.minHeight, paddingHorizontal: 14, paddingVertical: 13, color: colors.foreground },
 });

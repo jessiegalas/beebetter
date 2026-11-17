@@ -4,6 +4,7 @@ export const LIMITS = { name: 30, student_number: 9, login_student_id: 64, passw
 export type StudentFields = { name: string; student_number: string; course: string; year_level: string; section: string; campus: string; goal: string };
 export type StudentIdentity = Pick<StudentFields, 'student_number' | 'name'>;
 export type EnrollmentOption = { id: string; course: string; year_level: string; campus: string; section: string };
+export type RegistrationEnrollmentOption = EnrollmentOption & { semester_id: string; academic_year: string; term: string };
 export type StudentErrors = Partial<Record<keyof StudentFields, string>>;
 export const cleanName = (value: string) => value.normalize('NFC').replace(/[^\p{L}\p{M} .'\u2019-]/gu, '').slice(0, LIMITS.name);
 export const cleanStudentNumber = (value: string) => value.replace(/[^0-9]/g, '').slice(0, 9);
@@ -57,6 +58,16 @@ function nameError(name: string) {
   }
 }
 
+export function requiredStudentNameError(value: string) {
+  const name = normalizeText(value.normalize('NFC'));
+  return name ? nameError(name) : 'Enter your full name.';
+}
+
+export function studentGoalError(value: string) {
+  const goal = value.trim();
+  if (!goal || goal.length > LIMITS.goal) return 'Enter your goal using 1 to 200 characters.';
+}
+
 export function validateStudent(value: StudentFields, options: EnrollmentOption[], original?: StudentFields): StudentErrors {
   const data = normalizeStudent(value), errors: StudentErrors = {};
   const changed = (key: keyof StudentFields) => !original || value[key] !== original[key];
@@ -65,7 +76,10 @@ export function validateStudent(value: StudentFields, options: EnrollmentOption[
     if (error) errors.name = error;
   }
   if (changed('student_number') && !/^[0-9]{9}$/.test(data.student_number)) errors.student_number = 'Enter exactly 9 digits, e.g. 202311197.';
-  if (changed('goal') && (!data.goal || data.goal.length > LIMITS.goal)) errors.goal = 'Enter your goal using 1 to 200 characters.';
+  if (changed('goal')) {
+    const error = studentGoalError(data.goal);
+    if (error) errors.goal = error;
+  }
   const cohortChanged = (['course', 'year_level', 'campus', 'section'] as const).some(changed);
   if (cohortChanged) {
     if (!data.course || data.course.length > LIMITS.course || data.course.toLowerCase() === 'others') errors.course = 'Choose a program or specify your program (up to 60 characters).';

@@ -1,4 +1,4 @@
-import { LIMITS, type StudentIdentity } from './student-validation';
+import { LIMITS, type EnrollmentOption, type StudentIdentity } from './student-validation';
 
 export type AuthFailure = { status: 'error'; code: string; message: string };
 export type AuthOperationResult = { status: 'completed' } | AuthFailure;
@@ -13,6 +13,7 @@ export function authFailure(error: unknown): AuthFailure {
     over_request_rate_limit: 'Too many attempts. Wait a few minutes before trying again.',
     legacy_confirmation_required: 'This older account needs help from your school administrator before you can sign in.',
     student_auth_unavailable: 'Student sign-in is temporarily unavailable. Try again in a moment.',
+    student_auth_endpoint_missing: 'Student sign-in and signup are unavailable on this server. Contact your school administrator.',
     student_account_created: 'Your account was created. Use your student ID and password to sign in.',
     weak_password: 'Choose a stronger password with at least 15 characters.',
     otp_expired: 'This link has expired or was already used. Request another email.',
@@ -52,8 +53,13 @@ export function parseAuthCallback(raw: string, webOrigin?: string): AuthCallback
   return accessToken && refreshToken ? { kind: 'tokens', accessToken, refreshToken, recovery } : null;
 }
 
+export type EnrollmentLabels = Pick<EnrollmentOption, 'course' | 'year_level' | 'campus' | 'section'>;
+export type EnrollmentSelection = { semesterId: string; enrollmentOptionId: string; labels?: EnrollmentLabels };
+export type EnrolledRegistration = StudentIdentity & { goal: string; enrollment: EnrollmentSelection };
 export type RegistrationDraft = StudentIdentity & {
-  enrollment?: { goal: string; semesterId: string; enrollmentOptionId: string };
+  goal?: string;
+  enrollment?: EnrollmentSelection;
+  existingStudent?: true;
 };
 
 // Auth metadata is editable input, never evidence of student admission.
@@ -69,7 +75,7 @@ export function readRegistrationDraft(value: unknown): RegistrationDraft | null 
   if (draft.version === 1 && typeof student.goal === 'string' && student.goal.trim() && student.goal.length <= LIMITS.goal
     && typeof draft.semesterId === 'string' && uuid.test(draft.semesterId)
     && typeof draft.enrollmentOptionId === 'string' && uuid.test(draft.enrollmentOptionId)) {
-    return { ...identity, enrollment: { goal: student.goal, semesterId: draft.semesterId, enrollmentOptionId: draft.enrollmentOptionId } };
+    return { ...identity, goal: student.goal, enrollment: { semesterId: draft.semesterId, enrollmentOptionId: draft.enrollmentOptionId } };
   }
   return identity;
 }

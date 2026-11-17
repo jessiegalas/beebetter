@@ -4,11 +4,11 @@ import * as Linking from 'expo-linking';
 import { EMPTY_RECOMMENDATION_DATA, type RecommendationData } from '@/lib/recommendation-facts';
 import { User } from '@supabase/supabase-js';
 import { supabase, authRecoveryStorage } from '@/supabase';
-import { authFailure, parseAuthCallback, readRegistrationDraft, type RegistrationDraft, type AuthenticationResult, type AuthOperationResult, type AuthFailure } from '@/lib/auth-flow';
+import { authFailure, parseAuthCallback, readRegistrationDraft, type RegistrationDraft, type EnrolledRegistration, type EnrollmentLabels, type AuthenticationResult, type AuthOperationResult, type AuthFailure } from '@/lib/auth-flow';
 import { createStudentWorkspaceReader, type CompletionRecord, type WorkspaceSlice, type WorkspaceErrors } from '@/lib/student-workspace';
 import { createQuestCompletion, type CompleteQuestOutcome, type ProofFile } from '@/lib/quest-completion';
 import { createQuestCompletionAdapter } from '@/lib/quest-completion-adapter';
-import { passwordError, studentIdentityPayload, studentLoginIdError, validateStudentIdentity, type StudentIdentity } from '@/lib/student-validation';
+import { passwordError, requiredStudentNameError, studentGoalError, studentIdentityPayload, studentLoginIdError, validateStudentIdentity, type StudentIdentity } from '@/lib/student-validation';
 import { SessionFence, studentAccessMessage, VERIFICATION_MESSAGE, type AccountAccess } from '@/lib/account-access';
 import { calculateLevel, type LevelProgress } from '@/lib/progression';
 
@@ -85,9 +85,9 @@ interface UserDataContextType {
   accessMessage: string | null;
   isSigningOut: boolean;
   signIn: (studentId: string, password: string) => Promise<AuthenticationResult>;
-  signUp: (student: StudentIdentity, password: string) => Promise<AuthenticationResult>;
+  signUp: (student: EnrolledRegistration, password: string) => Promise<AuthenticationResult>;
   updateRecoveryPassword: (password: string) => Promise<AuthOperationResult>;
-  completeRegistration: (input: RegistrationDraft) => Promise<AuthOperationResult>;
+  completeRegistration: (input: EnrolledRegistration) => Promise<AuthOperationResult>;
   handleAuthCallback: (url: string) => Promise<AuthOperationResult>;
   isAuthBusy: boolean;
   authOperation: AuthOperation | null;
@@ -277,18 +277,17 @@ export function UserDataProvider({ children, notificationLifecycle }: {
   }, [beginAuthentication]);
 
   const authenticateStudent = useCallback(async (
-    action: 'sign_in' | 'sign_up',
-    studentId: string,
-    password: string,
-    name?: string,
+    body: { action: 'sign_in' | 'sign_up_enrolled'; student_number: string; password: string;
+      name?: string; goal?: string; semester_id?: string; enrollment_option_id?: string; expected_labels?: EnrollmentLabels },
   ): Promise<AuthenticationResult> => {
     const epoch = authenticationEpoch.current;
     const { data, error, response } = await supabase.functions.invoke('student-auth', {
-      body: { action, student_number: studentId, password, name },
+      body,
       timeout: 20_000,
     });
     if (epoch !== authenticationEpoch.current) return authFailure({ code: 'operation_cancelled' });
     if (error) {
+      if (response?.status === 404) return authFailure({ code: 'student_auth_endpoint_missing' });
       const body = await response?.json().catch(() => null);
       return authFailure({ code: typeof body?.code === 'string' ? body.code : 'student_auth_unavailable' });
     }
@@ -302,16 +301,21 @@ export function UserDataProvider({ children, notificationLifecycle }: {
   const signIn = useCallback((studentId: string, password: string): Promise<AuthenticationResult> =>
     runAuthentication<AuthenticationResult>('sign_in', async () => {
       if (studentLoginIdError(studentId)) return authFailure({ code: 'invalid_student_id' });
-      return authenticateStudent('sign_in', studentId.trim(), password);
+      return authenticateStudent({ action: 'sign_in', student_number: studentId.trim(), password });
     }, true), [authenticateStudent, runAuthentication]);
 
-  const signUp = useCallback((value: StudentIdentity, password: string): Promise<AuthenticationResult> =>
+  const signUp = useCallback((value: EnrolledRegistration, password: string): Promise<AuthenticationResult> =>
     runAuthentication<AuthenticationResult>('sign_up', async () => {
       const invalid = passwordError(password);
       if (invalid) return authFailure({ code: 'weak_password', message: invalid });
-      if (Object.keys(validateStudentIdentity(value)).length) return authFailure({ code: 'invalid_registration' });
+      if (Object.keys(validateStudentIdentity(value)).length || requiredStudentNameError(value.name)
+        || !value.enrollment?.labels || studentGoalError(value.goal)) return authFailure({ code: 'invalid_registration' });
       const student = studentIdentityPayload(value);
-      return authenticateStudent('sign_up', student.student_number, password, student.name);
+      return authenticateStudent({
+        action: 'sign_up_enrolled', ...student, password, goal: value.goal.trim(),
+        semester_id: value.enrollment.semesterId, enrollment_option_id: value.enrollment.enrollmentOptionId,
+        expected_labels: value.enrollment.labels,
+      });
     }, true), [authenticateStudent, runAuthentication]);
 
   const handleAuthCallback = useCallback(async (url: string): Promise<AuthOperationResult> => {
@@ -385,7 +389,18 @@ export function UserDataProvider({ children, notificationLifecycle }: {
         }
       }
       const denied = studentAccessMessage(studentData);
-      if (denied) { await endSession(denied); return; }
+      if (denied || !studentData) { await endSession(denied ?? undefined); return; }
+      if (!studentData.semester_id || !studentData.enrollment_option_id) {
+        clearUserData();
+        setRegistrationOwner(currentUser.id);
+        setRegistrationDraft({
+          student_number: studentData.student_number, name: studentData.name ?? '',
+          goal: studentData.goal ?? '', existingStudent: true,
+        });
+        setAccess('onboarding_required'); setAccessMessage(null);
+        return;
+      }
+      setRegistrationDraft(null);
       setUser(previous => previous?.id === currentUser.id ? previous : currentUser);
       setAccess('active');
       setAccessMessage(null);
@@ -469,26 +484,25 @@ export function UserDataProvider({ children, notificationLifecycle }: {
       return { status: 'completed' };
     }), [fetchUserData, fence, runAuthentication]);
 
-  const completeRegistration = useCallback((input: RegistrationDraft): Promise<AuthOperationResult> =>
+  const existingStudentNeedsEnrollment = registrationDraft?.existingStudent === true;
+  const completeRegistration = useCallback((input: EnrolledRegistration): Promise<AuthOperationResult> =>
     runAuthentication<AuthOperationResult>('registration', async () => {
       if (!sessionUser.current || recoveryRequired.current) return authFailure({ code: 'registration_unavailable' });
       const isCurrent = fence.capture();
       setRegistrationError(null);
-      const fieldError = Object.values(validateStudentIdentity(input))[0];
-      if (fieldError) return authFailure({ code: 'invalid_student_identity', message: fieldError });
+      const fieldError = requiredStudentNameError(input.name) || studentGoalError(input.goal)
+        || (!existingStudentNeedsEnrollment && validateStudentIdentity(input).student_number);
+      if (fieldError || !input.enrollment) return authFailure({ code: 'invalid_registration' });
       const student = studentIdentityPayload(input);
-      const complete = (enrollment?: RegistrationDraft['enrollment']) => supabase.rpc('student_complete_registration', {
-        name_value: student.name, student_number_value: student.student_number, goal_value: enrollment?.goal ?? null,
-        semester_id_value: enrollment?.semesterId ?? null, enrollment_option_id_value: enrollment?.enrollmentOptionId ?? null,
-      });
-      let { data, error } = await complete(input.enrollment);
-      // A pending older signup can still keep its enrollment if the section is active.
-      if (isCurrent() && input.enrollment && data?.code === 'enrollment_changed') {
-        ({ data, error } = await complete());
-      }
+      const fields = {
+        name_value: student.name, goal_value: input.goal.trim(),
+        semester_id_value: input.enrollment.semesterId, enrollment_option_id_value: input.enrollment.enrollmentOptionId,
+      };
+      const { data, error } = existingStudentNeedsEnrollment
+        ? await supabase.rpc('student_complete_enrollment', { ...fields, expected_labels: input.enrollment.labels ?? null })
+        : await supabase.rpc('student_complete_registration', { ...fields, student_number_value: student.student_number });
       if (!isCurrent()) return authFailure({ code: 'operation_cancelled' });
       if (error) return authFailure(error);
-      if (data?.code === 'enrollment_changed') return authFailure({ code: 'registration_unavailable' });
       if (data?.status !== 'completed') return authFailure({ code: data?.code ?? 'registration_unavailable', message: data?.message });
       setRegistrationDraft(null);
       // This best-effort cleanup is serialized with Auth operations. It must not
@@ -503,20 +517,21 @@ export function UserDataProvider({ children, notificationLifecycle }: {
       const currentUser = sessionUser.current;
       setTimeout(() => { if (isCurrent()) void fetchUserData(currentUser, true, true, true); }, 0);
       return { status: 'completed' };
-    }), [fetchUserData, fence, runAuthentication]);
+    }), [existingStudentNeedsEnrollment, fetchUserData, fence, runAuthentication]);
 
   useEffect(() => {
     const identity = sessionUser.current?.id;
-    if (access !== 'onboarding_required' || !identity || !registrationDraft || isAuthBusy || isSigningOut
+    if (access !== 'onboarding_required' || !identity || !registrationDraft?.enrollment || !registrationDraft.goal
+      || existingStudentNeedsEnrollment || isAuthBusy || isSigningOut
       || recoveryRequired.current || automaticRegistrationAttempt.current === identity) return;
     automaticRegistrationAttempt.current = identity;
     const isCurrent = fence.capture(identity);
     // At most one automatic attempt per login. Failures leave the populated form
     // available for correction/retry rather than repeating on every refresh.
-    void completeRegistration(registrationDraft).then(result => {
+    void completeRegistration({ ...registrationDraft, goal: registrationDraft.goal, enrollment: registrationDraft.enrollment }).then(result => {
       if (isCurrent() && result.status === 'error') setRegistrationError(result.message);
     });
-  }, [access, registrationDraft, isAuthBusy, isSigningOut, completeRegistration, fence]);
+  }, [access, registrationDraft, existingStudentNeedsEnrollment, isAuthBusy, isSigningOut, completeRegistration, fence]);
 
   const updateProfile = useCallback(async (updates: StudentIdentity) => {
     if (!user || !isAdmittedSession()) return { success: false, error: 'User is not signed in.' };

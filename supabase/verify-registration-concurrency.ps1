@@ -38,6 +38,8 @@ if ($previous -and -not [Guid]::TryParse($previous,[ref]$previousId)) { throw 'I
 $studentOne = '03500000-0000-4000-8000-000000000001'
 $studentTwo = '03500000-0000-4000-8000-000000000002'
 $admin = '03500000-0000-4000-8000-000000000003'
+$signupOne = '03500000-0000-4000-8000-000000000004'
+$signupTwo = '03500000-0000-4000-8000-000000000005'
 $period = '03500000-0000-4000-8000-000000000100'
 $option = '03500000-0000-4000-8000-000000000101'
 $draft = '03500000-0000-4000-8000-000000000200'
@@ -47,7 +49,8 @@ begin;
 do $guard$
 begin
   if exists(select 1 from auth.users where id in (
-    '03500000-0000-4000-8000-000000000001','03500000-0000-4000-8000-000000000002','03500000-0000-4000-8000-000000000003'))
+    '03500000-0000-4000-8000-000000000001','03500000-0000-4000-8000-000000000002','03500000-0000-4000-8000-000000000003',
+    '03500000-0000-4000-8000-000000000004','03500000-0000-4000-8000-000000000005'))
     or exists(select 1 from public.academic_semesters where id in (
     '03500000-0000-4000-8000-000000000100','03500000-0000-4000-8000-000000000200')) then
     raise exception 'Fixture identities already exist; refusing to overwrite';
@@ -77,6 +80,33 @@ try {
   $adminRole = "set local role authenticated; select set_config('request.jwt.claim.sub','$admin',true);"
   $completeOne = "select public.student_complete_registration('Concurrent Student','935000001','Build habits','$period','$option')->>'status';"
   $completeTwo = "select public.student_complete_registration('Other Student','935000002','Build habits','$period','$option')->>'status';"
+
+  $createEnrolled = @'
+insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data)
+values('SIGNUP_ID','student-SIGNUP_ID@beebetter.invalid','{}',
+  '{"student_number":"935000004","name":"Concurrent Signup","initial_enrollment":{"goal":"Study","semester_id":"SEMESTER_ID","enrollment_option_id":"OPTION_ID","expected_labels":{"course":"BSCS","year_level":"4th Year","campus":"Cavite State University Bacoor City Campus","section":"1"}}}');
+update auth.users set raw_app_meta_data='{"student_login":"id_password"}' where id='SIGNUP_ID';
+update auth.users set email_confirmed_at=now() where id='SIGNUP_ID';
+'@
+  $createEnrolled = $createEnrolled.Replace('SEMESTER_ID',$period).Replace('OPTION_ID',$option)
+  $signupFirst = $createEnrolled.Replace('SIGNUP_ID',$signupOne) + "select 'completed';"
+  $signupContender = @'
+do $check$
+begin
+  begin
+    INSERT_ACCOUNT
+  exception when unique_violation then return;
+  end;
+  raise exception 'Concurrent duplicate signup succeeded';
+end;
+$check$;
+select 'duplicate';
+'@
+  Invoke-Pair $signupFirst ($signupContender.Replace('INSERT_ACCOUNT',$createEnrolled.Replace('SIGNUP_ID',$signupTwo))) 'completed' 'duplicate'
+  $signupClean = "select exists(select 1 from public.students where id='$signupOne' and enrollment_option_id='$option') and not exists(select 1 from auth.users where id='$signupTwo') and (select count(*)=1 from public.student_enrollment_history where student_id in ('$signupOne','$signupTwo'));"
+  if ((Invoke-Sql $signupClean) -ne 't') {
+    throw 'Concurrent duplicate signup left an unexpected account or enrollment history.'
+  }
 
   # Registration holds parent/option locks. Removal must see the committed association.
   Invoke-Pair ($studentRole + $completeOne) ($adminRole + "select public.admin_remove_semester_section('$option');") 'completed' 'archived'
@@ -114,10 +144,10 @@ select 'activation_denied';
   if ((Invoke-Sql "select (select count(*)=2 and bool_and(semester_id='$period') from public.students where id in ('$studentOne','$studentTwo')) and (select count(*)=2 from public.student_enrollment_history where student_id in ('$studentOne','$studentTwo'));") -ne 't') {
     throw 'Semester activation changed or duplicated enrollment facts.'
   }
-  Write-Host 'Registration concurrency passed: removal, archival, empty activation, and rollover.'
+  Write-Host 'Registration concurrency passed: duplicate signup, removal, archival, empty activation, and rollover.'
 } finally {
   if ($prepared) {
     $restore = if ($previous) { "update public.academic_semesters set status='active',archived_at=null where id='$previousId';" } else { '' }
-    Invoke-Sql ("begin; delete from auth.users where id in ('$studentOne','$studentTwo','$admin'); delete from public.student_enrollment_options where id in ('$option','$draftOption'); delete from public.academic_semesters where id in ('$period','$draft'); " + $restore + " commit;") | Out-Null
+    Invoke-Sql ("begin; delete from auth.users where id in ('$studentOne','$studentTwo','$admin','$signupOne','$signupTwo'); delete from public.student_enrollment_options where id in ('$option','$draftOption'); delete from public.academic_semesters where id in ('$period','$draft'); " + $restore + " commit;") | Out-Null
   }
 }

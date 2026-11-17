@@ -15,6 +15,7 @@ const SECTION_LABELS: Record<Section, string> = {
   Overview: 'Overview',
   Quests: 'Quest Assignments',
   Students: 'Students',
+  'Semesters & Sections': 'Semesters & Sections',
   'Support Requests': 'Support Requests',
   Admins: 'Admin Access',
 }
@@ -23,8 +24,9 @@ const SupportRequests = ADMIN_SUPPORT_REQUESTS_ENABLED
   : null
 const OsasPermissions=lazy(()=>import('./OsasPermissions').then(module=>({default:module.OsasPermissions})))
 const OsasDashboard=lazy(()=>import('./OsasDashboard').then(module=>({default:module.OsasDashboard})))
+const SemesterManagement = lazy(() => import('./SemesterManagement').then(module => ({ default: module.SemesterManagement })))
 
-type AppIconName = 'overview' | 'users' | 'quests' | 'support' | 'admins' | 'sun' | 'moon' | 'signOut' | 'menu' | 'search' | 'close'
+type AppIconName = 'overview' | 'users' | 'quests' | 'semesters' | 'support' | 'admins' | 'sun' | 'moon' | 'signOut' | 'menu' | 'search' | 'close'
 
 function AppIcon({ name }: { name: AppIconName }) {
   return <svg className="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -37,6 +39,7 @@ function AppIcon({ name }: { name: AppIconName }) {
     {name === 'moon' && <path d="M19.5 15.2A8.2 8.2 0 0 1 8.8 4.5 8.5 8.5 0 1 0 19.5 15.2Z" />}
     {name === 'signOut' && <><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10M14 16l4-4-4-4M18 12H9" /></>}
     {name === 'menu' && <path d="M4 6h16M4 12h16M4 18h16" />}
+    {name === 'semesters' && <><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M8 13h3M8 16.5h3M14 13h2.5" /></>}
     {name === 'search' && <><circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4.5 4.5" /></>}
     {name === 'close' && <path d="m6 6 12 12M18 6 6 18" />}
   </svg>
@@ -47,6 +50,7 @@ function SectionIcon({ section }: { section: Section }) {
     Overview: 'overview',
     Students: 'users',
     Quests: 'quests',
+    'Semesters & Sections': 'semesters',
     'Support Requests': 'support',
     Admins: 'admins',
   }
@@ -353,7 +357,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
     }
   }
 
-  const sections: Section[] = ['Overview', 'Quests', 'Students']
+  const sections: Section[] = ['Overview', 'Quests', 'Students', 'Semesters & Sections']
   if (canManageSupport) sections.push('Support Requests')
   const sectionLabel = SECTION_LABELS[section]
   const navItem = (item: Section) => <button className={section === item ? 'nav-item active' : 'nav-item'} onClick={() => navigate(item)} key={item}
@@ -425,6 +429,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
             onOpenQuest={setSelectedQuest} onCreateQuest={() => setNewQuestOpen(true)} onReviewAssignments={() => navigate('Quests')} />}
           {section === 'Students' && <DataTable kind="users" users={users} total={userTotal} query={userQuery} loading={usersLoading} error={usersError} onRefresh={loadUsers} onQueryChange={setUserQuery} onUserClick={setSelectedUser} onUserActions={setUserActions} />}
           {section === 'Quests' && <DataTable kind="quests" quests={quests} total={questTotal} query={questQuery} loading={questsLoading} error={questsError} onRefresh={loadQuests} onQueryChange={setQuestQuery} onQuestClick={setSelectedQuest} />}
+          {section === 'Semesters & Sections' && <SemesterManagement />}
           {section === 'Support Requests' && canManageSupport && SupportRequests && <SupportRequests />}
           {section === 'Admins' && adminRole === 'super_admin' && <><AdminAccessRequests requests={adminAccessRequests} loading={accessRequestsLoading} error={accessRequestsError} onRefresh={loadAccessRequests} onReview={(request, approve) => { void decideAccessRequest(request, approve) }} /><AdminTable admins={admins} currentAdminId={adminIdentity.id} loading={adminsLoading} error={adminsError} onRefresh={loadAdmins} onAdd={() => setAdminModalOpen(true)} onUpdate={updateAdmin} onRemove={removeAdmin} /><OsasPermissions admins={admins} loading={adminsLoading} error={adminsError} /></>}
           </Suspense>
