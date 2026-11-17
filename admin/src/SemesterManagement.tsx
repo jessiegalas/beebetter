@@ -101,9 +101,9 @@ export function SemesterManagement(){
     <section className="panel">
       <div className="panel-heading"><div><h2>Academic semesters</h2><p>One semester can be active. Archived semesters remain read-only.</p></div><button className="secondary-button" disabled={working||loading||sectionsLoading} onClick={()=>{void loadSemesters();void loadSections(selectedId)}}>Refresh</button></div>
       {!loading&&<p className="enrollment-status"><strong>Active registration semester: </strong>{registrationSemester?`${registrationSemester.academicYear} / ${registrationSemester.term}. Student registration uses its active sections.`:'None. Add sections to a draft and activate it to make student registration available.'}</p>}
-      {error&&<div className="case-notice semester-error" role="alert">{error}</div>}
-      {notice&&<div className="case-notice" role="status">{notice}</div>}
-      {working&&<div className="case-notice" role="status">Saving changes...</div>}
+      {error&&<div className="admin-alert" data-tone="error" role="alert">{error}</div>}
+      {notice&&<div className="admin-alert" data-tone="success" role="status">{notice}</div>}
+      {working&&<div className="admin-alert" data-tone="info" role="status">Saving changes...</div>}
       <h3>Choose a semester to manage</h3>
       <p>Selection opens its sections below. It does not change the active registration semester.</p>
       {loading?<div className="empty-state">Loading semesters...</div>:semesters.length===0?<div className="empty-state">No semesters configured.</div>:<div className="semester-list">{semesters.map(item=><button key={item.id} aria-pressed={selectedId===item.id} className={selectedId===item.id?'semester-card selected':'semester-card'} disabled={working} onClick={()=>setSelectedId(item.id)}>
@@ -120,7 +120,7 @@ export function SemesterManagement(){
     <section className="panel">
       {!selected?<div className="empty-state">Select a semester to manage its sections.</div>:<>
         <div className="panel-heading"><div><h2>Sections for {selected.academicYear} / {selected.term}</h2><p>{selected.status==='active'?'Active registration semester':selected.status==='draft'?'Draft - add sections before activation':'Archived historical semester - read only'}</p></div><div className="semester-actions">{selected.status==='draft'&&<button disabled={working||!sectionsReady||activeSectionCount===0} className="primary-button" onClick={activate}>Activate</button>}{selected.status!=='archived'&&<button disabled={working} className="secondary-button" onClick={archive}>Archive</button>}</div></div>
-        {selected.status==='draft'&&sectionsReady&&activeSectionCount===0&&<p className="enrollment-status" role="status">Add at least one active section before activation. Registration will only offer the sections configured for the active semester.</p>}{editable&&<form className="section-form" onSubmit={submitSection}>
+        {selected.status==='draft'&&sectionsReady&&activeSectionCount===0&&<p className="admin-alert" data-tone="warning" role="status">Add at least one active section before activation. Registration will only offer the sections configured for the active semester.</p>}{editable&&<form className="section-form" onSubmit={submitSection}>
           <label>Course<input required name="course" autoComplete="off" readOnly={lockedLabels} maxLength={60} value={draft.course} onChange={e=>setDraft({...draft,course:e.target.value})}/></label>
           <label>Year level<select name="yearLevel" disabled={lockedLabels} value={draft.yearLevel} onChange={e=>setDraft({...draft,yearLevel:e.target.value})}>{[...new Set([...YEARS,draft.yearLevel])].map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Campus<input name="campus" readOnly value={draft.campus}/></label>

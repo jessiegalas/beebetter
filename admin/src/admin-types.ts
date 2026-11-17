@@ -1,4 +1,5 @@
-export type Section = 'Overview' | 'Students' | 'Quests' | 'Semesters & Sections' | 'Support Requests' | 'Admins';
+export type AnalyticsSection = 'Overview' | 'Wellness' | 'Engagement' | 'Reports';
+export type Section = AnalyticsSection | 'Students' | 'Quests' | 'Semesters & Sections' | 'Data Testing' | 'Support Requests' | 'Admins';
 export type User = { id: string; studentNumber: string; name: string; email: string; course: string; yearLevel: string; section: string; campus: string; goal: string; joined: string; quests: string; status: 'Active' | 'Inactive' };
 export type QuestDraft = { title: string; description: string; category: 'Academics' | 'Habits' | 'Social' | 'Health'; difficulty: 'Easy' | 'Medium' | 'Hard'; assigneeId: string | null; publish: boolean };
 export type Quest = { id: string; ownerId: string; title: string; description: string; category: QuestDraft['category']; xp: number; difficulty: QuestDraft['difficulty']; completions: string; status: 'active' | 'pending' | 'completed' | 'rejected'; assignee: string };

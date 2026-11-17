@@ -1,4 +1,4 @@
-import type { DashboardAnalytics } from './osas-data'
+import type { DashboardAnalytics, SemesterWellness } from './osas-data'
 
 const csvCell = (value: unknown): string => {
   const text = value == null ? 'Unavailable' : String(value)
@@ -6,7 +6,7 @@ const csvCell = (value: unknown): string => {
   return '"' + safe.replaceAll('"', '""') + '"'
 }
 
-export function buildOsasReportCsv(data: DashboardAnalytics, generatedAt = new Date()): string {
+export function buildOsasReportCsv(data: DashboardAnalytics, generatedAt = new Date(), semesterWellness: SemesterWellness[] = []): string {
   if (data.suppressed || !data.participation) throw new Error('Export unavailable because the report is withheld for privacy.')
   const rows: unknown[][] = []
   const add = (...values: unknown[]) => rows.push(values)
@@ -43,6 +43,14 @@ export function buildOsasReportCsv(data: DashboardAnalytics, generatedAt = new D
     add(row.bucket_start, row.from_date, row.through_date, row.partial ? 'Partial week' : 'Full week', row.student_count,
       row.registered_students, row.coverage, row.average_wellbeing, row.average_stress, row.average_energy)
   }
+  if (semesterWellness.length) {
+    add()
+    add('Academic year', 'Semester', 'Year level', 'Respondents', 'Average well-being (1–5)', 'Average stress (1–5)', 'Average energy (1–5)')
+    for (const row of semesterWellness) {
+      add(row.academic_year, row.term, row.year_level, row.respondents, row.average_wellbeing, row.average_stress, row.average_energy)
+    }
+    add('Semester wellness basis', 'Enrollment at the time of the check-in within the selected dates. Each respondent has equal weight within their cohort.')
+  }
 
   add()
   add('Student-chosen interests', 'Distinct students creating', 'Distinct students completing')
@@ -65,8 +73,8 @@ export function buildOsasReportCsv(data: DashboardAnalytics, generatedAt = new D
   return '\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n')
 }
 
-export function downloadOsasReportCsv(data: DashboardAnalytics): void {
-  const blob = new Blob([buildOsasReportCsv(data)], { type: 'text/csv;charset=utf-8' })
+export function downloadOsasReportCsv(data: DashboardAnalytics, semesterWellness: SemesterWellness[] = []): void {
+  const blob = new Blob([buildOsasReportCsv(data, new Date(), semesterWellness)], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

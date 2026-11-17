@@ -27,6 +27,7 @@ type QuestTableProps = {
   onRefresh?: () => void
   onQueryChange: (query: QuestListQuery) => void
   onQuestClick?: (quest: Quest) => void
+  onCreateQuest?: () => void
 }
 type DataTableProps = StudentTableProps | QuestTableProps
 
@@ -46,7 +47,12 @@ function useSearchDraft<Q extends { page: number; search: string }>(query: Q, on
 }
 
 function SearchField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="search-field"><span aria-hidden="true">⌕</span><input type="search" aria-label={label} placeholder={label} value={value} onChange={event => onChange(event.target.value)} /></label>
+  return <label className="search-field">
+    <svg className="app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+      <circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4.5 4.5" />
+    </svg>
+    <input type="search" aria-label={label} placeholder={label} value={value} onChange={event => onChange(event.target.value)} />
+  </label>
 }
 
 function PageSize({ value, onChange }: { value: number; onChange: (value: number) => void }) {
@@ -132,16 +138,17 @@ function StudentTable(props: StudentTableProps) {
 }
 
 function QuestTable(props: QuestTableProps) {
-  const { quests, total, query, loading = false, error = '', onRefresh, onQueryChange, onQuestClick } = props
+  const { quests, total, query, loading = false, error = '', onRefresh, onQueryChange, onQuestClick, onCreateQuest } = props
   const [search, setSearch] = useSearchDraft(query, onQueryChange)
   const hasFilters = Boolean(query.search) || query.status !== 'All' || query.difficulty !== 'All'
   const clearFilters = () => { setSearch(''); onQueryChange({ ...query, page: 0, search: '', status: 'All', difficulty: 'All' }) }
   return <section className="panel table-panel" aria-label="Quest assignments">
     <div className="list-controls quest-controls">
-      <SearchField label="Search quests" value={search} onChange={setSearch} />
+      <SearchField label="Search assignments" value={search} onChange={setSearch} />
       <label className="filter-field"><span>Status</span><select className="filter" aria-label="Filter quests by status" value={query.status} onChange={event => onQueryChange({ ...query, page: 0, status: event.target.value as QuestListQuery['status'] })}><option value="All">All statuses</option><option value="active">Published</option><option value="pending">Draft</option><option value="completed">Completed</option><option value="rejected">Rejected</option></select></label>
       <label className="filter-field"><span>Difficulty</span><select className="filter" aria-label="Filter quests by difficulty" value={query.difficulty} onChange={event => onQueryChange({ ...query, page: 0, difficulty: event.target.value as QuestListQuery['difficulty'] })}><option value="All">All difficulties</option><option>Easy</option><option>Medium</option><option>Hard</option></select></label>
       {onRefresh && <button className="secondary-button list-refresh" onClick={onRefresh} disabled={loading}>Refresh</button>}
+      {onCreateQuest && <button className="primary-button" type="button" onClick={onCreateQuest}>New quest</button>}
     </div>
     {error && <div className="empty-state list-error" role="alert">{error}</div>}
     {loading ? <TableLoading label="Loading quests" /> : !error && (quests.length === 0

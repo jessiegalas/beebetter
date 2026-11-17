@@ -4,9 +4,20 @@ import type { AuthActionResult, OwnAccessRequest } from './admin-access'
 import type { AdminIdentity } from './admin-types'
 import { ADMIN_SUPPORT_REQUESTS_ENABLED } from './admin-features'
 
-export function Brand() { return <div className="brand"><span className="brand-mark">✦</span><strong>BeeBetter</strong></div> }
+export function Brand() {
+  return <div className="brand">
+    <img className="brand-mark" src={`${import.meta.env.BASE_URL}beebetter-icon.png`} alt="" width={32} height={32} />
+    <strong>BeeBetter</strong>
+  </div>
+}
 export function initials(name: string) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join('') || 'AD' }
-export function ProfileBadge({ identity, onClick }: { identity: AdminIdentity; onClick: () => void }) { return <button className="side-profile" aria-label={`Open admin information for ${identity.name}`} onClick={onClick}><span className="avatar">{initials(identity.name)}</span><span><b>{identity.name}</b><small>{identity.email || 'Administrator'}</small></span><span aria-hidden="true">...</span></button> }
+export function ProfileBadge({ identity, onClick }: { identity: AdminIdentity; onClick: () => void }) {
+  const label = `Open admin information for ${identity.name}`
+  return <button className="side-profile" type="button" aria-label={label} aria-haspopup="dialog" title={label} onClick={onClick}>
+    <span className="avatar">{initials(identity.name)}</span>
+    <span><b>{identity.name}</b><small>{identity.email || 'Administrator'}</small></span>
+  </button>
+}
 
 export function AdminInfoPanel({ identity, role, permissions, onClose, onSignOut }: {
   identity: AdminIdentity

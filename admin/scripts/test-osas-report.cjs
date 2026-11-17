@@ -32,4 +32,10 @@ assert(csv.includes('"activity-two","2026-09-24","Social","12","In progress","Un
 for (const excluded of ['"Campus"', '"Program"', 'Year level', 'goals', 'Self-management', 'Support', 'Motivation']) assert.equal(csv.includes(excluded), false, `unexpected ${excluded}`);
 assert(buildOsasReportCsv({ ...data, institutional_timezone: '=unsafe' }).includes('"' + "'=unsafe" + '"'));
 assert.throws(() => buildOsasReportCsv({ ...data, suppressed: true, participation: null }), /withheld for privacy/i);
+const semesterCsv = buildOsasReportCsv(data, new Date('2026-10-01T00:00:00Z'), [
+  { academic_year: '2026-2027', term: '1st Semester', year_level: '1st Year', respondents: 5, average_wellbeing: 3.8, average_stress: 2, average_energy: 4 },
+  { academic_year: '2026-2027', term: '1st Semester', year_level: '2nd Year', respondents: null, average_wellbeing: null, average_stress: null, average_energy: null },
+]);
+assert(semesterCsv.includes('"2026-2027","1st Semester","1st Year","5","3.8","2","4"'));
+assert(semesterCsv.includes('"2026-2027","1st Semester","2nd Year","Unavailable","Unavailable","Unavailable","Unavailable"'));
 console.log('PASS OSAS CSV report content, unavailable values, suppression, and spreadsheet escaping');

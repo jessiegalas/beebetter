@@ -44,18 +44,22 @@ let count = 0;
 async function test(name, run) { await run(); count++; console.log('PASS ' + name); }
 
 async function reports() {
-  const h = hookHarness(), requests = [], audits = [], downloads = [];
+  const h = hookHarness(), requests = [], semesterRequests = [], audits = [], downloads = [];
   let auditWait = null, auditError = null;
   const mod = load('admin/src/OsasDashboard.tsx', h, {
+    'radix-ui': { Tabs: { Root: 'tabs-root', List: 'tabs-list', Trigger: 'tabs-trigger', Content: 'tabs-content' } },
     './osas-data': {
       getReportingTimezone: async () => 'Asia/Manila',
       getDashboardAnalytics: filters => { const pending = deferred(); requests.push({ filters, pending }); return pending.promise; },
+      getSemesterWellness: filters => { const pending = deferred(); semesterRequests.push({ filters, pending }); return pending.promise; },
       logDashboardExport: async filters => { audits.push(filters); if (auditWait) await auditWait.promise; if (auditError) throw auditError; },
     },
-    './osas-report': { downloadOsasReportCsv: data => downloads.push(data) },
+    './osas-report': { downloadOsasReportCsv: (data, rows) => downloads.push({ data, rows }) },
   });
   const permissions = { can_view_aggregates: true, can_manage_support_requests: false };
-  h.mount(() => mod.exports.OsasDashboard({ permissions, assignmentRevision: 0, onOpenQuest() {}, onCreateQuest() {} }));
+  let view = 'Reports';
+  const goTo = section => { view = section; h.render(); };
+  h.mount(() => mod.exports.OsasDashboard({ view, permissions, assignmentRevision: 0, onOpenQuest() {}, onCreateQuest() {}, onNavigate: goTo }));
   const result = (index, id) => ({
     id, suppressed: false, participation: { registered_students: 10, participating_students: 6, completion_events: 7 }, activity_trends: [], wellbeing_trends: [],
     student_interests: [], first_week: null, assignment_outcomes: [],
@@ -78,14 +82,30 @@ async function reports() {
   await flush();
   await applyDate('2026-01-01');
   requests[1].pending.resolve(result(1, 'current')); await flush();
+  assert.equal(button(h.value, 'Export CSV').props.disabled, true, 'Wait for the matching semester report before export');
+  const currentSemester = [{ semester_id: 'current-semester', academic_year: '2025-2026', term: '2nd Semester',
+    year_level: '1st Year', respondents: 6, average_wellbeing: 3.5, average_stress: 2, average_energy: 4 }];
+  semesterRequests[1].pending.resolve(currentSemester); await flush();
   requests[0].pending.resolve(result(0, 'stale')); await flush();
-  const displayed = nodes(h.value).find(node => typeof node.type === 'function' && node.props.data);
+  semesterRequests[0].pending.resolve([]); await flush();
+  goTo('Wellness'); await flush();
+  const checkIns = nodes(h.value).find(node => node.type?.name === 'CheckIns');
+  assert.deepEqual(checkIns.props.semester.rows, currentSemester);
+  assert(!nodes(h.value).some(node => node.type?.name === 'QuestEngagement'), 'Wellness has its own screen');
+  goTo('Engagement');
+  const displayed = nodes(h.value).find(node => node.type?.name === 'QuestEngagement');
   assert.equal(displayed.props.data.id, 'current');
-  const summary = displayed.type(displayed.props);
-  const repeatSummary = find(summary, 'div', node => text(node).startsWith('Completed again next week'));
-  assert(text(repeatSummary).includes('Unavailable'));
-  assert(!text(repeatSummary).includes('50%'), 'A withheld latest pair must not be replaced by an older released pair.');
-  const chart = nodes(summary).find(node => node.type?.name === 'CompletionChart');
+  const engagement = displayed.type(displayed.props);
+  const participation = find(engagement, 'tabs-content', node => node.props.value === 'participation').props.children;
+  const participationSummary = participation.type(participation.props);
+  assert(!nodes(participationSummary).some(node => node.type?.name === 'CompletionChart'));
+  const completions = find(engagement, 'tabs-content', node => node.props.value === 'completions').props.children;
+  const completionSummary = completions.type(completions.props);
+  const completionMetrics = nodes(completionSummary).find(node => node.type?.name === 'EngagementMetrics').props.metrics;
+  assert.equal(completionMetrics.find(metric => metric.label === 'Next-week repeat').value, null,
+    'A withheld latest pair must not be replaced by an older released pair.');
+  const chart = nodes(completionSummary).find(node => node.type?.name === 'CompletionChart');
+  assert(!nodes(chart.type(chart.props)).some(node => node.type === 'details'), 'An empty trend should not offer an unavailable-only table');
   const chartTable = find(chart.type({ data: {
     ...displayed.props.data, period_start: '2026-09-01', period_end: '2026-09-03',
     activity_trends: [{ bucket_start: '2026-09-01', student_count: 5, completion_events: 6 }, { bucket_start: '2026-09-03', student_count: 5, completion_events: 8 }],
@@ -93,8 +113,10 @@ async function reports() {
   const withheldRow = find(chartTable, 'tr', node => text(node).includes('Unavailable'));
   assert.equal(find(withheldRow, 'time').props.dateTime, '2026-09-02');
   assert.deepEqual(nodes(withheldRow).filter(node => node.type === 'td').map(text), ['Unavailable', 'Unavailable']);
+  goTo('Reports'); await flush();
   button(h.value, 'Export CSV').props.onClick(); await flush();
-  assert.equal(downloads[0].id, 'current');
+  assert.equal(downloads[0].data.id, 'current');
+  assert.deepEqual(downloads[0].rows, currentSemester);
   assert.deepEqual({ ...audits[0] }, { startDate: '2026-01-01', endDate: '2026-03-01' });
 
   auditError = new Error('Audit rejected');
@@ -107,6 +129,19 @@ async function reports() {
   assert.equal(downloads.length, 1, 'Changed report must cancel the pending download');
   requests[2].pending.resolve({ ...result(2, 'withheld'), suppressed: true, minimum_cohort: 5 }); await flush();
   assert.equal(button(h.value, 'Export CSV').props.disabled, true);
+  const queriesBeforeOverview = semesterRequests.length;
+  goTo('Overview');
+  assert.equal((Date.parse(requests[3].filters.endDate) - Date.parse(requests[3].filters.startDate)) / 86_400_000, 29);
+  requests[3].pending.resolve(result(3, 'overview')); await flush();
+  assert.equal(semesterRequests.length, queriesBeforeOverview, 'Overview does not query semester comparisons');
+  const overview = nodes(h.value).find(node => node.type?.name === 'ExecutiveOverview');
+  const glance = overview.type(overview.props);
+  assert.equal(nodes(glance).filter(node => node.type === 'dt').length, 4);
+  assert.equal(nodes(glance).filter(node => node.type?.name === 'WellnessTrend').length, 1);
+  assert(!nodes(h.value).some(node => ['form', 'table'].includes(node.type) || node.type?.name === 'RecentAssignments'));
+  button(glance, 'View wellness').props.onClick();
+  assert.equal(view, 'Wellness');
+  assert.equal(requests[4].filters.startDate, '2026-02-01', 'Drill-down restores the report date filter');
   h.unmount();
 }
 

@@ -25,6 +25,10 @@ export type SupportRequestEvent = {
 };
 export type SupportRequestFilters = { page: number; pageSize: number; status: string; category: string; search: string; from: string; to: string };
 export type DashboardFilters = { startDate: string; endDate: string };
+export type WellnessRatings = { average_wellbeing: number | null; average_stress: number | null; average_energy: number | null };
+export type SemesterWellness = WellnessRatings & {
+  semester_id: string; academic_year: string; term: string; year_level: string; respondents: number | null;
+};
 type ParticipationRate = { eligible: number | null; completed: number | null; rate: number | null };
 export type DashboardAnalytics = {
   suppressed: boolean; minimum_cohort: number; period_start: string; period_end: string; institutional_timezone: string; cohort_as_of: string;
@@ -72,6 +76,13 @@ export async function getDashboardAnalytics(filters: DashboardFilters): Promise<
   });
   if (error) throw error;
   return data as DashboardAnalytics;
+}
+export async function getSemesterWellness(filters: DashboardFilters): Promise<SemesterWellness[]> {
+  const { data, error } = await supabase.rpc('osas_wellness_by_semester', {
+    start_date: filters.startDate, end_date: filters.endDate,
+  });
+  if (error) throw error;
+  return data as SemesterWellness[];
 }
 export async function logDashboardExport(filters: DashboardFilters): Promise<void> {
   const { error } = await supabase.rpc('osas_log_dashboard_export_v2', {

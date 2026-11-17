@@ -29,7 +29,7 @@ export function SupportRequests() {
         <button className="secondary-button" onClick={() => void load()}>Refresh</button>
       </div>
       {staffError && <div className="empty-state list-error" role="alert">Assignee directory could not load: {staffError}</div>}
-      {notice && <div className="case-notice" role="status">{notice}</div>}
+      {notice && <div className="admin-alert" data-tone="success" role="status">{notice}</div>}
       {error && <div className="empty-state list-error" role="alert">Could not load support cases: {error}</div>}
       {loading ? <TableLoading label="Loading support cases" /> : requests.length === 0
         ? !error && <div className="empty-state">No support requests match these filters.</div>

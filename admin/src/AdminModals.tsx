@@ -133,7 +133,7 @@ export function StudentModal({ user, onClose, onSave }: { user: User; onClose: (
     finally { busy.current=false;setSaving(false) }
   }
   return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Close">{'\u00d7'}</button><span className="eyebrow">STUDENT RECORD</span><h2>Edit student information</h2><p>Required fields use official school information. Unchanged legacy values are preserved.</p>
-    {optionError && <p role="alert">{optionError} <button type="button" onClick={() => setRetry(n => n + 1)}>Retry</button></p>}
+    {optionError && <div className="admin-alert admin-alert-actions" data-tone="error"><p role="alert">{optionError}</p><button type="button" className="secondary-button" onClick={() => setRetry(n => n + 1)}>Retry</button></div>}
     {saveError && <p className="form-error" role="alert">{saveError}</p>}<form onSubmit={submit}>
       <label>Student number *<input value={draft.student_number} onChange={e => change('student_number', cleanStudentNumber(e.target.value))} inputMode="numeric" maxLength={9} />{message('student_number')}</label>
       <label>Name or nickname<input value={draft.name} onChange={e => change('name', cleanName(e.target.value))} maxLength={30} />{message('name')}</label>

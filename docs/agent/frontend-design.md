@@ -12,6 +12,13 @@ BeeBetter should feel clean, minimal and fluid. Avoid stiff compositions that di
 - Reusable code components do not require visibly boxed screen sections. Compose screens around the content and user task.
 - Use a consistent type scale and spacing system. Keep layouts responsive, text scalable, controls labeled, focus visible and touch targets at least 48px on mobile. Respect reduced motion and system appearance.
 
+## Admin spacing
+
+- Match neighboring components. Reuse their spacing tokens or use 4, 8, 12, 16, 24, 32, 48, or 64 pixels.
+- Set sibling spacing with `gap` on flex and grid containers. Use `padding` for component insets and reserve `margin` for external layout spacing.
+- Use unitless `0` for zero spacing and prefer concise shorthands for repeated sides.
+- Use the workspace control size for dashboard buttons, filters, and table actions. Use the shared one-pixel rule for control outlines and table borders.
+
 ## Tools and ownership
 
 - Admin: React/Vite with Tailwind CSS v4 and shadcn/ui. Components live in `admin/src/components/ui`; merge classes with `admin/src/lib/utils.ts`. Use the `@/` source alias. Add individual components from the admin directory with `npx shadcn@latest add <component>`.
