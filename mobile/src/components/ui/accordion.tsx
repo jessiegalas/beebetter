@@ -83,7 +83,7 @@ function AccordionTrigger({
   return (
     <TextClassContext.Provider
       value={cn(
-        'text-left text-sm font-medium',
+        'text-left text-label',
         Platform.select({ web: 'group-hover:underline' })
       )}>
       <AccordionPrimitive.Header className={headerClassName}>
@@ -124,7 +124,7 @@ function AccordionContent({
 }: React.ComponentProps<typeof AccordionPrimitive.Content>) {
   const { isExpanded } = AccordionPrimitive.useItemContext();
   return (
-    <TextClassContext.Provider value="text-sm">
+    <TextClassContext.Provider value="text-body">
       <AccordionPrimitive.Content
         className={cn(
           'overflow-hidden motion-reduce:animate-none',

@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Path, type SvgProps } from 'react-native-svg';
-import { useBeePalette, type BeePalette } from '@/constants/theme';
+import { Controls, useBeePalette, type BeePalette } from '@/constants/theme';
 
 export type PixelFrameProps = {
   ramp?: { base: string | null; highlight: string | null; shadow: string; outline: string };
@@ -75,6 +75,6 @@ export const PixelFrame = memo(function PixelFrame({ ramp, children, fill = 'car
 });
 
 const styles = StyleSheet.create({
-  root: { position: 'relative', minWidth: 48, minHeight: 48 },
+  root: { position: 'relative', minWidth: Controls.minHeight, minHeight: Controls.minHeight },
   art: { position: 'absolute', top: 0, left: 0 },
 });

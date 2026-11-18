@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Animated, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Animated, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 import Reanimated, { ReduceMotion, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Button } from '@/components/mobile-ui';
 import { PixelButton, type PixelButtonIntent } from '@/components/pixel/pixel-button';
@@ -16,7 +16,14 @@ export function XpBadge({ xp, earned = false }: { xp: number; earned?: boolean }
   </View>;
 }
 
-export function XpProgress({ progress, compact = false, scope }: { progress: LevelProgress; compact?: boolean; scope?: 'Account' | 'Branch' }) {
+export function XpProgress({ progress, compact = false, showXpTotal = true, scope, captionStyle, layout = 'standard' }: {
+  progress: LevelProgress;
+  compact?: boolean;
+  showXpTotal?: boolean;
+  scope?: 'Account' | 'Branch';
+  captionStyle?: StyleProp<TextStyle>;
+  layout?: 'standard' | 'summary';
+}) {
   const s = useBeeStyles(makeStyles);
   const [fill] = useState(() => new Animated.Value(Math.max(0, Math.min(100, progress.progressPercent))));
   const percent = Math.max(0, Math.min(100, progress.progressPercent));
@@ -32,23 +39,25 @@ export function XpProgress({ progress, compact = false, scope }: { progress: Lev
     const listener = AccessibilityInfo.addEventListener('reduceMotionChanged', update);
     return () => { active = false; listener.remove(); fill.stopAnimation(); };
   }, [fill, percent]);
+  const summary = layout === 'summary';
+  const caption = <Text style={[s.caption, captionStyle]}>{Math.max(0, progress.xpForNextLevel - progress.currentLevelXp)} XP to Level {progress.level + 1}</Text>;
   return <View style={s.progress}>
-    {(!compact || scope) && <View style={s.row}>
-      <Text style={s.levelText}>{scope ? scope + ' level' : 'Level'} {progress.level}</Text>
-      {!compact && <Text style={s.xpText}>{progress.currentLevelXp} / {progress.xpForNextLevel} XP</Text>}
+    {(summary || !compact || scope) && <View style={s.row}>
+      <Text style={s.levelText}>{scope && !summary ? scope + ' level' : 'Level'} {progress.level}</Text>
+      {summary ? caption : !compact && showXpTotal && <Text style={s.xpText}>{progress.currentLevelXp} / {progress.xpForNextLevel} XP</Text>}
     </View>}
-    <View style={[s.track, compact && s.compactTrack]} accessibilityRole="progressbar" accessibilityLabel={(scope ? scope + ' ' : '') + 'XP progress toward level ' + (progress.level + 1)} accessibilityValue={{ min: 0, max: 100, now: percent }}>
+    <View style={[s.track, compact && s.compactTrack, summary && s.summaryTrack]} accessibilityRole="progressbar" accessibilityLabel={(scope ? scope + ' ' : '') + 'XP progress toward level ' + (progress.level + 1)} accessibilityValue={{ min: 0, max: 100, now: percent }}>
       <View style={s.trackCaps} />
       <View style={s.trackCenter}>
-        <View style={s.trackInterior}>
+        <View style={[s.trackInterior, summary && s.summaryInterior]}>
           <Animated.View style={[s.fill, { width: fill.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]}>
             <View style={s.fillEdge} />
           </Animated.View>
         </View>
       </View>
     </View>
-    {compact && <Text style={s.xpText}>{progress.currentLevelXp} / {progress.xpForNextLevel} XP</Text>}
-    <Text style={s.caption}>{Math.max(0, progress.xpForNextLevel - progress.currentLevelXp)} XP to Level {progress.level + 1}</Text>
+    {!summary && compact && showXpTotal && <Text style={s.xpText}>{progress.currentLevelXp} / {progress.xpForNextLevel} XP</Text>}
+    {!summary && caption}
   </View>;
 }
 export function GrowthLeaf({ animate = false, small = false }: { animate?: boolean; small?: boolean }) {
@@ -104,9 +113,11 @@ const makeStyles = (C: BeePalette) => StyleSheet.create({
   caption: { ...TypographyRoles.body, color: C.muted },
   track: { height: PixelSpacing.px6 },
   compactTrack: { height: PixelSpacing.px5 },
+  summaryTrack: { height: PixelSpacing.px8 },
   trackCaps: { position: 'absolute', top: 0, bottom: 0, left: PixelSpacing.px1, right: PixelSpacing.px1, backgroundColor: C.foreground },
   trackCenter: { flex: 1, marginVertical: PixelSpacing.px1, paddingHorizontal: PixelSpacing.px1, backgroundColor: C.foreground },
   trackInterior: { flex: 1, backgroundColor: C.surfaceMuted },
+  summaryInterior: { backgroundColor: C.accentForeground },
   fill: { height: '100%', backgroundColor: C.accent, overflow: 'hidden' },
   fillEdge: { position: 'absolute', top: 0, bottom: 0, end: 0, width: PixelSpacing.px1, backgroundColor: C.accentForeground },
   rewardFrame: { width: '100%', maxWidth: 420, alignSelf: 'center' },

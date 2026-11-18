@@ -12,16 +12,17 @@ export function checkInDateKey(date: Date) {
 
 export function useDailyCheckIn(studentId: string | undefined, canPrompt: boolean) {
   const focused = useIsFocused();
-  const [prompt, setPrompt] = useState<{ studentId: string; day: Date } | null>(null);
+  const [prompt, setPrompt] = useState<{ studentId: string; day: Date; initialWellbeing?: number } | null>(null);
   const shown = useRef(new Map<string, string>());
-  const day = prompt?.studentId === studentId ? prompt?.day ?? null : null;
+  const currentPrompt = prompt?.studentId === studentId ? prompt : null;
+  const day = currentPrompt?.day ?? null;
   const storageKey = `daily-check-in:shown:${studentId}`;
 
-  const open = useCallback((today = new Date()) => {
+  const open = useCallback((today = new Date(), initialWellbeing?: number) => {
     if (!studentId) return;
     const date = checkInDateKey(today);
     shown.current.set(studentId, date);
-    setPrompt({ studentId, day: today });
+    setPrompt({ studentId, day: today, initialWellbeing });
     void AsyncStorage.setItem(storageKey, date).catch(() => {});
   }, [studentId, storageKey]);
 
@@ -60,5 +61,5 @@ export function useDailyCheckIn(studentId: string | undefined, canPrompt: boolea
     };
   }, [studentId, focused, canPrompt, day, storageKey, open]);
 
-  return { day: focused ? day : null, open, close: () => setPrompt(null) };
+  return { day: focused ? day : null, initialWellbeing: focused ? currentPrompt?.initialWellbeing : undefined, open, close: () => setPrompt(null) };
 }

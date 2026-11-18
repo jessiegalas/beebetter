@@ -6,7 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useAppAppearance, useRestoreAppAppearance } from '@/hooks/use-app-appearance';
-import { useBeePalette } from '@/constants/theme';
+import { AppFont, useBeePalette } from '@/constants/theme';
 
 import { NotificationFeature, notificationLifecycle } from '@/components/notification-feature';
 import { GeofencingFeature } from '@/components/geofencing-feature';
@@ -51,7 +51,7 @@ function AppNavigator() {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    'VT323-Regular': require('@/assets/fonts/VT323/VT323-Regular.ttf'),
+    [AppFont]: require('@/assets/fonts/VT323/VT323-Regular.ttf'),
   });
   const palette = useBeePalette();
   const { scheme } = useAppAppearance();

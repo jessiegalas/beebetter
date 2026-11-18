@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { AppFont } from '@/constants/theme';
 import * as LabelPrimitive from '@rn-primitives/label';
 import { Platform } from 'react-native';
 
@@ -9,6 +10,7 @@ function Label({
   onPressIn,
   onPressOut,
   disabled,
+  style,
   ...props
 }: React.ComponentProps<typeof LabelPrimitive.Text>) {
   return (
@@ -27,10 +29,10 @@ function Label({
       disabled={disabled}>
       <LabelPrimitive.Text
         className={cn(
-          'text-foreground text-sm font-medium',
-          Platform.select({ web: 'leading-none' }),
+          'text-foreground text-label',
           className
         )}
+        style={[{ fontFamily: AppFont }, style]}
         {...props}
       />
     </LabelPrimitive.Root>

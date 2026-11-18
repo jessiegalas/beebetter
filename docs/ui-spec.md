@@ -6,7 +6,7 @@ This spec takes precedence over older defaults for new or deliberately migrated 
 
 ## Gamified UI rollout
 
-1. **Start with the quest loop.** Show the next quest and its potential XP with `XpBadge`. Show confirmed XP and any level change with `RewardPanel`. Carry the same `XpProgress` into Home, Profile, and the selected Skill Tree branch, with clear labels for account and branch progress. Use the growth leaf to connect completion visually to the tree. Preserve the [existing reward and progression rules](agent/quest-system.md#completion-and-history).
+1. **Start with the quest loop.** Show the next quest and its potential XP. Use inline XP in the Home hero and `XpBadge` in quest lists. Show confirmed XP and any level change with `RewardPanel`. Carry the same `XpProgress` into Home, Profile, and the selected Skill Tree branch, with clear labels for account and branch progress. Use the growth leaf to connect completion visually to the tree. Preserve the [existing reward and progression rules](agent/quest-system.md#completion-and-history).
 2. **Migrate existing screens by repeated pattern.** Replace duplicate XP labels, meters, or reward layouts with shared components first. Apply `PixelButton` to the main action where it helps the student move through the quest loop. Keep shared controls for forms, navigation, and routine actions.
 3. **Build future UI from the same pieces.** Decide whether it helps the student choose a quest, act, see a reward, or review growth. Reuse an existing component, add a variant when the same component needs a different presentation, and extract a new shared component when the same pattern is needed in multiple places.
 4. **Review one complete flow before expanding.** Follow a quest from Home through completion to updated progress. Check that XP amounts and labels agree, the reward reads clearly, and the layout works in both themes at narrow widths and enlarged text.
@@ -19,25 +19,36 @@ See the [gamified UI library catalog](mobile-gamified-ui-library.md) for existin
 - Keep values in [`design-tokens.json`](../mobile/src/constants/design-tokens.json). Import pixel values through [`tokens.ts`](../mobile/src/constants/tokens.ts) and theme-aware roles through [`theme.ts`](../mobile/src/constants/theme.ts).
 - Use semantic colors for each theme. The [PNG atlas](../mobile/assets/pixel-button-pack/pixel-button.atlas.json) and `DerivedRamps` describe shipped artwork. The wrapping `PixelButton` uses SVG and `pixel.button.ramps`. Atlas regeneration requires explicit approval.
 
-## Typography — provisional
+## Typography
 
-Use the bundled, single-weight **VT323-Regular** through `TypographyRoles`. Keep text live and scalable, use the role's line height, and omit `fontWeight`.
+Use the bundled, single-weight **VT323-Regular** for all app text, including titles, body copy, metadata, button labels, fields, placeholders, and secure entry. `design-tokens.json` owns the family and role metrics. Use `ThemedText`, NativeWind `Text`, or `TypographyRoles` when composing a control directly. Keep text live and scalable, use the role's line height, and omit `fontWeight`.
 
 | Role | Size / line height (dp) |
 | --- | --- |
 | Heading | 28 / 32 |
+| Section | 26 / 30 |
+| Item | 24 / 28 |
 | Label | 22 / 24 |
 | Body | 20 / 24 |
-| Metadata | 16 / 20 |
+| Metadata | 18 / 22 |
+| Home metadata | 16 / 20 |
 
-Use the **body** role for field labels, hints, errors, and short input text. Use platform sans at the same metrics for multiline input or an explicit fallback. Secure fields still need native iOS and Android checks for masking, clipping, and reveal/hide alignment before choosing their font.
+Use `Field` for visible labels, hints, errors, and text entry. The operating system renders native dialogs, permissions, and picker chrome in its own font.
+
+## Home
+
+- Place the account level beside the date below the greeting. Follow with one featured quest on a flat surface with a primary left rule, then unboxed account progress, Daily check-in and Skill Tree. Home uses heading, label, body and Home metadata.
+- Feature the highest-ranked upcoming quest. Fall back to the leading recommendation when none is upcoming. Show **Next quest** for an upcoming quest and append its scheduled start in device-local time when available. Show category and `XpBadge` beside the primary pixel action. **Start quest** opens the existing quest details and the information control opens **Why this quest**. Show the conditional level-up message with the title and let the footer wrap when space is limited.
+- Place the current level and remaining XP above the meter. Show seven honeycomb cells, capped at seven filled cells. Combine the streak and completed-quest count on one metadata line and expose a single accessibility summary. At zero, use **Start your streak today**.
+- Separate Daily check-in and Skill Tree with rules. Low, Okay, and Good open the full Daily check-in with well-being set to 2, 3, or 4. The form requires well-being, stress, and energy before saving. **Full check-in** opens it without a preset. Show the account's branch count alongside the Skill Tree label.
+- Reserve the measured bottom bar height, including the bottom safe area, plus `PixelSpacing.px2` after the last item.
 
 ## Pixel grid, dimensions and rendering
 
 See [How to build pixel assets](pixel-assets.md) for the workflow from source artwork to app-ready assets.
 
 - **1 art pixel = 3dp.** Use `PixelSpacing` and `PixelBorders` for new pixel geometry. The default border is **3dp**, emphasis is **6dp**, and minimum horizontal text padding in framed controls is **18dp**. Convert raw art-pixel counts once at the rendering boundary.
-- Use stepped SVG geometry for stretchable frames and panels. Render fixed raster artwork at integer scale with nearest-neighbor sampling. The default button face is **16 art pixels / 48dp**. Atlas insets are **4 art pixels** for the face and **7** for the focus ring.
+- Use the wrapping SVG `PixelButton` for text actions, including Login. Its target starts at **48dp** and grows with the label. The fixed raster variant is available explicitly as `layout="fixed"` for artwork that fits its **16 art pixel / 48dp** face. Render raster artwork at integer scale with nearest-neighbor sampling. Atlas insets are **4 art pixels** for the face and **7** for the focus ring.
 - Keep interactive targets at least **48 × 48dp**. Let labels wrap and layouts grow at larger text sizes.
 
 ## Approved colors and interaction policy

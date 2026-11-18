@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import { BeeBetterColors, Layout } from '@/constants/theme';
 
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
@@ -33,7 +34,7 @@ export function AnimatedSplashOverlay() {
     },
   });
 
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
+  const image = <Image style={styles.launchMark} source={require('@/assets/images/beebetter-logo.png')} contentFit="contain" accessible={false} />;
 
   return animate ? (
     <Animated.View
@@ -140,9 +141,10 @@ const styles = StyleSheet.create({
   },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    backgroundColor: BeeBetterColors.background,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
   },
+  launchMark: { width: Layout.launchMarkSize, height: Layout.launchMarkSize },
 });

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 import { router, useIsFocused } from 'expo-router';
-import { Button, Disclosure, IconButton, ScreenFrame, StatusMessage } from '@/components/mobile-ui';
+import { Button, Disclosure, IconButton, ScreenFrame, ScreenHeader, StatusMessage } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
-import { Spacing, TypographyRoles, useBeePalette } from '@/constants/theme';
+import { Spacing, useBeePalette } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
 import { listMyCheckIns, listMyReflections, type SelfManagementReflection, type WellbeingCheckIn } from '@/lib/wellbeing-data';
 
@@ -54,13 +54,9 @@ function CheckInHistory({ studentId }: { studentId: string }) {
       setRefreshing(true);
       setAttempt(value => value + 1);
     }} />}>
-    <View style={styles.header}>
-      <IconButton icon="arrow-back" label="Go back"
-        onPress={() => router.canGoBack() ? router.back() : router.replace('/wellness-check-in')} />
-      <Text accessibilityRole="header" style={[TypographyRoles.heading, styles.title, { color: c.foreground }]}>
-        {MOBILE_WELLNESS_AND_SUPPORT_ENABLED ? 'My wellness history' : 'Check-in history'}
-      </Text>
-    </View>
+    <ScreenHeader title={MOBILE_WELLNESS_AND_SUPPORT_ENABLED ? 'My wellness history' : 'Check-in history'}
+      leading={<IconButton icon="arrow-back" label="Go back"
+        onPress={() => router.canGoBack() ? router.back() : router.replace('/wellness-check-in')} />} />
     {error && <StatusMessage error message="Could not load your history.">
       <Button label="Try again" intent="secondary" onPress={() => {
         setError(false);
@@ -116,7 +112,5 @@ function formatPeriod(start: string, end: string) {
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  title: { flex: 1, minWidth: 0 },
   section: { gap: Spacing.sm },
 });

@@ -4,18 +4,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedText } from './themed-text';
 import { PixelChoice } from './pixel/pixel-choice';
-import { Borders, Controls, Fonts, Layout, MaxContentWidth, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
+import { Borders, ContentColumn, Controls, Layout, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
 // StyleSheet-only controls bypass CSS interop so native pressed-style callbacks stay intact.
 type Icon = keyof typeof Ionicons.glyphMap;
-export function ScreenFrame({ children, tab = false, scroll = true, refreshControl, viewportRef }: {
+export function ScreenFrame({ children, tab = false, scroll = true, refreshControl, viewportRef, contentStyle }: {
     children: ReactNode;
     tab?: boolean;
     scroll?: boolean;
     refreshControl?: React.ReactElement<RefreshControlProps>;
     viewportRef?: React.RefObject<View | null>;
+    contentStyle?: StyleProp<ViewStyle>;
 }) {
     const { width } = useWindowDimensions();
-    const content = { width: '100%' as const, maxWidth: MaxContentWidth, alignSelf: 'center' as const, paddingHorizontal: width >= Layout.wideBreakpoint ? Spacing.xl : Spacing.gutter, paddingTop: Spacing.gutter, paddingBottom: Spacing.section, gap: Spacing.section };
+    const content = [{ ...ContentColumn, paddingHorizontal: width >= Layout.wideBreakpoint ? Spacing.xl : Spacing.gutter, paddingTop: Spacing.gutter, paddingBottom: Spacing.section, gap: Spacing.section }, contentStyle];
     return <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }} edges={tab ? ['top'] : ['top', 'bottom']}>
     <View ref={viewportRef} collapsable={false} style={{ flex: 1 }}>{scroll ? <ScrollView contentContainerStyle={content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} refreshControl={refreshControl}>
         {children}
@@ -32,6 +33,23 @@ export function Surface({ children, featured = false, style }: {
     const c = useBeePalette();
     return <View style={[{ backgroundColor: featured ? c.surface : c.card, borderRadius: Radii.lg, padding: Spacing.gutter, gap: Spacing.lg }, style]}>
     {children}
+    </View>;
+}
+export function ScreenHeader({ title, subtitle, leading, trailing, style }: {
+    title: string;
+    subtitle?: string;
+    leading?: ReactNode;
+    trailing?: ReactNode;
+    style?: StyleProp<ViewStyle>;
+}) {
+    const c = useBeePalette();
+    return <View style={[s.screenHeader, style]}>
+        {leading}
+        <View style={s.screenHeaderCopy}>
+            <ThemedText type="title">{title}</ThemedText>
+            {subtitle && <ThemedText type="small" style={{ color: c.muted }}>{subtitle}</ThemedText>}
+        </View>
+        {trailing}
     </View>;
 }
 export function Button({ label, onPress, intent = 'primary', icon, disabled = false, loading = false, foregroundColor, accessibilityLabel = label, style }: {
@@ -88,25 +106,29 @@ export function Field({ label, hint, error, style, ...props }: TextInputProps & 
         {hint && <ThemedText type="small" style={{ color: c.muted }}>
         {hint}
         </ThemedText>}
-    <TextInput {...props} accessibilityLabel={props.accessibilityLabel ?? label} placeholderTextColor={c.muted} selectionColor={c.primary} onFocus={event => { setFocused(true); props.onFocus?.(event); }} onBlur={event => { setFocused(false); props.onBlur?.(event); }} style={[s.input, style, { backgroundColor: props.editable === false ? c.disabled : c.card, color: props.editable === false ? c.disabledForeground : c.foreground, borderWidth: Borders.focus, borderColor: error ? c.danger : focused ? c.focus : c.input }]}/>
+    <TextInput {...props} accessibilityLabel={props.accessibilityLabel ?? label} placeholderTextColor={c.muted} selectionColor={c.primary} onFocus={event => { setFocused(true); props.onFocus?.(event); }} onBlur={event => { setFocused(false); props.onBlur?.(event); }} style={[s.input, props.multiline && s.multilineInput, style, { backgroundColor: props.editable === false ? c.disabled : c.card, color: props.editable === false ? c.disabledForeground : c.foreground, borderWidth: Borders.focus, borderColor: error ? c.danger : focused ? c.focus : c.input }]}/>
         {error && <ThemedText type="small" accessibilityRole="alert" style={{ color: c.danger }}>
         {error}
         </ThemedText>}
     </View>;
 }
-export function ChoiceChip({ label, selected, onPress, appearance = 'standard', disabled = false, leading }: {
+export function ChoiceChip({ label, selected, onPress, appearance = 'standard', disabled = false, leading, role = 'button' }: {
     label: string;
     selected: boolean;
     onPress: () => void;
     appearance?: 'standard' | 'pixel';
     disabled?: boolean;
     leading?: ReactNode;
+    role?: 'button' | 'radio';
 }) {
     const c = useBeePalette(), [focused, setFocused] = useState(false);
-    if (appearance === 'pixel') return <PixelChoice label={label} selected={selected} disabled={disabled} leading={leading} onPress={onPress} />;
-    return <Pressable cssInterop={false} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} accessibilityRole="button" accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.button, { backgroundColor: disabled ? c.disabled : pressed ? c.surfaceMuted : selected ? c.surface : c.card, borderColor: focused && !disabled ? c.focus : selected ? c.primary : c.input }]}>
+    if (appearance === 'pixel') return <PixelChoice label={label} selected={selected} disabled={disabled} leading={leading} role={role} onPress={onPress} />;
+    const selection = role === 'radio' ? { checked: selected } : { selected };
+    return <Pressable cssInterop={false} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} accessibilityRole={role} accessibilityState={{ ...selection, disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.button, { backgroundColor: disabled ? c.disabled : pressed ? c.surfaceMuted : selected ? c.surface : c.card, borderColor: focused && !disabled ? c.focus : selected ? c.primary : c.input }]}>
+    {role === 'radio' && <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={Controls.iconSize}
+      color={disabled ? c.disabledForeground : selected ? c.primary : c.foreground} accessible={false} />}
     {leading}
-    <ThemedText type="label" style={disabled ? { color: c.disabledForeground } : undefined}>
+    <ThemedText type="label" style={{ flexShrink: 1, color: disabled ? c.disabledForeground : c.foreground }}>
     {label}
     </ThemedText>
     </Pressable>;
@@ -221,10 +243,13 @@ export function StatusMessage({ message, loading = false, error = false, childre
     </View>;
 }
 const s = StyleSheet.create({
-    button: { minHeight: Controls.minHeight, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radii.md, borderWidth: Borders.focus },
+    screenHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    screenHeaderCopy: { flex: 1, minWidth: 0, gap: Spacing.xs },
+    button: { minHeight: Controls.minHeight, minWidth: Controls.minHeight, maxWidth: '100%', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radii.md, borderWidth: Borders.focus },
     iconButton: { minWidth: Controls.minHeight, minHeight: Controls.minHeight, borderRadius: Radii.md, borderWidth: Borders.focus, alignItems: 'center', justifyContent: 'center' },
     field: { gap: Spacing.sm },
-    input: { ...Typography.body, fontFamily: Fonts.sans, minHeight: Controls.minHeight, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radii.md, borderWidth: Borders.focus },
+    input: { ...Typography.body, minHeight: Controls.minHeight, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radii.md, borderWidth: Borders.focus },
+    multilineInput: { minHeight: Controls.minHeight * 2, textAlignVertical: 'top' },
     scrim: { flex: 1, justifyContent: 'flex-end' },
     sheet: { width: '100%', maxWidth: Layout.maxSheetWidth, alignSelf: 'center', maxHeight: '88%' },
     expandedSheet: { height: '88%' },

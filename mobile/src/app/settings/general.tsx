@@ -1,6 +1,6 @@
 import { Switch, View } from 'react-native';
 import { router } from 'expo-router';
-import { IconButton, ScreenFrame, Surface } from '@/components/mobile-ui';
+import { IconButton, ScreenFrame, ScreenHeader, Surface } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { Controls, Spacing, useBeePalette } from '@/constants/theme';
 import { setAppAppearance, useAppAppearance } from '@/hooks/use-app-appearance';
@@ -9,10 +9,7 @@ export default function GeneralSettingsScreen() {
   const c = useBeePalette();
   const { scheme } = useAppAppearance();
   return <ScreenFrame>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
-      <IconButton icon="arrow-back" label="Back to Settings" onPress={() => router.back()} />
-      <ThemedText type="title">General</ThemedText>
-    </View>
+    <ScreenHeader title="General" leading={<IconButton icon="arrow-back" label="Back to Settings" onPress={() => router.back()} />} />
     <Surface style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, minHeight: Controls.minHeight }}>
       <View style={{ flex: 1, minWidth: 0, gap: Spacing.xs }}>
         <ThemedText type="item">Dark Mode</ThemedText>

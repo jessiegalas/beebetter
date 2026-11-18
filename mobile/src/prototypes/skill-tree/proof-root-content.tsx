@@ -7,7 +7,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { Sheet, StatusMessage } from '@/components/mobile-ui';
 import { PixelButtonSvg } from '@/components/pixel/pixel-button-svg';
 import { PixelFrame } from '@/components/pixel/pixel-frame';
-import { Fonts, useBeePalette } from '@/constants/theme';
+import { useBeePalette } from '@/constants/theme';
 import { Pixel, PixelBorders, PixelSpacing, TypographyRoles } from '@/constants/tokens';
 import type { ProofNode, ProofSource } from './proof-roots-data';
 import { useProofUrl } from './use-proof-roots';
@@ -126,5 +126,5 @@ const styles = StyleSheet.create({
   preview: { height: 84, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   previewError: { ...TypographyRoles.metadata, textAlign: 'center' },
   viewerMedia: { width: '100%', height: 240, backgroundColor: Pixel.worldTree.barkOutline },
-  note: { ...TypographyRoles.body, fontFamily: Fonts.sans, minHeight: 84, borderWidth: PixelBorders.default, padding: PixelSpacing.px4 },
+  note: { ...TypographyRoles.body, minHeight: 84, borderWidth: PixelBorders.default, padding: PixelSpacing.px4 },
 });

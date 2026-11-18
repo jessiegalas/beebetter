@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const baseConfig = require('./app.json').expo;
+const tokens = require('./src/constants/design-tokens.json');
 
 function readLocalMapsKey() {
   try {
@@ -44,6 +45,15 @@ module.exports = {
 
   plugins: [
     ...(baseConfig.plugins ?? []),
+
+    [
+      'expo-splash-screen',
+      {
+        backgroundColor: tokens.light.background,
+        image: './assets/images/beebetter-logo.png',
+        imageWidth: tokens.layout.launchMarkSize,
+      },
+    ],
 
     'expo-image',
     'expo-video',

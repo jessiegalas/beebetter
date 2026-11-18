@@ -1,58 +1,53 @@
 import { useState, type ReactNode } from 'react';
-import { Pressable, Text, View, type TextProps } from 'react-native';
+import { Pressable, Text as NativeText, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polygon } from 'react-native-svg';
 import { Button, ChoiceChip, IconButton, Sheet } from '@/components/mobile-ui';
 import { PixelButton } from '@/components/pixel/pixel-button';
 import { QuestCompanion } from '@/components/quest-companion';
 import { XpBadge } from '@/components/xp-visuals';
-import { Borders, Fonts, useAppColorScheme, useBeePalette } from '@/constants/theme';
+import { Text } from '@/components/ui/text';
+import { Borders, Controls, Spacing, TypographyRoles, useBeePalette } from '@/constants/theme';
 
 type IconName = keyof typeof Ionicons.glyphMap;
-export function QuestText({ className = '', style, ...props }: TextProps) {
-  return <Text className={`text-body text-foreground ${className}`} style={[{ fontFamily: Fonts.rounded }, style]} {...props} />;
-}
+export { Text as QuestText };
 export function QuestCard({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <View className={`rounded-lg border border-border bg-card ${className}`}>{children}</View>;
 }
-const tones = {
-  amber: { background: 'bg-[#ffda8b] dark:bg-[#725321]', color: '#995607' },
-  green: { background: 'bg-[#b9dfae] dark:bg-[#365436]', color: '#2f7434' },
-  red: { background: 'bg-[#ffaaa1] dark:bg-[#703d37]', color: '#b52e28' },
-  purple: { background: 'bg-[#dfb8f6] dark:bg-[#593b70]', color: '#8531b6' },
-  blue: { background: 'bg-[#a7d5ff] dark:bg-[#2e5274]', color: '#147ac6' },
-};
-export function QuestIcon({ icon, tone = 'amber', small = false }: { icon: IconName; tone?: keyof typeof tones; small?: boolean }) {
-  const dark = useAppColorScheme() === 'dark';
-  return <View className={`items-center justify-center rounded-full ${small ? 'h-10 w-10' : 'h-14 w-14'} ${tones[tone].background}`}><Ionicons name={icon} size={small ? 23 : 31} color={dark ? '#fff1d4' : tones[tone].color} /></View>;
+export function QuestIcon({ icon, small = false }: { icon: IconName; small?: boolean }) {
+  const c = useBeePalette();
+  const footprint = small ? Spacing.section : Controls.minHeight;
+  return <View className="shrink-0 items-center justify-center rounded-pill bg-surface" style={{ width: footprint, height: footprint }}>
+    <Ionicons name={icon} size={Controls.iconSize} color={c.primary} accessible={false} />
+  </View>;
 }
 function StepIndicator({ step }: { step: 1 | 2 }) {
   const c = useBeePalette();
-  return <View className="flex-row items-center gap-1" accessible accessibilityLabel={`Step ${step} of 2`}>
-    {([1, 2] as const).map((number, index) => <View key={number} className="flex-row items-center gap-1">
-      {index > 0 && <QuestText className="text-muted-foreground tracking-[2px]">••••</QuestText>}
+  return <View className="flex-row items-center gap-xs" accessible accessibilityLabel={`Step ${step} of 2`}>
+    {([1, 2] as const).map((number, index) => <View key={number} className="flex-row items-center gap-xs">
+      {index > 0 && <Text className="text-muted-foreground tracking-[2px]">••••</Text>}
       <View className="h-12 w-11 items-center justify-center">
         <Svg width={44} height={48} viewBox="0 0 44 48" accessible={false}><Polygon points="22,2 41,12 41,36 22,46 3,36 3,12" fill={number === step ? c.surface : c.card} stroke={number === step ? c.primary : c.input} strokeWidth={2} strokeLinejoin="round" /></Svg>
-        <Text className="absolute text-[21px] font-bold" style={{ color: c.foreground, fontFamily: Fonts.rounded }}>{number}</Text>
+        <NativeText accessible={false} className="absolute" style={[TypographyRoles.label, { color: c.foreground }]}>{number}</NativeText>
       </View>
     </View>)}
   </View>;
 }
 export function QuestWizardHeader({ step, editing, onBack, onClose }: { step: 1 | 2; editing: boolean; onBack: () => void; onClose: () => void }) {
-  return <View className="px-4 pb-4 pt-2">
-    <View className="z-10 mb-3 flex-row items-center justify-between">
+  return <View className="px-lg pb-lg pt-sm">
+    <View className="z-10 mb-md flex-row items-center justify-between">
       <IconButton icon="arrow-back" label={step === 2 ? 'Back to quest details' : 'Back'} onPress={onBack} />
       {step === 2 ? <StepIndicator step={step} /> : <View />}
       <IconButton icon="close" label="Close quest form" onPress={onClose} />
     </View>
-    {step === 1 ? <View className="flex-row items-center gap-4">
-      <QuestCompanion pose="adventure" /><View className="flex-1 gap-2"><StepIndicator step={step} /><QuestText accessibilityRole="header" className="text-[22px] font-bold leading-[28px]">{editing ? 'Edit Quest' : 'Quest Details'}</QuestText><QuestText className="text-[13px] leading-5">Let’s set up your quest!</QuestText></View>
-    </View> : <View className="min-h-[90px] flex-row items-center gap-2">
-      <View className="flex-1 gap-2"><QuestText accessibilityRole="header" className="text-[24px] font-bold leading-[30px]">Optional Settings</QuestText><QuestText className="text-[13px] leading-5 text-muted-foreground">Add extra details (these are optional).</QuestText></View><QuestCompanion pose="resting" />
+    {step === 1 ? <View className="flex-row items-center gap-lg">
+      <QuestCompanion pose="adventure" /><View className="flex-1 gap-sm"><StepIndicator step={step} /><Text variant="h1">{editing ? 'Edit Quest' : 'Quest Details'}</Text><Text className="text-metadata">Let’s set up your quest!</Text></View>
+    </View> : <View className="flex-row items-center gap-sm">
+      <View className="flex-1 gap-sm"><Text variant="h1">Optional Settings</Text><Text className="text-metadata text-muted-foreground">Add extra details (these are optional).</Text></View><QuestCompanion pose="resting" />
     </View>}
   </View>;
 }
-export function QuestAccordion({ title, subtitle, icon, tone, open, onToggle, children }: { title: string; subtitle: string; icon: IconName; tone: keyof typeof tones; open: boolean; onToggle: () => void; children: ReactNode }) {
+export function QuestAccordion({ title, subtitle, icon, open, onToggle, children }: { title: string; subtitle: string; icon: IconName; open: boolean; onToggle: () => void; children: ReactNode }) {
   const c = useBeePalette();
   const [focused, setFocused] = useState(false);
   return <QuestCard><Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ expanded: open }} onPress={onToggle} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
@@ -60,8 +55,8 @@ export function QuestAccordion({ title, subtitle, icon, tone, open, onToggle, ch
       borderWidth: Borders.focus, borderColor: focused ? c.focus : 'transparent',
       backgroundColor: pressed ? c.surfaceMuted : 'transparent',
     })}>
-    <QuestIcon icon={icon} tone={tone} /><View className="flex-1 gap-1"><QuestText className="text-[16px] font-bold leading-[22px]">{title}</QuestText><QuestText className="text-[12px] leading-[18px] text-muted-foreground">{subtitle}</QuestText></View><Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={c.foreground} />
-  </Pressable>{open && <View className="gap-3 px-4 pb-4">{children}</View>}</QuestCard>;
+    <QuestIcon icon={icon} /><View className="min-w-0 flex-1 gap-xs"><Text className="text-item">{title}</Text><Text className="text-metadata text-muted-foreground">{subtitle}</Text></View><Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={Controls.iconSize} color={c.foreground} accessible={false} />
+  </Pressable>{open && <View className="gap-md px-lg pb-lg">{children}</View>}</QuestCard>;
 }
 export function QuestChoice({ label, selected, onPress, compact = false }: { label: string; selected: boolean; onPress: () => void; compact?: boolean }) {
   return <View style={compact ? { flexGrow: 1 } : undefined}><ChoiceChip appearance="pixel" label={label} selected={selected} onPress={onPress} /></View>;
@@ -81,18 +76,18 @@ export function QuestSelect({ label, value, options, onChange, icon, children, s
 }
 export function QuestNote({ children, icon = 'sparkles-outline' }: { children: ReactNode; icon?: IconName }) {
   const c = useBeePalette();
-  return <View className="flex-row items-start gap-2 rounded-md border border-border bg-muted p-md"><Ionicons name={icon} size={19} color={c.primary} accessible={false} /><QuestText className="flex-1 text-[12px] leading-[18px] text-muted-foreground">{children}</QuestText></View>;
+  return <View className="flex-row items-start gap-sm rounded-md border border-border bg-muted p-md"><Ionicons name={icon} size={19} color={c.primary} accessible={false} /><Text className="flex-1 text-metadata text-muted-foreground">{children}</Text></View>;
 }
 export function QuestFieldLabel({ label, icon }: { label: string; icon: IconName }) {
-  return <View className="mb-2 flex-row items-center gap-2"><View className="h-9 w-9 items-center justify-center rounded-full bg-[#fff3d8] dark:bg-[#5b4726]"><Ionicons name={icon} size={23} color="#a56813" /></View><QuestText className="flex-1 font-semibold">{label}</QuestText></View>;
+  return <View className="mb-sm flex-row items-center gap-sm"><QuestIcon icon={icon} small /><Text className="flex-1 text-label">{label}</Text></View>;
 }
 export function QuestWizardFooter({ xp, label, disabled, busy, feedback, onPress }: { xp: number; label: string; disabled: boolean; busy: boolean; feedback: string | null; onPress: () => void }) {
   return <View className="rounded-t-xl border border-border bg-card px-gutter pb-md pt-lg">
-    {!!feedback && <QuestText accessibilityRole="alert" className="mb-md text-destructive">{feedback}</QuestText>}
+    {!!feedback && <Text accessibilityRole="alert" className="mb-md text-destructive">{feedback}</Text>}
     <View className="flex-row flex-wrap items-center justify-between gap-md">
       <View>
         <XpBadge xp={xp} />
-        <QuestText className="text-metadata text-muted-foreground">on completion</QuestText>
+        <Text className="text-metadata text-muted-foreground">on completion</Text>
       </View>
       <PixelButton layout="wrap" label={label} loading={busy} disabled={disabled && !busy} onPress={onPress} />
     </View>

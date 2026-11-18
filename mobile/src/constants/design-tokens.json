@@ -4,6 +4,9 @@
     "surface": "#f7ea87",
     "primary": "#854d0d",
     "primaryForeground": "#f8f7de",
+    "questHero": "#854d0d",
+    "questHeroForeground": "#f8f7de",
+    "questHeroReward": "#f7ea87",
     "accent": "#d29d30",
     "accentForeground": "#3a200c",
     "foreground": "#3a200c",
@@ -17,6 +20,7 @@
     "disabledForeground": "#69543c",
     "success": "#28613f",
     "successSurface": "#e2efdc",
+    "mapRadiusFill": "rgba(40,97,63,0.22)",
     "warning": "#854d0d",
     "warningSurface": "#f7ea87",
     "danger": "#a33128",
@@ -31,6 +35,9 @@
     "surface": "#40351b",
     "primary": "#f7ea87",
     "primaryForeground": "#3a200c",
+    "questHero": "#6d3d09",
+    "questHeroForeground": "#f8f7de",
+    "questHeroReward": "#f7ea87",
     "accent": "#d29d30",
     "accentForeground": "#3a200c",
     "foreground": "#f8f7de",
@@ -44,6 +51,7 @@
     "disabledForeground": "#d1c4a6",
     "success": "#9cdbad",
     "successSurface": "#263d2b",
+    "mapRadiusFill": "rgba(156,219,173,0.22)",
     "warning": "#f7ea87",
     "warningSurface": "#40351b",
     "danger": "#ffb4a8",
@@ -304,13 +312,13 @@
               "highlight": null,
               "base": null,
               "shadow": "#F2D88A",
-              "outline": "#d29d30"
+              "outline": "#A8700F"
             },
             "pressed": {
               "highlight": null,
               "base": null,
               "shadow": "#F2D88A",
-              "outline": "#d29d30"
+              "outline": "#A8700F"
             },
             "disabled": {
               "highlight": null,
@@ -482,53 +490,23 @@
     "focus": 2
   },
   "typography": {
-    "page": {
-      "fontSize": 28,
-      "lineHeight": 34,
-      "fontWeight": "700"
-    },
-    "section": {
-      "fontSize": 20,
-      "lineHeight": 28,
-      "fontWeight": "700"
-    },
-    "item": {
-      "fontSize": 17,
-      "lineHeight": 24,
-      "fontWeight": "600"
-    },
-    "body": {
-      "fontSize": 16,
-      "lineHeight": 24,
-      "fontWeight": "400"
-    },
-    "label": {
-      "fontSize": 14,
-      "lineHeight": 20,
-      "fontWeight": "600"
-    },
-    "metadata": {
-      "fontSize": 14,
-      "lineHeight": 20,
-      "fontWeight": "400"
-    }
+    "heading": { "fontSize": 28, "lineHeight": 32 },
+    "section": { "fontSize": 26, "lineHeight": 30 },
+    "item": { "fontSize": 24, "lineHeight": 28 },
+    "label": { "fontSize": 22, "lineHeight": 24 },
+    "body": { "fontSize": 20, "lineHeight": 24 },
+    "metadata": { "fontSize": 18, "lineHeight": 22 },
+    "homeMetadata": { "fontSize": 16, "lineHeight": 20 }
   },
-  "typographySpec": {
-    "status": "provisional",
-    "minimumFontSize": 16
-  },
-  "typographyRoles": {
-    "heading": { "fontFamily": "VT323-Regular", "fontSize": 28, "lineHeight": 32 },
-    "label": { "fontFamily": "VT323-Regular", "fontSize": 22, "lineHeight": 24 },
-    "body": { "fontFamily": "VT323-Regular", "fontSize": 20, "lineHeight": 24 },
-    "metadata": { "fontFamily": "VT323-Regular", "fontSize": 16, "lineHeight": 20 }
-  },
+  "typographySpec": { "fontFamily": "VT323-Regular", "status": "approved", "minimumFontSize": 18 },
   "controls": {
     "minHeight": 48,
     "iconSize": 20
   },
   "layout": {
     "maxContentWidth": 720,
+    "compactContentWidth": 480,
+    "launchMarkSize": 96,
     "maxSheetWidth": 640,
     "wideBreakpoint": 600,
     "webTabClearance": 112,
@@ -547,25 +525,5 @@
       "height": 4
     },
     "elevation": 2
-  },
-  "fonts": {
-    "ios": {
-      "sans": "Avenir Next",
-      "serif": "ui-serif",
-      "rounded": "Avenir Next",
-      "mono": "ui-monospace"
-    },
-    "default": {
-      "sans": "sans-serif",
-      "serif": "serif",
-      "rounded": "sans-serif",
-      "mono": "monospace"
-    },
-    "web": {
-      "sans": "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
-      "serif": "Georgia, \"Times New Roman\", serif",
-      "rounded": "var(--font-display)",
-      "mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
-    }
   }
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { useReducedMotion } from '@/components/mobile-ui';
-import { useAppColorScheme, useBeePalette } from '@/constants/theme';
+import { Controls, PixelSpacing, useAppColorScheme, useBeePalette } from '@/constants/theme';
 import { FACES, RINGS, SPINNERS, SPINNER_TONE, type PixelIntent } from './pixel-assets';
 import { PixelButtonSvg } from './pixel-button-svg';
 
@@ -19,7 +19,7 @@ import { PixelButtonSvg } from './pixel-button-svg';
  */
 export type PixelButtonIntent = PixelIntent;
 
-const FACE_HEIGHT = 48;
+const FACE_HEIGHT = Controls.minHeight;
 const CAP_WIDTH = 12;
 const RING_HEIGHT = 66;
 const RING_CAP_WIDTH = 21;
@@ -63,7 +63,7 @@ type PixelButtonProps = {
   layout?: 'fixed' | 'wrap';
 };
 
-export function PixelButton({ layout = 'fixed', ...props }: PixelButtonProps) {
+export function PixelButton({ layout = 'wrap', ...props }: PixelButtonProps) {
   return layout === 'wrap' ? <PixelButtonSvg {...props} /> : <PixelButtonPng {...props} />;
 }
 
@@ -117,7 +117,7 @@ function PixelButtonPng({ label, accessibilityLabel = label, onPress, intent = '
 }
 
 const s = StyleSheet.create({
-  root: { height: FACE_HEIGHT, minWidth: 48, justifyContent: 'center' },
+  root: { height: FACE_HEIGHT, minWidth: Controls.minHeight, justifyContent: 'center' },
   frame: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, flexDirection: 'row', pointerEvents: 'none' },
   cap: { width: CAP_WIDTH, height: FACE_HEIGHT },
   middle: { flex: 1, height: FACE_HEIGHT },
@@ -132,7 +132,7 @@ const s = StyleSheet.create({
   },
   ringCap: { width: RING_CAP_WIDTH, height: RING_HEIGHT },
   ringMiddle: { flex: 1, height: RING_HEIGHT },
-  content: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, pointerEvents: 'none' },
+  content: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: PixelSpacing.px6, pointerEvents: 'none' },
   label: { textAlign: 'center' },
   spinnerWindow: { width: SPINNER_SIZE, height: SPINNER_SIZE, overflow: 'hidden' },
   spinnerSheet: { position: 'absolute', left: 0, top: 0, width: SPINNER_SHEET_WIDTH, height: SPINNER_SIZE },

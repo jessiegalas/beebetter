@@ -8,7 +8,7 @@ import { XpBadge } from '@/components/xp-visuals';
 import { QuestAccordion, QuestCard, QuestChoice, QuestFieldLabel, QuestIcon, QuestNote, QuestSelect, QuestText, QuestWizardFooter, QuestWizardHeader } from '@/components/quest-wizard';
 import { ThemedText } from '@/components/themed-text';
 import { QuestTimeInput } from '@/components/quest-time-input';
-import { useBeePalette, useBeeStyles, type BeePalette, MaxContentWidth } from '@/constants/theme';
+import { useBeePalette, useBeeStyles, type BeePalette, ContentColumn, Layout, Spacing, Typography } from '@/constants/theme';
 import { useUserData, type Quest } from '@/hooks/use-user-data';
 import { useQuestCategories } from '@/hooks/use-quest-categories';
 import { useLocationContext } from '@/context/location-context';
@@ -140,67 +140,67 @@ function QuestForm({ quest, after, afterTitle, initialCategory }: {
   };
   return <SafeAreaView edges={['top', 'bottom']} style={s.screen}>
     <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View className="w-full max-w-[480px] flex-1 self-center">
-        <ScrollView ref={scrollRef} className="flex-1" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerClassName="pb-8 pt-2">
+      <View className="w-full flex-1 self-center" style={{ maxWidth: Layout.compactContentWidth }}>
+        <ScrollView ref={scrollRef} className="flex-1" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerClassName="pb-section pt-sm">
           <QuestWizardHeader step={step} editing={!!quest} onBack={() => step === 2 ? changeStep(1) : router.back()} onClose={() => router.back()} />
-          <View className="px-4">
-            {step === 1 ? <QuestCard className="p-5">
+          <View className="px-lg">
+            {step === 1 ? <QuestCard className="p-gutter">
               {!quest && <View className="mb-lg flex-row flex-wrap gap-sm">
                 {(['templates', 'custom'] as const).map(value => <ChoiceChip appearance="pixel" key={value}
                   label={value === 'custom' ? 'Custom' : 'Quick Start'} selected={mode === value} onPress={() => setMode(value)} />)}
               </View>}
-              <QuestText className="mb-6 text-[14px] leading-5 text-muted-foreground">{mode === 'templates' ? 'Choose an idea, then make it your own.' : 'Get creative! Set your own details and make it your own.'}</QuestText>
-              {mode === 'templates' ? <View className="gap-3">
-                {getQuestIdeas().map(idea => <Pressable key={idea.id} accessibilityRole="button" accessibilityLabel={`${idea.title}, ${idea.xp} XP`} className="min-h-14 flex-row items-center gap-3 rounded-2xl border border-border p-3 active:opacity-60" onPress={() => { setTitle(idea.title); setDescription(idea.description ?? ''); setCategory(categories.find(c => c.name === idea.category)?.name ?? ''); setXp(idea.xp); setMode('custom'); }}>
-                  <QuestIcon icon={idea.icon} small /><QuestText className="flex-1 font-semibold">{idea.title}</QuestText><XpBadge xp={idea.xp} />
+              <QuestText className="mb-xl text-metadata text-muted-foreground">{mode === 'templates' ? 'Choose an idea, then make it your own.' : 'Get creative! Set your own details and make it your own.'}</QuestText>
+              {mode === 'templates' ? <View className="gap-md">
+                {getQuestIdeas().map(idea => <Pressable key={idea.id} accessibilityRole="button" accessibilityLabel={`${idea.title}, ${idea.xp} XP`} className="min-h-control flex-row items-center gap-md rounded-lg border border-border p-md active:opacity-60" onPress={() => { setTitle(idea.title); setDescription(idea.description ?? ''); setCategory(categories.find(c => c.name === idea.category)?.name ?? ''); setXp(idea.xp); setMode('custom'); }}>
+                  <QuestIcon icon={idea.icon} small /><QuestText className="flex-1 text-item">{idea.title}</QuestText><XpBadge xp={idea.xp} />
                 </Pressable>)}
-              </View> : <View className="gap-5 border-t border-border pt-2">
+              </View> : <View className="gap-gutter border-t border-border pt-sm">
                 <Field label="Quest name" placeholder="e.g. Review my notes" value={title}
                   onChangeText={setTitle} maxLength={Math.max(50, title.length)} returnKeyType="next"
                   hint={title.length + '/50'} error={title.length > 50 ? 'Keep your quest name within 50 characters.' : undefined} />
                 <Field label="Description (optional)" placeholder="What would you like to accomplish?"
                   value={description} onChangeText={setDescription} maxLength={Math.max(200, description.length)}
-                  multiline textAlignVertical="top" style={{ minHeight: 96 }}
+                  multiline
                   hint={description.length + '/200'} error={description.length > 200 ? 'Keep your description within 200 characters.' : undefined} />
                 <View>
                   <QuestFieldLabel label="Category" icon="pricetag-outline" />
                   <ActionButton label={category || 'Choose a category'} icon="chevron-down" intent="secondary" onPress={() => setCategoryOpen(true)} />
-                  {loading && <ActivityIndicator className="mt-2" color={C.honeyDark} />}
-                  {!!error && <View className="mt-2"><QuestText className="text-[13px] text-destructive">{error}</QuestText><Button label="Reload categories" onPress={() => void refresh()} /></View>}
+                  {loading && <ActivityIndicator className="mt-sm" color={C.honeyDark} />}
+                  {!!error && <View className="mt-sm"><QuestText className="text-metadata text-destructive">{error}</QuestText><Button label="Reload categories" onPress={() => void refresh()} /></View>}
                 </View>
               </View>}
-            </QuestCard> : <View className="gap-3">
-              <QuestAccordion title="Timing & schedule" subtitle="When can this quest be done?" icon="time-outline" tone="amber" open={expanded.timing} onToggle={() => toggle('timing')}>
-                <View className="gap-3 rounded-2xl border border-border p-3">
+            </QuestCard> : <View className="gap-md">
+              <QuestAccordion title="Timing & schedule" subtitle="When can this quest be done?" icon="time-outline" open={expanded.timing} onToggle={() => toggle('timing')}>
+                <View className="gap-md rounded-lg border border-border p-md">
                   <QuestSelect label="Timing" selectedValue={scheduleMode} value={scheduleMode === 'anytime' ? 'Anytime' : scheduleMode === 'scheduled' ? 'Scheduled' : 'Preferred time'} options={[{ label: 'Anytime', value: 'anytime' }, { label: 'Scheduled', value: 'scheduled' }, { label: 'Preferred time', value: 'preferred' }]} onChange={value => setScheduleMode(value as typeof scheduleMode)} />
                   {scheduleMode === 'scheduled' && <QuestTimeInput label="Scheduled date & time" value={scheduled} onChange={setScheduled} />}
                   {scheduleMode === 'preferred' && <QuestTimeInput label="Preferred time of day" timeOnly value={preferred} onChange={setPreferred} />}
                   <View className="flex-row flex-wrap gap-sm">
                     {['Once', 'Daily', 'Weekly', 'Custom'].map(value => <QuestChoice key={value} label={value} selected={recurrence === value} onPress={() => setRecurrence(value)} />)}
                   </View>
-                  {recurrence === 'Custom' && <View className="gap-2"><QuestText className="text-[12px]">Choose days (preview)</QuestText><View className="flex-row flex-wrap gap-2">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <QuestChoice key={day} label={day} selected={customDays.includes(day)} onPress={() => setCustomDays(days => days.includes(day) ? days.filter(item => item !== day) : [...days, day])} />)}</View></View>}
+                  {recurrence === 'Custom' && <View className="gap-sm"><QuestText className="text-metadata">Choose days (preview)</QuestText><View className="flex-row flex-wrap gap-sm">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <QuestChoice key={day} label={day} selected={customDays.includes(day)} onPress={() => setCustomDays(days => days.includes(day) ? days.filter(item => item !== day) : [...days, day])} />)}</View></View>}
                   <QuestNote>{recurrence === 'Once' ? (scheduleMode === 'anytime' ? 'Your quest will be available anytime, once.' : 'Your quest will use the timing selected above.') : `${recurrence === 'Daily' ? 'Daily' : recurrence === 'Weekly' ? 'Weekly' : 'Custom'} repeat preview. Repeat settings are preview only. ${quest ? 'Save changes keeps' : 'Create Quest saves'} one quest.`}</QuestNote>
                 </View>
               </QuestAccordion>
-              <QuestAccordion title="Location & geofencing" subtitle="Where can this quest be done?" icon="location-outline" tone="green" open={expanded.location} onToggle={() => toggle('location')}>
+              <QuestAccordion title="Location & geofencing" subtitle="Where can this quest be done?" icon="location-outline" open={expanded.location} onToggle={() => toggle('location')}>
                 <QuestSelect label="Location" selectedValue={location ?? ''} value={location ? activeLocations.find(p => p.id === location)?.name ?? 'Saved area unavailable' : 'No location attached'} options={[{ label: 'No location attached', value: '' }, ...activeLocations.map(place => ({ label: place.name, value: place.id }))]} onChange={value => setLocation(value || null)}>
                   {isLoadingLocations && <ActivityIndicator color={C.honeyDark} />}
                   {!isLoadingLocations && !activeLocations.length && <QuestText>No active saved areas yet.</QuestText>}
                 </QuestSelect>
                 <QuestNote icon="location-outline">You can restrict this quest to a specific location, or keep it open anywhere.</QuestNote>
-                {!!location && !activeLocations.some(p => p.id === location) && <QuestText className="text-[12px]">The attached area is inactive or unavailable. Keep it, choose another, or remove the preference.</QuestText>}
+                {!!location && !activeLocations.some(p => p.id === location) && <QuestText className="text-metadata">The attached area is inactive or unavailable. Keep it, choose another, or remove the preference.</QuestText>}
                 <Button label="Manage saved areas" onPress={() => router.push('/manage-locations')} />
               </QuestAccordion>
-              <QuestAccordion title="Deadline & importance" subtitle="Set a due date and priority level." icon="flag-outline" tone="red" open={expanded.deadline} onToggle={() => toggle('deadline')}>
+              <QuestAccordion title="Deadline & importance" subtitle="Set a due date and priority level." icon="flag-outline" open={expanded.deadline} onToggle={() => toggle('deadline')}>
                 <QuestSelect label="Deadline" selectedValue={hasDeadline ? 'set' : 'none'} icon="calendar-outline" value={hasDeadline ? deadline || 'Choose a deadline' : 'No deadline'} options={[{ label: 'No deadline', value: 'none' }, { label: 'Set a deadline', value: 'set' }]} onChange={value => setHasDeadline(value === 'set')} />
                 {hasDeadline && <QuestTimeInput label="Deadline" value={deadline} onChange={setDeadline} />}
                 <QuestSelect label="Importance" selectedValue={importance} icon="bar-chart-outline" value={`${importance[0].toUpperCase() + importance.slice(1)} importance`} options={(['low', 'normal', 'high'] as const).map(value => ({ label: `${value[0].toUpperCase() + value.slice(1)} importance`, value }))} onChange={value => setImportance(value as typeof importance)} />
               </QuestAccordion>
-              <QuestAccordion title="Proof of completion" subtitle="How will you confirm it’s done?" icon="camera-outline" tone="purple" open={expanded.proof} onToggle={() => toggle('proof')}>
-                <View className="flex-row items-center justify-between gap-3"><QuestText className="flex-1 font-semibold">Require proof</QuestText><Switch accessibilityLabel="Require proof of completion" value={proof} onValueChange={setProof} trackColor={{ true: C.honey }} /></View>
+              <QuestAccordion title="Proof of completion" subtitle="How will you confirm it’s done?" icon="camera-outline" open={expanded.proof} onToggle={() => toggle('proof')}>
+                <View className="flex-row items-center justify-between gap-md"><QuestText className="flex-1 text-item">Require proof</QuestText><Switch accessibilityLabel="Require proof of completion" value={proof} onValueChange={setProof} trackColor={{ true: C.honey }} /></View>
                 <QuestNote>Attach an image, video, or file when completing this quest.</QuestNote>
               </QuestAccordion>
-              <QuestAccordion title="Do after" subtitle="What happens next?" icon="git-branch-outline" tone="blue" open={expanded.after} onToggle={() => toggle('after')}>
+              <QuestAccordion title="Do after" subtitle="What happens next?" icon="git-branch-outline" open={expanded.after} onToggle={() => toggle('after')}>
                 <QuestSelect label="Prerequisite quest" selectedValue={prerequisite ?? ''} value={prerequisite ? prerequisiteTitle ?? 'Saved prerequisite unavailable' : 'No prerequisite'} options={[{ label: 'No prerequisite', value: '' }, ...prerequisiteChoices, ...prerequisiteOptions.map(q => ({ label: q.title, value: q.id }))]} onChange={value => setPrerequisite(value || null)} />
               </QuestAccordion>
             </View>}
@@ -234,6 +234,6 @@ function Button({ label, onPress, primary = false, disabled = false }: { label: 
 }
 const makeStyles = (C: BeePalette) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.background },
-  content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', padding: 20, gap: 20 },
-  error: { fontSize: 14, lineHeight: 20, color: C.danger },
+  content: { ...ContentColumn, paddingVertical: Spacing.gutter, gap: Spacing.gutter },
+  error: { ...Typography.metadata, color: C.danger },
 });

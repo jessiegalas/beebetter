@@ -15,7 +15,7 @@ const SECTION_LABELS: Record<Section, string> = {
   Overview: 'Overview',
   Wellness: 'Student Wellness',
   Engagement: 'Quest Engagement',
-  Reports: 'OSAS Reports',
+  Reports: 'Assignment Reports',
   Quests: 'Quest Assignments',
   Students: 'Students',
   'Semesters & Sections': 'Semesters & Sections',
@@ -305,14 +305,8 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
       status_value: draft.publish ? 'active' : 'pending',
       assignee_id: draft.assigneeId,
     })
-    if (error) {
-      showNotice(`Could not assign quest: ${error.message}`, 'error')
-      return
-    }
-    if (!data?.length) {
-      showNotice('No eligible active student accounts were available, so no quest was created.', 'warning')
-      return
-    }
+    if (error) throw new Error(`Could not assign quest. ${error.message}`)
+    if (!data?.length) throw new Error('No eligible active students were available. Check the recipient and try again.')
     if (!mounted.current) return
     if (section === 'Quests') await loadQuests()
     setAssignmentRevision(value => value + 1)
@@ -333,10 +327,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
       xp_value: xp,
       status_value: draft.publish ? 'active' : 'pending',
     })
-    if (error) {
-      showNotice(`Could not update quest: ${error.message}`, 'error')
-      return
-    }
+    if (error) throw new Error(`Could not update quest. ${error.message}`)
     if (!mounted.current) return
     if (section === 'Quests') await loadQuests()
     setAssignmentRevision(value => value + 1)
@@ -456,7 +447,7 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
           </Suspense>
         </div>
       </main>
-      {(newQuestOpen || editingQuest) && <QuestModal initialQuest={editingQuest} users={users} onClose={() => { setNewQuestOpen(false); setEditingQuest(null) }} onSave={(draft) => editingQuest ? updateQuest(editingQuest, draft) : createQuest(draft)} />}
+      {(newQuestOpen || editingQuest) && <QuestModal initialQuest={editingQuest} onClose={() => { setNewQuestOpen(false); setEditingQuest(null) }} onSave={(draft) => editingQuest ? updateQuest(editingQuest, draft) : createQuest(draft)} />}
       {profileOpen && <AdminInfoPanel identity={adminIdentity} role={adminRole} permissions={osasPermissions} onClose={closeProfile} onSignOut={() => { closeProfile(); void signOut() }} />}
       {selectedUser && <UserDetails user={selectedUser} onClose={() => setSelectedUser(null)} onEdit={() => { setEditingUser(selectedUser); setSelectedUser(null) }} onToggleStatus={() => { void saveStudent({ ...selectedUser, status: selectedUser.status === 'Active' ? 'Inactive' : 'Active' }).catch(() => {}) }} />}
       {selectedQuest && <QuestDetails quest={selectedQuest} onClose={() => setSelectedQuest(null)} onEdit={() => { setEditingQuest(selectedQuest); setSelectedQuest(null) }} />}

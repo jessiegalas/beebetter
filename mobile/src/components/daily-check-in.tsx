@@ -10,9 +10,10 @@ import { getMyCheckIn, saveMyCheckIn } from '@/lib/wellbeing-data';
 
 const SCORES = [1, 2, 3, 4, 5];
 
-export function DailyCheckIn({ studentId, day, onClose, onHistory }: {
+export function DailyCheckIn({ studentId, day, initialWellbeing, onClose, onHistory }: {
   studentId: string;
   day: Date;
+  initialWellbeing?: number;
   onClose: () => void;
   onHistory: () => void;
 }) {
@@ -36,9 +37,9 @@ export function DailyCheckIn({ studentId, day, onClose, onHistory }: {
     let active = true;
     void getMyCheckIn(studentId, date).then(record => {
       if (!active) return;
+      setWellbeing(initialWellbeing ?? record?.overall_wellbeing ?? null);
       if (record) {
         setExisting(true);
-        setWellbeing(record.overall_wellbeing);
         setStress(record.stress_level);
         setEnergy(record.energy_level);
         setMotivation(record.motivation_level);
@@ -49,7 +50,7 @@ export function DailyCheckIn({ studentId, day, onClose, onHistory }: {
       if (active) setLoadState('error');
     });
     return () => { active = false; };
-  }, [studentId, date, loadAttempt]);
+  }, [studentId, date, initialWellbeing, loadAttempt]);
 
   async function submit() {
     if (loadState !== 'ready' || pendingSave.current) return;

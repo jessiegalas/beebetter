@@ -1,13 +1,12 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-import { Button } from '@/components/mobile-ui';
+import { Button, ChoiceChip, Field, Surface } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { InlineMessage, PrivacyNote, RatingScale, WellnessHeader, type RatingOption } from '@/components/wellness-ui';
-import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
+import { useBeeStyles, type BeePalette, Borders, SectionColumn, Spacing, Typography } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
 import { createMyReflection } from '@/lib/wellbeing-data';
 
@@ -23,7 +22,6 @@ function localDateKey(date: Date) {
 }
 
 export default function SelfManagementReflectionScreen() {
-  const COLORS = useBeePalette();
   const styles = useBeeStyles(makeStyles);
   const { user, quests } = useUserData();
   const [period, setPeriod] = useState<'today' | 'week'>('week');
@@ -70,13 +68,14 @@ export default function SelfManagementReflectionScreen() {
             <View style={styles.hero}>
               <View style={styles.copy}><ThemedText style={styles.body}>Reflection is optional and can be completed with or without a quest.</ThemedText></View>
             </View>
-            <View style={styles.formCard}>
+            <Surface>
               <View>
                 <ThemedText style={styles.label}>Reflection period</ThemedText>
                 <ThemedText style={styles.hint}>Choose the time you are thinking about.</ThemedText>
               </View>
-              <View style={styles.segmentRow}>
-                {(['today', 'week'] as const).map(value => <TouchableOpacity key={value} style={[styles.segment, period === value && styles.segmentSelected]} onPress={() => setPeriod(value)} accessibilityRole="radio" accessibilityState={{ selected: period === value }}><ThemedText style={[styles.segmentText, period === value && styles.segmentTextSelected]}>{value === 'today' ? 'Today' : 'Last 7 days'}</ThemedText></TouchableOpacity>)}
+              <View style={styles.choices} accessibilityRole="radiogroup">
+                {(['today', 'week'] as const).map(value => <ChoiceChip key={value} role="radio"
+                  label={value === 'today' ? 'Today' : 'Last 7 days'} selected={period === value} onPress={() => setPeriod(value)} />)}
               </View>
               <View style={styles.divider} />
               <RatingScale title="Planning" hint="How well did you decide what needed your attention?" value={planning} options={SCALE} onChange={setPlanning} />
@@ -86,17 +85,18 @@ export default function SelfManagementReflectionScreen() {
               <RatingScale title="Confidence" hint="How confident do you feel about your next step?" value={confidence} options={SCALE} onChange={setConfidence} />
               <View style={styles.divider} />
               <View><ThemedText style={styles.label}>Related quest (optional)</ThemedText><ThemedText style={styles.hint}>Leave this unselected for a general reflection.</ThemedText></View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.questOptions}>
-                <TouchableOpacity style={[styles.questChip, questId === null && styles.questChipSelected]} onPress={() => setQuestId(null)}><ThemedText style={styles.questChipText}>No quest</ThemedText></TouchableOpacity>
-                {quests.map(quest => <TouchableOpacity key={quest.id} style={[styles.questChip, questId === quest.id && styles.questChipSelected]} onPress={() => setQuestId(quest.id)}><ThemedText style={styles.questChipText} numberOfLines={1}>{quest.title}</ThemedText></TouchableOpacity>)}
-              </ScrollView>
+              <View style={styles.choices} accessibilityRole="radiogroup">
+                <ChoiceChip role="radio" label="No quest" selected={questId === null} onPress={() => setQuestId(null)} />
+                {quests.map(quest => <ChoiceChip key={quest.id} role="radio" label={quest.title}
+                  selected={questId === quest.id} onPress={() => setQuestId(quest.id)} />)}
+              </View>
               <ReflectionField label="Something I accomplished (optional)" placeholder="What moved forward?" value={accomplishment} onChange={setAccomplishment} />
               <ReflectionField label="A challenge I noticed (optional)" placeholder="What made things harder?" value={challenge} onChange={setChallenge} />
               <ReflectionField label="My next step (optional)" placeholder="What small action will I try next?" value={nextStep} onChange={setNextStep} />
               {feedback && <InlineMessage {...feedback} />}
               <Button label={'Save private reflection'} loading={saving} onPress={() => void submit()} />
-            </View>
-            <TouchableOpacity style={styles.historyLink} onPress={() => router.push('/wellness-history' as any)} accessibilityRole="button"><Ionicons name="time-outline" size={20} color={COLORS.honeyDeep} /><ThemedText style={styles.historyText}>Review my reflections</ThemedText><Ionicons name="chevron-forward" size={18} color={COLORS.muted} /></TouchableOpacity>
+            </Surface>
+            <Button label="Review my reflections" icon="time-outline" intent="secondary" onPress={() => router.push('/wellness-history')} />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -105,24 +105,21 @@ export default function SelfManagementReflectionScreen() {
 }
 
 function ReflectionField({ label, placeholder, value, onChange }: { label: string; placeholder: string; value: string; onChange: (value: string) => void }) {
-  const COLORS = useBeePalette();
   const styles = useBeeStyles(makeStyles);
-  return <View style={styles.field}><ThemedText style={styles.label}>{label}</ThemedText><TextInput style={styles.textArea} value={value} onChangeText={onChange} maxLength={1000} multiline placeholder={placeholder} placeholderTextColor={COLORS.muted} textAlignVertical="top" accessibilityLabel={label} /><ThemedText style={styles.counter}>{value.length}/1000</ThemedText></View>;
+  return <View style={styles.field}>
+    <Field label={label} value={value} onChangeText={onChange} maxLength={1000} multiline placeholder={placeholder} textAlignVertical="top" numberOfLines={3} />
+    <ThemedText type="small" style={styles.counter}>{value.length}/1000</ThemedText>
+  </View>;
 }
 
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' }, safeArea: { flex: 1 },
-  content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 32 },
-  hero: { gap: 8 },
-  copy: { flex: 1, minWidth: 0 }, body: { color: COLORS.muted, fontSize: 16, lineHeight: 24, marginTop: 2 },
-  formCard: { padding: 20, borderRadius: 24, backgroundColor: COLORS.card, gap: 16 },
-  label: { color: COLORS.ink, fontSize: 14, lineHeight: 20, fontWeight: '700' }, hint: { color: COLORS.muted, fontSize: 14, lineHeight: 20 },
-  segmentRow: { flexDirection: 'row', gap: 8 }, segment: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.md, borderWidth: 1, borderColor: COLORS.surfaceMuted },
-  segmentSelected: { backgroundColor: COLORS.honeySoft, borderColor: COLORS.honeyDark }, segmentText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20}, segmentTextSelected: { color: COLORS.ink },
-  divider: { height: 1, backgroundColor: COLORS.surfaceMuted }, questOptions: { gap: 8, paddingRight: 8 },
-  questChip: { maxWidth: 220, minHeight: 48, justifyContent: 'center', paddingHorizontal: 13, borderRadius: Radii.pill, borderWidth: 1, borderColor: COLORS.surfaceMuted, backgroundColor: COLORS.background },
-  questChipSelected: { backgroundColor: COLORS.honeySoft, borderColor: COLORS.honeyDark }, questChipText: { color: COLORS.ink, fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  field: { gap: 6 }, textArea: { fontFamily: Fonts.sans, minHeight: 92, borderWidth: 1, borderColor: COLORS.surfaceMuted, borderRadius: Radii.md, backgroundColor: COLORS.background, color: COLORS.ink, padding: 13, fontSize: 16 , lineHeight: 24},
-  counter: { color: COLORS.muted, fontSize: 14, textAlign: 'right' , lineHeight: 20},
-  historyLink: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, borderRadius: Radii.lg, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.surfaceMuted },
-  historyText: { flex: 1, color: COLORS.ink, fontSize: 14, fontWeight: '700' , lineHeight: 20} });
+  content: SectionColumn,
+  hero: { gap: Spacing.sm },
+  copy: { flex: 1, minWidth: 0 }, body: { ...Typography.body, color: COLORS.muted, marginTop: Spacing.half },
+  label: { ...Typography.label, color: COLORS.ink }, hint: { ...Typography.metadata, color: COLORS.muted },
+  choices: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  divider: { height: Borders.default, backgroundColor: COLORS.surfaceMuted },
+  field: { gap: Spacing.sm },
+  counter: { color: COLORS.muted, textAlign: 'right' },
+});

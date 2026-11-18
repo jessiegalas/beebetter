@@ -10,7 +10,7 @@ import { CategoryGlyph } from '@/components/quest-visuals';
 import { PixelGlyph } from '@/components/pixel/pixel-glyph';
 import { GrowthLeaf, RewardPanel, XpProgress } from '@/components/xp-visuals';
 import { PixelSpacing, TypographyRoles } from '@/constants/tokens';
-import { useBeePalette } from '@/constants/theme';
+import { Controls, useBeePalette } from '@/constants/theme';
 import { useQuestPriority } from '@/context/quest-priority-context';
 import { useUserData } from '@/hooks/use-user-data';
 import type { CompletionRecord } from '@/lib/student-workspace';
@@ -147,9 +147,8 @@ function StudentTree({ owner }: { owner: string }) {
   return <GestureHandlerRootView style={styles.fill}><ScreenFrame tab scroll={showList}>
     <View style={[styles.content, !showList && styles.fill]}>
       <View style={[styles.controls, styles.controlRow]}>
-        {(selected || manual) && <PixelButton label="Back" intent="secondary" style={styles.utilityButton}
-          labelStyle={TypographyRoles.label} onPress={back} />}
-        <ThemedText accessibilityRole="header" accessibilityLiveRegion="polite" style={[TypographyRoles.heading, styles.title]}>
+        {(selected || manual) && <PixelButton label="Back" intent="secondary" onPress={back} />}
+        <ThemedText type="title" accessibilityLiveRegion="polite" style={styles.title}>
           {selected?.title ?? 'Skill Tree'}
         </ThemedText>
       </View>
@@ -163,19 +162,19 @@ function StudentTree({ owner }: { owner: string }) {
       </View>}
       {!needsList && <View style={styles.controls}>
         {!showList && <>
-          <PixelButton label="+" accessibilityLabel="Zoom in" intent="secondary" labelStyle={TypographyRoles.label}
+          <PixelButton label="+" accessibilityLabel="Zoom in" intent="secondary"
             disabled={scene.camera.scale >= maxZoom - 0.001} onPress={() => zoom(1.35)} />
-          <PixelButton label="−" accessibilityLabel="Zoom out" intent="secondary" labelStyle={TypographyRoles.label}
+          <PixelButton label="−" accessibilityLabel="Zoom out" intent="secondary"
             disabled={scene.camera.scale <= minZoom + 0.001} onPress={() => zoom(1 / 1.35)} />
-          <PixelButton label="Reset" accessibilityLabel="Reset view" intent="secondary" style={styles.utilityButton}
-            labelStyle={TypographyRoles.label} disabled={!selected && !manual} onPress={resetView} />
+          <PixelButton label="Reset" accessibilityLabel="Reset view" intent="secondary"
+            disabled={!selected && !manual} onPress={resetView} />
         </>}
         <PixelButton label={showList ? 'Tree' : 'List'} accessibilityLabel={showList ? 'Show graphic' : 'Browse as list'}
-          intent="secondary" style={styles.utilityButton} labelStyle={TypographyRoles.label} onPress={() => setList(!showList)} />
+          intent="secondary" onPress={() => setList(!showList)} />
       </View>}
       {loading && !rows.length && <StatusMessage message="Loading your tree…" loading />}
       {(error || workspaceErrors.quests) && <StatusMessage message="Could not refresh your tree." error>
-        <PixelButton label="Try again" labelStyle={TypographyRoles.label} onPress={() => {
+        <PixelButton label="Try again" onPress={() => {
           if (error) setRetry(value => value + 1);
           if (workspaceErrors.quests) void retryWorkspace('quests');
         }} />
@@ -204,9 +203,9 @@ function StudentTree({ owner }: { owner: string }) {
         <ThemedText style={TypographyRoles.body}>Quests will appear here as buds and grow into leaves when completed.</ThemedText>}
       <View style={[styles.controls, !showList && styles.controlRow]}>
         {!!rows.length && <PixelButton label="Recent leaves" intent="secondary" style={styles.footerButton}
-          labelStyle={TypographyRoles.label} onPress={() => setShowRecent(true)} />}
+          onPress={() => setShowRecent(true)} />}
         {!showList && scene.entries.length > scene.targets.length && <PixelButton label={selected ? 'More quests' : 'More categories'}
-          intent="secondary" style={styles.footerButton} labelStyle={TypographyRoles.label} onPress={() => setList(true)} />}
+          intent="secondary" style={styles.footerButton} onPress={() => setList(true)} />}
       </View>
     </View>
     {showRecent && <Sheet title="Recent leaves" visible onClose={() => setShowRecent(false)}>
@@ -281,7 +280,7 @@ function LeafDetails({ owner, leaf, onClose }: {
           onClose();
           router.push({ pathname: '/quests', params: { questId: quest.id } });
         }} />)}
-    {original && <PixelButton label="Add a follow-up" labelStyle={TypographyRoles.label} onPress={() => {
+    {original && <PixelButton label="Add a follow-up" onPress={() => {
       onClose();
       router.push({ pathname: '/add-quest', params: { after: original.id, afterTitle: leaf.title, category: leaf.category } });
     }} />}
@@ -294,10 +293,9 @@ const styles = StyleSheet.create({
   viewportFrame: { flex: 1 },
   viewport: { flex: 1, overflow: 'hidden' },
   controls: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: PixelSpacing.px3 },
-  controlRow: { minHeight: 48 },
+  controlRow: { minHeight: Controls.minHeight },
   title: { flex: 1 },
-  utilityButton: { width: 84 },
-  footerButton: { flexBasis: 135, flexGrow: 1 },
+  footerButton: { flexGrow: 1, maxWidth: '100%' },
   listAction: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: PixelSpacing.px2 },
   listButton: { flexGrow: 1, flexShrink: 1 },
 });

@@ -759,6 +759,8 @@ function screen(relative, context) {
       return Promise.resolve().then(() => operation(...args)).finally(() => { context.isAuthBusy = false; h.render(); });
     };
   }
+  const tokens = require('../src/constants/design-tokens.json');
+  const { TypographyRoles } = load('src/constants/tokens.ts', { './design-tokens.json': tokens });
   const mod = load(relative, { react: h.react, 'react-native': native,
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, '@expo/vector-icons': { Ionicons: 'Icon' },
     '@/lib/auth-flow': authFlow,
@@ -767,7 +769,10 @@ function screen(relative, context) {
     '@/hooks/use-enrollment-options': { useEnrollmentOptions: () => catalogue },
     '@/hooks/use-registration-form': load('src/hooks/use-registration-form.ts', { react: h.react, '@/lib/auth-flow': authFlow, '@/lib/student-validation': validation }),
     '@/lib/student-validation': validation,
-    '@/constants/theme': { ...require('../src/constants/design-tokens.json'), Borders: { focus: 2 }, Controls: { minHeight: 48 }, Typography: require('../src/constants/design-tokens.json').typography, Fonts: { sans: 'sans-serif' }, Radii: {}, useBeePalette: () => require('../src/constants/design-tokens.json').light, useBeeStyles: factory => factory(require('../src/constants/design-tokens.json').light) },
+    '@/constants/theme': { Borders: tokens.borders, Controls: tokens.controls, Typography: TypographyRoles,
+      Radii: tokens.radii, Spacing: tokens.spacing,
+      ContentColumn: { width: '100%', maxWidth: tokens.layout.maxContentWidth, alignSelf: 'center', paddingHorizontal: tokens.spacing.gutter },
+      useBeePalette: () => tokens.light, useBeeStyles: factory => factory(tokens.light) },
     '@/components/mobile-ui': { Button: 'ActionButton', Field: 'Field', IconButton: 'IconButton', useReducedMotion: () => true },
     '@/components/pixel/pixel-button': { PixelButton: 'ActionButton' },
     '@/components/bee-visuals': { BeeMark: 'BeeMark' },
@@ -791,6 +796,7 @@ test('password visibility and focus preserve the entered value and do not submit
   input().props.onFocus(); await flush();
   const row = () => s.find(node => node.type === 'View' && node.props.children?.some?.(child => child?.type === 'TextInput'));
   const flatten = styles => Object.assign({}, ...styles.filter(Boolean));
+  assert.equal(flatten(input().props.style).fontFamily, require('../src/constants/design-tokens.json').typographySpec.fontFamily);
   const width = flatten(row().props.style).borderWidth;
   assert.equal(flatten(row().props.style).borderColor, require('../src/constants/design-tokens.json').light.focus);
   s.find(node => node.type === 'IconButton' && node.props.label === 'Show password').props.onPress(); await flush();

@@ -9,7 +9,7 @@ import { BeeMark } from '@/components/bee-visuals';
 import { StudentEnrollmentFields } from '@/components/student-enrollment-fields';
 import { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 import { useRegistrationForm } from '@/hooks/use-registration-form';
-import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Borders, Controls, Radii, Typography } from '@/constants/theme';
+import { useBeePalette, useBeeStyles, type BeePalette, Borders, Controls, ContentColumn, Radii, Spacing, Typography } from '@/constants/theme';
 import { cleanName, cleanStudentNumber, passwordError, requiredStudentNameError, studentGoalError, studentLoginIdError, LIMITS } from '@/lib/student-validation';
 
 type Step = 'id' | 'password' | 'name' | 'enrollment' | 'goal';
@@ -169,7 +169,7 @@ function StudentAuthWizard({ onboarding, recovery }: { onboarding: boolean; reco
         {index > 0 && <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => goTo(index - 1)} style={styles.back}>
           <ThemedText style={styles.modeText}>‹ Back</ThemedText>
         </TouchableOpacity>}
-        {index === 0 && !onboarding && <View style={styles.mark}><BeeMark size={48} /></View>}
+        {index === 0 && !onboarding && <View style={styles.mark}><BeeMark size={Controls.minHeight} /></View>}
         {!recovery && <ThemedText style={styles.progress}>Step {index + 1} of {steps.length}</ThemedText>}
         <Animated.View style={{ transform: [{ translateX: offset }] }}>
           <ThemedText type="title" accessibilityRole="header" style={styles.title}>{title}</ThemedText>
@@ -219,7 +219,7 @@ function StudentAuthWizard({ onboarding, recovery }: { onboarding: boolean; reco
             {step === 'enrollment' && <StudentEnrollmentFields form={form} catalogue={catalogue} busy={busy} />}
             {step === 'goal' && <Field label="Your goal" accessibilityLabel="Your goal, required" hint="What would you like to work on this semester?"
               editable={!busy} value={form.goal} error={attempted ? invalidGoal : undefined}
-              onChangeText={value => { form.setGoal(value); setFeedback(null); }} maxLength={LIMITS.goal} multiline style={styles.goal} />}
+              onChangeText={value => { form.setGoal(value); setFeedback(null); }} maxLength={LIMITS.goal} multiline />}
           </View>
           {data.accessMessage && <ThemedText accessibilityRole="alert" style={styles.feedback}>{data.accessMessage}</ThemedText>}
           {message && <ThemedText accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.feedback}>{message}</ThemedText>}
@@ -237,21 +237,20 @@ function StudentAuthWizard({ onboarding, recovery }: { onboarding: boolean; reco
 const makeStyles = (colors: BeePalette) => StyleSheet.create({
   flex: { flex: 1 },
   container: { flex: 1, backgroundColor: 'transparent' },
-  center: { justifyContent: 'center', padding: 24 },
-  content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 30, paddingBottom: 40 },
-  mark: { marginBottom: 24 },
-  title: { ...Typography.page, color: colors.foreground, marginBottom: 20 },
-  panel: { gap: 14, marginBottom: 14 },
-  progress: { color: colors.muted, fontSize: 14, marginBottom: 8 },
-  back: { alignSelf: 'flex-start', minHeight: 48, justifyContent: 'center', paddingRight: 16, marginBottom: 8 },
-  goal: { minHeight: 96, paddingTop: 12, textAlignVertical: 'top' },
-  modeRow: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: Radii.md, padding: 4 },
-  modeButton: { flex: 1, alignItems: 'center', borderRadius: Radii.sm, minHeight: 48, paddingVertical: 11 },
+  center: { justifyContent: 'center', padding: Spacing.xl },
+  content: { ...ContentColumn, paddingTop: Spacing.section, paddingBottom: Spacing.page },
+  mark: { marginBottom: Spacing.xl },
+  title: { marginBottom: Spacing.gutter },
+  panel: { gap: Spacing.lg, marginBottom: Spacing.lg },
+  progress: { color: colors.muted, ...Typography.metadata, marginBottom: Spacing.sm },
+  back: { alignSelf: 'flex-start', minHeight: Controls.minHeight, justifyContent: 'center', paddingRight: Spacing.lg, marginBottom: Spacing.sm },
+  modeRow: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: Radii.md, padding: Spacing.xs },
+  modeButton: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.sm, minHeight: Controls.minHeight, paddingHorizontal: Spacing.xs, paddingVertical: Spacing.md },
   modeButtonActive: { backgroundColor: colors.card },
-  modeText: { color: colors.muted, fontSize: 14, fontWeight: '700', lineHeight: 20 },
-  label: { color: colors.ink, fontSize: 14, fontWeight: '700', lineHeight: 20 },
-  feedback: { color: colors.danger, fontSize: 14, lineHeight: 20, marginBottom: 14 },
-  help: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 16, textAlign: 'center' },
+  modeText: { color: colors.muted, ...Typography.label, textAlign: 'center' },
+  label: { color: colors.ink, ...Typography.label },
+  feedback: { color: colors.danger, ...Typography.metadata, marginBottom: Spacing.lg },
+  help: { color: colors.muted, ...Typography.metadata, marginTop: Spacing.lg, textAlign: 'center' },
   passwordRow: { flexDirection: 'row', alignItems: 'center', borderRadius: Radii.md, borderWidth: Borders.focus, borderColor: colors.input },
-  passwordInput: { ...Typography.body, fontFamily: Fonts.sans, flex: 1, minWidth: 0, minHeight: Controls.minHeight, paddingHorizontal: 14, paddingVertical: 13, color: colors.foreground },
+  passwordInput: { ...Typography.body, flex: 1, minWidth: 0, minHeight: Controls.minHeight, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, color: colors.foreground },
 });

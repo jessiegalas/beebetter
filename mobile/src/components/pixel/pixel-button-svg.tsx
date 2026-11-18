@@ -76,9 +76,9 @@ export const PixelButtonSvg = memo(function PixelButtonSvg({ previewState, label
 
 const styles = StyleSheet.create({
   root: { minWidth: Controls.minHeight, minHeight: Controls.minHeight },
-  content: { minHeight: Controls.minHeight, paddingHorizontal: PixelSpacing.px6, paddingTop: 12, paddingBottom: 15, justifyContent: 'center', alignItems: 'center' },
+  content: { minHeight: Controls.minHeight, paddingHorizontal: PixelSpacing.px6, paddingTop: PixelSpacing.px4, paddingBottom: PixelSpacing.px5, justifyContent: 'center', alignItems: 'center' },
   // Equal total padding preserves measured size across press transitions.
-  down: { paddingTop: 15, paddingBottom: 12 },
+  down: { paddingTop: PixelSpacing.px5, paddingBottom: PixelSpacing.px4 },
   label: { ...TypographyRoles.label, textAlign: 'center', alignSelf: 'stretch', flexShrink: 1 },
   hidden: { opacity: 0 },
   loader: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },

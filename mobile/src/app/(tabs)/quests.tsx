@@ -181,12 +181,12 @@ function QuestList() {
             </View>
       </Sheet>
       <Modal visible={!!questId} animationType="slide" onRequestClose={reward ? dismissReward : closeDetails}>
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.detailScreen}>
     <View style={styles.detailHeader}>
-    <ThemedText type="title">Quest details</ThemedText>
+    <ThemedText type="subtitle" style={styles.detailHeading}>Quest details</ThemedText>
     <IconButton icon="close" label="Close quest details" onPress={() => { dismissReward(); closeDetails(); }}/>
     </View>
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
           {reward ? <QuestReward {...reward} onRefreshProgress={workspaceErrors.progress || workspaceErrors.profile ? () => void refresh() : undefined} onClose={dismissReward}/> : selected ? <QuestCard key={selected.quest.id} quest={selected.quest} reasons={selectedRecommendation ? [...selectedRecommendation.reasons, ...selectedRecommendation.constraints] : []} locked={selected.locked} prerequisiteState={selected.prerequisiteState} prerequisiteTitle={selected.prerequisiteTitle} onRetryContext={browsing.retryPrerequisites} details completing={completingId === selected.quest.id} proof={proofDrafts[selected.quest.id]} submissionError={proofSubmissionError?.questId === selected.quest.id ? proofSubmissionError.message : undefined} onProofChange={proof => { setProofSubmissionError(null); setProofDrafts(current => ({ ...current, [selected.quest.id]: proof })); }} onEdit={() => { closeDetails(); router.push({ pathname: '/add-quest', params: { id: selected.quest.id } }); }} onComplete={proof => void handleComplete(selected.quest, proof)} onDelete={() => handleConfirmDelete(selected.quest)}/> : <ThemedText>
         {isLoading ? 'Loading quest…' : 'This quest is no longer available.'}
         </ThemedText>}
@@ -197,7 +197,7 @@ function QuestList() {
         <View style={[styles.listControls, compactHeader && styles.compactListControls]}>
           <QuestListHeader compact={compactHeader} onSettings={() => router.push('/settings')} />
           <View style={[styles.viewToggle, expandedTabs && styles.expandedViews]} accessibilityRole="tablist">
-            {(['context', 'all'] as const).map(value => <QuestListTab key={value} label={value === 'context' ? 'Recommended' : 'All Quests'} selected={view === value} onPress={() => setView(value)}/>)}
+            {(['context', 'all'] as const).map(value => <QuestListTab key={value} label={value === 'context' ? 'Recommended' : 'All Quests'} selected={view === value} stacked={expandedTabs} onPress={() => setView(value)}/>)}
           </View>
           <View style={styles.listToolbar}>
             <View style={styles.toolbarCount}>
@@ -217,7 +217,7 @@ function QuestList() {
             <Button intent="quiet" label="Retry quests" onPress={() => void retryWorkspace('quests')}/>
           </View>}
         </View>
-        {completedView ? <CompletedQuests key={appliedFilters.category ?? 'all-history'} category={appliedFilters.category} revision={completionHistory?.[0]?.id} /> : <FlatList<QuestBrowseItem> viewabilityConfig={RECOMMENDATION_VIEWABILITY} onViewableItemsChanged={onViewableItemsChanged} style={styles.list} data={visibleItems} keyExtractor={item => item.quest.id} extraData={{ completingId, expandedReasons }} contentContainerStyle={[styles.content, styles.listContent, visibleQuests.length === 0 && styles.emptyListContent]} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={COLORS.honeyDark} colors={[COLORS.honeyDark]}/>} ItemSeparatorComponent={() => <View style={{ height: 8 }}/>} renderItem={({ item, index }) => view === 'all' ? <AllQuestRow quest={item.quest} locked={item.locked} prerequisiteState={item.prerequisiteState} prerequisiteTitle={item.prerequisiteTitle} onRetryContext={browsing.retryPrerequisites} completing={completingId === item.quest.id} onOpen={() => router.setParams({ questId: item.quest.id })} onComplete={() => void handleComplete(item.quest)} /> : renderRecommendation(recommendations[index], index)} ListEmptyComponent={isLoading || (view === 'context' && !snoozesReady && !contextError) ? <View style={styles.stateCard}>
+        {completedView ? <CompletedQuests key={appliedFilters.category ?? 'all-history'} category={appliedFilters.category} revision={completionHistory?.[0]?.id} /> : <FlatList<QuestBrowseItem> viewabilityConfig={RECOMMENDATION_VIEWABILITY} onViewableItemsChanged={onViewableItemsChanged} style={styles.list} data={visibleItems} keyExtractor={item => item.quest.id} extraData={{ completingId, expandedReasons }} contentContainerStyle={[styles.content, styles.listContent, visibleQuests.length === 0 && styles.emptyListContent]} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={COLORS.honeyDark} colors={[COLORS.honeyDark]}/>} ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }}/>} renderItem={({ item, index }) => view === 'all' ? <AllQuestRow quest={item.quest} locked={item.locked} prerequisiteState={item.prerequisiteState} prerequisiteTitle={item.prerequisiteTitle} onRetryContext={browsing.retryPrerequisites} completing={completingId === item.quest.id} onOpen={() => router.setParams({ questId: item.quest.id })} onComplete={() => void handleComplete(item.quest)} /> : renderRecommendation(recommendations[index], index)} ListEmptyComponent={isLoading || (view === 'context' && !snoozesReady && !contextError) ? <View style={styles.stateCard}>
         <ActivityIndicator color={COLORS.honeyDark}/>
         <ThemedText>Loading your quests…</ThemedText>
         </View> : !loadError ? <EmptyState title="No quests in this view" subtitle={view === 'all' && filterCount ? 'Try resetting filters to see your quests.' : snoozedCount ? 'Your available quests are snoozed. Restore them or browse All Quests.' : contextError ? 'Browse All Quests while context is unavailable.' : 'Create a small, specific quest to get started.'} actionLabel={view === 'all' && filterCount ? 'Reset filters' : 'New quest'} actionIcon={view === 'all' && filterCount ? 'refresh-outline' : 'add'} onPress={() => view === 'all' && filterCount ? setAppliedFilters({ ...DEFAULT_FILTERS }) : router.push(isAuthenticated ? '/add-quest' : '/auth')} onBrowse={view === 'context' ? () => setView('all') : undefined}/> : null}/>}
@@ -289,8 +289,14 @@ function QuestCard({ quest, reasons, locked = false, prerequisiteState = 'none',
     const prerequisiteWarning = prerequisiteMessage(prerequisiteState, prerequisiteTitle);
     const otherReasons = reasons.filter(reason => reason !== prerequisiteWarning);
     const canComplete = quest.status === 'active' && !locked && !prerequisiteWarning;
+    const timing = [
+        ...(quest.scheduled_at ? [{ label: 'Scheduled', value: new Date(quest.scheduled_at).toLocaleString() }] : []),
+        ...(quest.preferred_time ? [{ label: 'Preferred time', value: quest.preferred_time.slice(0, 5) }] : []),
+        ...(quest.deadline_at ? [{ label: 'Deadline', value: new Date(quest.deadline_at).toLocaleString() }] : []),
+    ];
     return <Surface>
-    <View style={styles.listHeading}>
+    <View style={styles.detailSummary}>
+    <View style={styles.detailMeta}>
     <CategoryBadge label={quest.category} />
     <XpBadge xp={quest.xp}/>
     </View>
@@ -301,16 +307,27 @@ function QuestCard({ quest, reasons, locked = false, prerequisiteState = 'none',
       explanation={quest.status === 'active' ? prerequisiteWarning : undefined} />
         {!!quest.description && <ThemedText>
         {quest.description}
-        </ThemedText>}{prerequisiteWarning && quest.status !== 'active' && <ThemedText accessibilityLiveRegion="polite" style={{ color: COLORS.danger }}>{prerequisiteWarning}</ThemedText>}{prerequisiteState === 'unknown' && <Button label="Retry context" intent="quiet" onPress={onRetryContext}/>}{[quest.scheduled_at ? 'Scheduled: ' + new Date(quest.scheduled_at).toLocaleString() : '', quest.preferred_time ? 'Preferred time: ' + quest.preferred_time.slice(0, 5) : '', quest.deadline_at ? 'Deadline: ' + new Date(quest.deadline_at).toLocaleString() : ''].filter(Boolean).map(label => <ThemedText key={label} type="small" style={{ color: COLORS.muted }}>
-        {label}
-        </ThemedText>)}{otherReasons.length > 0 && <View style={{ gap: 8 }}>
-        <ThemedText type="label">Why this quest</ThemedText>
-            {otherReasons.map(reason => <ThemedText key={reason} type="small" style={{ color: COLORS.muted }}>
+        </ThemedText>}{prerequisiteWarning && quest.status !== 'active' && <ThemedText accessibilityLiveRegion="polite" style={{ color: COLORS.danger }}>{prerequisiteWarning}</ThemedText>}{prerequisiteState === 'unknown' && <View style={styles.contextRetry}><Button label="Retry context" intent="quiet" onPress={onRetryContext}/></View>}
+    </View>
+    {timing.length > 0 && <View style={[styles.detailSection, { borderTopColor: COLORS.border }]}>
+    <ThemedText type="label">Schedule</ThemedText>
+    <View style={styles.detailRows}>
+        {timing.map(item => <View key={item.label} style={styles.detailRow}>
+        <ThemedText type="small" style={styles.detailRowLabel}>{item.label}</ThemedText>
+        <ThemedText type="small" style={styles.detailRowValue}>{item.value}</ThemedText>
+        </View>)}
+    </View>
+    </View>}
+    {otherReasons.length > 0 && <View style={[styles.detailSection, { borderTopColor: COLORS.border }]}>
+    <ThemedText type="label">Why this quest</ThemedText>
+    <View style={styles.detailRows}>
+            {otherReasons.map(reason => <ThemedText key={reason} type="small" style={styles.detailRowValue}>
             {reason}
             </ThemedText>)}
-        </View>}
-    {quest.status !== 'completed' && <>
-            {quest.requires_proof && <View style={{ gap: 12 }}>
+    </View>
+    </View>}
+    {quest.status !== 'completed' && <View style={[styles.detailActions, { borderTopColor: COLORS.border }]}>
+            {quest.requires_proof && <View style={styles.proofSection}>
             <ThemedText type="subtitle">Proof of completion</ThemedText>
                 {(proofError || submissionError) && <ThemedText accessibilityRole="alert" style={{ color: COLORS.danger }}>{proofError ?? submissionError}</ThemedText>}
                 {proof ? <>
@@ -319,16 +336,16 @@ function QuestCard({ quest, reasons, locked = false, prerequisiteState = 'none',
                 </ThemedText>
                 <Button label="Remove selected proof" intent="quiet" disabled={completing} onPress={() => { setProofError(null); setProof(undefined); }}/>
                 </> : <View style={styles.compactActions}>
-                <Button label="Photo or video" icon="image-outline" intent="secondary" disabled={isPickingProof || completing} onPress={() => void chooseMediaProof().catch(reportProofError)}/>
-                <Button label="File" icon="document-attach-outline" intent="secondary" disabled={isPickingProof || completing} onPress={() => void chooseFileProof().catch(reportProofError)}/>
+                <Button label="Photo or video" icon="image-outline" intent="secondary" disabled={isPickingProof || completing} onPress={() => void chooseMediaProof().catch(reportProofError)} style={styles.secondaryAction}/>
+                <Button label="File" icon="document-attach-outline" intent="secondary" disabled={isPickingProof || completing} onPress={() => void chooseFileProof().catch(reportProofError)} style={styles.secondaryAction}/>
                 </View>}
             </View>}
-        <PixelButton layout="wrap" label={quest.requires_proof ? 'Submit proof and complete' : 'Complete quest'} loading={completing} disabled={!canComplete || (quest.requires_proof && !proof) || isPickingProof} onPress={() => onComplete(proof)}/>
+        <PixelButton layout="wrap" label={quest.requires_proof ? 'Submit proof and complete' : 'Complete quest'} loading={completing} disabled={!canComplete || (quest.requires_proof && !proof) || isPickingProof} onPress={() => onComplete(proof)} style={styles.primaryAction}/>
         <View style={styles.compactActions}>
-        <Button label="Edit quest" icon="create-outline" intent="quiet" disabled={completing} onPress={() => onEdit?.()}/>
-        <Button label="Delete quest" icon="trash-outline" intent="destructive" disabled={completing} onPress={onDelete}/>
+        <Button label="Edit quest" icon="create-outline" intent="quiet" disabled={completing} onPress={() => onEdit?.()} style={styles.secondaryAction}/>
+        <Button label="Delete quest" icon="trash-outline" intent="destructive" disabled={completing} onPress={onDelete} style={styles.secondaryAction}/>
         </View>
-        </>}
+        </View>}
   </Surface>;
 }
 function FilterOptions({ label, value, options, onChange }: {
@@ -379,32 +396,47 @@ function EmptyState({ title, subtitle, actionLabel, actionIcon, onPress, onBrows
     </View>;
 }
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
-    listControls: { gap: Spacing.lg, width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: Spacing.gutter, paddingTop: Spacing.xl, paddingBottom: Spacing.lg },
+    listControls: { gap: Spacing.lg, width: '100%', maxWidth: Layout.compactContentWidth, alignSelf: 'center', paddingHorizontal: Spacing.gutter, paddingTop: Spacing.xl, paddingBottom: Spacing.lg },
     compactListControls: { gap: Spacing.sm, paddingTop: Spacing.sm, paddingBottom: Spacing.sm },
     list: { flex: 1 },
-    listContent: { maxWidth: 480, paddingTop: 0, paddingBottom: Spacing.lg },
+    listContent: { maxWidth: Layout.compactContentWidth, paddingTop: 0, paddingBottom: Spacing.lg },
     emptyListContent: { flexGrow: 1, justifyContent: 'center', paddingTop: Spacing.lg, paddingBottom: Spacing.lg },
     listToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm, minHeight: Controls.minHeight },
     toolbarCount: { minHeight: Controls.minHeight, justifyContent: 'center' },
     toolbarFilter: { minHeight: Controls.minHeight, justifyContent: 'center' },
     hiddenControl: { opacity: 0 },
-    detailHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
-    compactActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-    rewardBackdrop: { flex: 1, backgroundColor: 'rgba(45,36,29,0.45)' },
-    rewardContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-    sheetActions: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, paddingVertical: 16 },
+    detailScreen: { flex: 1, backgroundColor: COLORS.background },
+    detailHeader: { width: '100%', maxWidth: Layout.maxContentWidth, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.gutter, paddingVertical: Spacing.sm, borderBottomWidth: Borders.default, borderBottomColor: COLORS.border },
+    detailHeading: { flex: 1, minWidth: 0 },
+    detailContent: { width: '100%', maxWidth: Layout.maxContentWidth, alignSelf: 'center', paddingHorizontal: Spacing.gutter, paddingTop: Spacing.lg, paddingBottom: Spacing.section },
+    detailSummary: { gap: Spacing.sm },
+    detailMeta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
+    contextRetry: { alignSelf: 'flex-start' },
+    detailSection: { borderTopWidth: Borders.default, paddingTop: Spacing.lg, gap: Spacing.sm },
+    detailRows: { gap: Spacing.xs },
+    detailRow: { flexDirection: 'row', flexWrap: 'wrap', columnGap: Spacing.sm, rowGap: 2 },
+    detailRowLabel: { color: COLORS.muted, minWidth: 104 },
+    detailRowValue: { color: COLORS.foreground, flexShrink: 1 },
+    detailActions: { borderTopWidth: Borders.default, paddingTop: Spacing.lg, gap: Spacing.lg },
+    proofSection: { gap: Spacing.md },
+    primaryAction: { alignSelf: 'stretch' },
+    secondaryAction: { flexGrow: 1, flexBasis: 140 },
+    compactActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
+    rewardBackdrop: { flex: 1, backgroundColor: COLORS.scrim },
+    rewardContent: { flexGrow: 1, justifyContent: 'center', padding: Spacing.xl },
+    sheetActions: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: Spacing.md, paddingVertical: Spacing.lg },
     viewToggle: { flexDirection: 'row' },
     expandedViews: { flexDirection: 'column' },
-    contextHint: { fontSize: 14, lineHeight: 20, color: COLORS.muted },
+    contextHint: { ...Typography.metadata, color: COLORS.muted },
     container: { flex: 1, backgroundColor: 'transparent' },
     safeArea: { flex: 1 },
     content: { width: '100%', maxWidth: Layout.maxContentWidth, alignSelf: 'center', paddingHorizontal: Spacing.gutter, paddingTop: Spacing.xl, paddingBottom: Spacing.section },
-    listHeading: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
-    sectionTitle: { color: COLORS.ink, fontSize: 20, fontWeight: '700', lineHeight: 28 },
-    stateCard: { alignItems: 'center', gap: 10, padding: 20, backgroundColor: COLORS.card, borderRadius: 24 },
+    listHeading: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.sm },
+    sectionTitle: { color: COLORS.ink, ...Typography.section },
+    stateCard: { alignItems: 'center', gap: Spacing.md, padding: Spacing.gutter, backgroundColor: COLORS.card, borderRadius: Radii.xl },
     emptyState: { alignItems: 'center', paddingTop: Spacing.lg, paddingBottom: Spacing.lg },
     emptyIllustration: { width: 40, height: 32, borderWidth: Borders.default, borderStyle: 'dashed', borderColor: COLORS.border, borderRadius: Radii.md, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
-    emptyTitle: { ...Typography.item, color: COLORS.foreground, fontWeight: '700', textAlign: 'center' },
+    emptyTitle: { ...Typography.item, color: COLORS.foreground, textAlign: 'center' },
     emptySubtitle: { ...Typography.metadata, color: COLORS.foreground, textAlign: 'center', maxWidth: 240, marginTop: Spacing.xs },
     emptyButton: { minHeight: Controls.minHeight, width: 140, maxWidth: '100%', backgroundColor: COLORS.accent, borderRadius: Radii.md, marginTop: Spacing.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, flexDirection: 'row', gap: Spacing.sm, alignItems: 'center', justifyContent: 'center', borderWidth: Borders.focus },
     emptyButtonText: { ...Typography.label, color: COLORS.accentForeground, flexShrink: 1, textAlign: 'center' },

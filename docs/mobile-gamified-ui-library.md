@@ -6,7 +6,7 @@ Use [Login](../mobile/src/app/auth.tsx) for the shape and hierarchy of pixel con
 
 | Component | Status | Reuse and variants |
 | --- | --- | --- |
-| `PixelButton` | Exists | Home, Quest Details, and Create/Edit Quest use `layout="wrap"` for their main quest actions. Login uses the fixed PNG variant. Use existing intents and preserve focus, disabled, and busy states. Check long labels such as “Submit proof and complete” at large text sizes. [Button](../mobile/src/components/pixel/pixel-button.tsx) |
+| `PixelButton` | Exists | Login, Home, Quest Details, and Create/Edit Quest use the default wrapping SVG variant. Use existing intents and preserve focus, disabled, and busy states. Check long labels such as “Submit proof and complete” at large text sizes. [Button](../mobile/src/components/pixel/pixel-button.tsx) |
 | `PixelFrame` | Exists | Use for the featured quest on Home and reward panels. Keep dense lists lightweight. [Frame](../mobile/src/components/pixel/pixel-frame.tsx) |
 | `XpBadge`, `XpProgress`, `RewardPanel`, `GrowthLeaf` | Exist | Use compact XP for previews and earned XP for confirmed rewards. Share the meter across Home, Profile, completion, and Skill Tree, with clear account and branch labels. Use the leaf for completed growth. [XP and rewards](../mobile/src/components/xp-visuals.tsx) |
 | `CategoryBadge` | Implemented | Pair a shared category glyph with the actual category name. Use compact sizing in rows and a larger presentation on the featured quest. Give custom and legacy category names a common fallback glyph. |

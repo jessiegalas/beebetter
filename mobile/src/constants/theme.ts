@@ -1,11 +1,11 @@
 /** BeeBetter presentation tokens. Business and progression rules live elsewhere. */
 import '@/global.css';
-import { Platform, type TextStyle } from 'react-native';
+import { Platform } from 'react-native';
 import { useMemo } from 'react';
 import { useColorScheme } from 'nativewind';
 import tokens from './tokens';
 
-export { DesignTokens, Palettes, PixelSpacing, PixelBorders, PixelGrid, SliceInsetsArtPx, ArtPixelDp, DerivedRamps, TypographyRoles, TypographySpec, TouchTarget, artPixelsToDp, isOnPixelGrid } from './tokens';
+export { AppFont, DesignTokens, Palettes, PixelSpacing, PixelBorders, PixelGrid, SliceInsetsArtPx, ArtPixelDp, DerivedRamps, TypographyRoles, TypographyRoles as Typography, TypographySpec, TouchTarget, artPixelsToDp, isOnPixelGrid } from './tokens';
 export type { DesignScheme, ColorToken, SpacingToken, PixelSpacingToken, TypographyRole } from './tokens';
 
 // Compatibility aliases let existing screens adopt the palette incrementally.
@@ -28,17 +28,19 @@ export const Colors = {
 // Default appearance until a saved user preference is restored.
 export const APP_COLOR_SCHEME: keyof typeof Colors = 'light';
 export type ThemeColor = keyof typeof Colors.light;
-export const Fonts = Platform.select({ ios: tokens.fonts.ios, default: tokens.fonts.default, web: { sans: 'var(--font-display)', serif: 'var(--font-serif)', rounded: 'var(--font-rounded)', mono: 'var(--font-mono)' } })!;
 export const Spacing = tokens.spacing;
 export const Pixel = tokens.pixel;
 export const Radii = tokens.radii;
 export const Borders = tokens.borders;
-export const Typography = tokens.typography as { [K in keyof typeof tokens.typography]: TextStyle };
 export const Controls = tokens.controls;
 export const Layout = tokens.layout;
 export const States = tokens.states;
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = Layout.maxContentWidth;
+export const ContentColumn = {
+  width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', paddingHorizontal: Spacing.gutter,
+} as const;
+export const SectionColumn = { ...ContentColumn, gap: Spacing.section, paddingBottom: Spacing.page } as const;
 // Ordinary surfaces remain flat; only overlays and navigation use elevation.
 export const BeeBetterShadow = tokens.elevation;
 export function useAppColorScheme(): keyof typeof Colors { return useColorScheme().colorScheme ?? APP_COLOR_SCHEME; }

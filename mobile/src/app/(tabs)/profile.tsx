@@ -127,7 +127,7 @@ export default function ProfileScreen() {
         </>}
     </Disclosure>
     <Disclosure title="Achievements" summary="Quest milestones and badges">
-    <View style={{ gap: 20 }}>
+    <View style={{ gap: Spacing.gutter }}>
         {badges.map(badge => <View key={badge.id} style={styles.row}>
         <View style={[styles.avatar, { backgroundColor: badge.unlocked ? COLORS.honeySoft : COLORS.surfaceMuted }]}>
         <AchievementEmblem id={badge.id} earned={badge.unlocked} />
@@ -144,7 +144,7 @@ export default function ProfileScreen() {
     </View>
     </Disclosure>
     <Disclosure title="History" summary="Your latest recorded completions">
-        {completionHistory.length ? completionHistory.slice(0, 10).map(record => <View key={record.id} style={{ gap: 4 }}>
+        {completionHistory.length ? completionHistory.slice(0, 10).map(record => <View key={record.id} style={{ gap: Spacing.xs }}>
         <View style={styles.row}><PixelGlyph name="leaf" /><ThemedText type="item" style={styles.flex}>{record.title}</ThemedText></View>
         <CategoryBadge label={record.category} />
         <ThemedText type="small" style={{ color: COLORS.muted }}>
@@ -152,7 +152,7 @@ export default function ProfileScreen() {
         </ThemedText>
         </View>) : <ThemedText style={{ color: COLORS.muted }}>No completion history yet. Complete a quest to record your first win.</ThemedText>}
     </Disclosure>
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: Spacing.md }}>
     <ThemedText type="subtitle">Account</ThemedText>
     <Button intent="secondary" icon="location-outline" label="Saved places" onPress={() => router.push('/manage-locations')}/>
     <Button intent="quiet" icon="sync-outline" label="Refresh my data" loading={isRefreshing} onPress={() => void refresh()}/>
@@ -165,7 +165,7 @@ function InfoRow({ label, value }: {
     value: string;
 }) {
     const c = useBeePalette();
-    return <View style={{ gap: 4 }}>
+    return <View style={{ gap: Spacing.xs }}>
     <ThemedText type="small" style={{ color: c.muted }}>
     {label}
     </ThemedText>
@@ -174,4 +174,4 @@ function InfoRow({ label, value }: {
     </ThemedText>
     </View>;
 }
-const styles = StyleSheet.create({ section: { gap: Spacing.lg }, identityExpanded: { flexDirection: 'column', alignItems: 'flex-start' }, identityCopy: { width: '100%', gap: Spacing.xs }, statExpanded: { flexBasis: '100%' }, row: { flexDirection: 'row', alignItems: 'center', gap: 12 }, flex: { flex: 1, minWidth: 0 }, avatar: { width: 48, height: 48, borderRadius: Radii.lg, alignItems: 'center', justifyContent: 'center' }, stats: { flexDirection: 'row', flexWrap: 'wrap', gap: 20, paddingTop: 8 }, stat: { flexGrow: 1, flexBasis: '40%', gap: 4 } });
+const styles = StyleSheet.create({ section: { gap: Spacing.lg }, identityExpanded: { flexDirection: 'column', alignItems: 'flex-start' }, identityCopy: { width: '100%', gap: Spacing.xs }, statExpanded: { flexBasis: '100%' }, row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md }, flex: { flex: 1, minWidth: 0 }, avatar: { borderRadius: Radii.lg, alignItems: 'center', justifyContent: 'center' }, stats: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.gutter, paddingTop: Spacing.sm }, stat: { flexGrow: 1, flexBasis: '40%', gap: Spacing.xs } });

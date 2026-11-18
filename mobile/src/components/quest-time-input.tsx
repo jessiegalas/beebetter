@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Platform, TouchableOpacity, View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { DateTimePicker } from '@expo/ui/community/datetime-picker';
+import { Button } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
-import { useBeePalette } from '@/constants/theme';
+import { Spacing, useBeePalette } from '@/constants/theme';
 import { formatLocalDateTime } from '@/lib/quest-time';
 
 export type QuestTimeInputProps = { label: string; value: string; onChange: (value: string) => void; timeOnly?: boolean };
@@ -17,10 +18,12 @@ export function QuestTimeInput({ label, value, onChange, timeOnly = false }: Que
     if (!timeOnly && date < minimum) date.setTime(minimum.getTime());
     setPicker({ mode, value: date, minimum });
   };
-  return <View style={{ gap: 8 }}>
-    <ThemedText style={{ fontSize: 14, lineHeight: 20, color: C.ink }}>{label}</ThemedText>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-      {(!timeOnly ? ['date', 'time'] as const : ['time'] as const).map(mode => <TouchableOpacity key={mode} accessibilityRole="button" accessibilityLabel={label + ' ' + mode} onPress={() => open(mode)} style={{ padding: 12, minHeight: 48, backgroundColor: C.honeySoft, borderRadius: 12 }}><ThemedText style={{ color: C.ink, fontSize: 14, lineHeight: 20 }}>{value ? (timeOnly ? value : value.split(' ')[mode === 'date' ? 0 : 1]) : 'Choose ' + mode}</ThemedText></TouchableOpacity>)}
+  return <View style={{ gap: Spacing.sm }}>
+    <ThemedText type="label">{label}</ThemedText>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md }}>
+      {(!timeOnly ? ['date', 'time'] as const : ['time'] as const).map(mode => <Button key={mode}
+        intent="secondary" accessibilityLabel={label + ' ' + mode} onPress={() => open(mode)}
+        label={value ? (timeOnly ? value : value.split(' ')[mode === 'date' ? 0 : 1]) : 'Choose ' + mode} />)}
     </View>
     {picker && <>
       <DateTimePicker minimumDate={!timeOnly && picker.mode === 'date' ? picker.minimum : undefined} value={picker.value} mode={picker.mode} display={Platform.OS === 'ios' ? 'spinner' : 'default'} accentColor={C.honeyDark} onDismiss={() => setPicker(null)} onValueChange={(_, selected) => {
@@ -31,7 +34,7 @@ export function QuestTimeInput({ label, value, onChange, timeOnly = false }: Que
         onChange(timeOnly ? local.split(' ')[1] : local);
         setPicker(Platform.OS === 'ios' ? { ...picker, value: date } : null);
       }} />
-      {Platform.OS === 'ios' && <TouchableOpacity accessibilityRole="button" onPress={() => { const local = formatLocalDateTime(picker.value.toISOString()); onChange(timeOnly ? local.split(' ')[1] : local); setPicker(null); }} style={{ minHeight: 48, justifyContent: 'center' }}><ThemedText>Done</ThemedText></TouchableOpacity>}
+      {Platform.OS === 'ios' && <Button label="Done" onPress={() => { const local = formatLocalDateTime(picker.value.toISOString()); onChange(timeOnly ? local.split(' ')[1] : local); setPicker(null); }} />}
     </>}
   </View>;
 }

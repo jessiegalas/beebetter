@@ -1,23 +1,35 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { BottomTabBarHeightContext } from 'expo-router/js-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import { PixelButton } from '@/components/pixel/pixel-button';
-import { PixelGlyph } from '@/components/pixel/pixel-glyph';
+import { PixelFrame } from '@/components/pixel/pixel-frame';
 import { CategoryBadge } from '@/components/quest-visuals';
 import { XpBadge, XpProgress } from '@/components/xp-visuals';
 import { ThemedText } from '@/components/themed-text';
-import { Button, IconButton, ScreenFrame, Sheet, StatusMessage, Surface } from '@/components/mobile-ui';
+import { Button, IconButton, ScreenFrame, Sheet, StatusMessage } from '@/components/mobile-ui';
 import { HomeMenu } from '@/components/home-menu';
 import { DailyCheckIn } from '@/components/daily-check-in';
-import { Borders, Controls, Layout, PixelBorders, PixelSpacing, Radii, Spacing, States, Typography, useBeePalette } from '@/constants/theme';
+import { Controls, Layout, PixelBorders, PixelSpacing, Typography, useBeePalette } from '@/constants/theme';
 import { MOBILE_NOTIFICATIONS_ENABLED, MOBILE_WELLNESS_AND_SUPPORT_ENABLED } from '@/constants/features';
 import { useQuestPriority } from '@/context/quest-priority-context';
 import { useLocationContext } from '@/context/location-context';
 import { useUserData } from '@/hooks/use-user-data';
 import { GROUP_LABELS, recommendationGroup } from '@/lib/quest-discovery';
+import { timestamp } from '@/lib/quest-time';
+import { branchProgressList } from '@/lib/progression';
 import { useHomeRecommendationVisibility, useRecommendationMeasurement } from '@/hooks/use-recommendation-measurement';
 import { checkInDateKey, useDailyCheckIn } from '@/hooks/use-daily-check-in';
+
+const OUTLINE = { appearance: 'flat', borderWidth: PixelBorders.default, cornerStep: PixelSpacing.px1 } as const;
+const START_QUEST = 'Start quest';
+const WEEK_DAYS = 7;
+const MOODS = [{ label: 'Low', score: 2 }, { label: 'Okay', score: 3 }, { label: 'Good', score: 4 }] as const;
+const STREAK_CELL_SIZE = PixelSpacing.px8 + PixelSpacing.px2;
+const HONEYCOMB = 'M4 0H6V1H8V2H9V3H10V8H9V9H8V10H6V11H4V10H2V9H1V8H0V3H1V2H2V1H4Z';
 
 export default function HomeScreen() {
   const { user, profile, progressSummary, isLoading, isRefreshing, levelProgress, refresh, workspaceErrors, retryWorkspace } = useUserData();
@@ -26,17 +38,21 @@ export default function HomeScreen() {
   const [wellnessOpen, setWellnessOpen] = useState(false), [menuOpen, setMenuOpen] = useState(false);
   const { checkIn } = useLocalSearchParams<{ checkIn?: string }>();
   const canPrompt = !whyOpen && !wellnessOpen && !menuOpen && !(isLoading && !profile);
-  const { day: checkInDay, open: openCheckIn, close: closeCheckIn } = useDailyCheckIn(user?.id, canPrompt);
+  const { day: checkInDay, initialWellbeing, open: openCheckIn, close: closeCheckIn } = useDailyCheckIn(user?.id, canPrompt);
   useEffect(() => {
     if (checkIn !== '1' || !canPrompt || !user?.id) return;
     openCheckIn();
     router.setParams({ checkIn: '' });
   }, [checkIn, canPrompt, user?.id, openCheckIn]);
   const { fontScale } = useWindowDimensions();
-  const expanded = fontScale >= Layout.largeTextScale;
-  const { recommendations, snoozesReady, snoozedCount, contextError, retryContext, undoSnooze, restoreSnoozes, lastSnoozedId } = useQuestPriority();
+  const largeText = fontScale >= Layout.largeTextScale;
+  const { bottom } = useSafeAreaInsets();
+  const tabBarHeight = useContext(BottomTabBarHeightContext);
+  // The measured tab bar already includes its bottom safe-area inset.
+  const bottomPadding = Math.max(bottom, tabBarHeight ?? 0) + PixelSpacing.px2;
+  const { recommendations, now, snoozesReady, snoozedCount, contextError, retryContext, undoSnooze, restoreSnoozes, lastSnoozedId } = useQuestPriority();
   const { locations } = useLocationContext();
-  const next = recommendations[0];
+  const next = recommendations.find(item => recommendationGroup(item) === 'upcoming') ?? recommendations[0];
   const recommendationRef = useRef<View>(null);
   const viewportRef = useRef<View>(null);
   const measurement = useRecommendationMeasurement('home', next ? [next] : [], snoozesReady && canPrompt && !checkInDay && !isLoading);
@@ -47,22 +63,39 @@ export default function HomeScreen() {
     : contextError ? 'Recommendations need a refresh'
     : 'No quest recommended right now';
   const place = next?.quest.location_id ? locations.find(item => item.id === next.quest.location_id) : undefined;
-  const whyButton = <IconButton icon="information-circle-outline" label="Why this quest" onPress={() => setWhyOpen(true)} />;
+  const group = next ? recommendationGroup(next) : undefined;
+  const scheduled = timestamp(next?.quest.scheduled_at);
+  const scheduledTime = scheduled === null ? undefined : new Date(scheduled).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const questContext = [group === 'upcoming' ? 'Next quest' : group && GROUP_LABELS[group], scheduledTime].filter(Boolean).join(' · ');
+  const xpRemaining = levelProgress.xpForNextLevel - levelProgress.currentLevelXp;
+  const reachesNextLevel = next && xpRemaining > 0 && Number.isFinite(next.quest.xp) && next.quest.xp >= xpRemaining;
+  const levelUpCopy = reachesNextLevel ? `Finish this to reach Level ${levelProgress.level + 1}` : null;
+  const streak = Math.max(0, profile?.current_streak ?? 0);
+  const filledCells = Math.min(streak, WEEK_DAYS);
+  const daysLeft = WEEK_DAYS - filledCells;
+  const streakCopy = streak ? `${streak}-day streak` : 'Start your streak today';
+  const streakSummary = `${streak ? `${streak} day streak` : streakCopy}, ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} to go this week`;
+  const completed = progressSummary?.totalCompleted ?? 0;
+  const completionCopy = `${completed} ${completed === 1 ? 'quest' : 'quests'} completed`;
+  const branches = branchProgressList(progressSummary?.byCategoryXp, progressSummary?.byCategory).length;
   const displayName = profile?.display_name?.trim() || profile?.name?.trim() || 'Explorer';
   const avatarUri = typeof user?.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : undefined;
+  const whyButton = <IconButton icon="information-circle-outline" label="Why this quest" onPress={() => setWhyOpen(true)} />;
+  const greeting = <View style={[s.copy, largeText && s.greetingLarge]}>
+    <ThemedText type="title">Hi, {displayName}!</ThemedText>
+    <ThemedText style={s.metadata}>
+      {new Date(now).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · Level {levelProgress.level}
+    </ThemedText>
+  </View>;
   return <>
-    <ScreenFrame tab viewportRef={viewportRef} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={c.primary} colors={[c.primary]} />}>
-      <View style={s.header}>
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: c.background }]} />
+    <ScreenFrame tab viewportRef={viewportRef} contentStyle={[s.content, { paddingBottom: bottomPadding }]}
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={c.primary} colors={[c.primary]} />}>
+      <View style={[s.header, largeText && s.headerLarge]}>
         <IconButton icon="menu-outline" label="Open menu" onPress={() => setMenuOpen(true)} />
-        <View style={s.identity}>
-          <View style={s.copy}>
-            <ThemedText type="subtitle" numberOfLines={1} ellipsizeMode="tail">Hi, {displayName}!</ThemedText>
-            <ThemedText type="small" numberOfLines={1} style={{ color: c.muted }}>
-              {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-            </ThemedText>
-          </View>
-        </View>
+        {!largeText && greeting}
         {MOBILE_NOTIFICATIONS_ENABLED && <IconButton icon="notifications-outline" label="Open notifications" onPress={() => router.push('/notifications')} />}
+        {largeText && greeting}
       </View>
       {isLoading && !profile ? <StatusMessage loading message="Loading your overview…" /> : <>
         <View style={s.section}>
@@ -70,10 +103,11 @@ export default function HomeScreen() {
             {next ? <View style={[s.recommendation, { borderStartColor: c.primary }]}>
               <View style={s.recommendationHeading}>
                 <View style={s.copy}>
-                  <ThemedText type="small" style={{ color: c.muted }}>{GROUP_LABELS[recommendationGroup(next)]}</ThemedText>
+                  <ThemedText style={[s.metadata, { color: c.muted }]}>{questContext}</ThemedText>
                   <ThemedText type="subtitle" accessibilityRole="header">{next.quest.title}</ThemedText>
+                  {levelUpCopy && <ThemedText style={[s.metadata, { color: c.muted }]}>{levelUpCopy}</ThemedText>}
                 </View>
-                {!expanded && whyButton}
+                {!largeText && whyButton}
               </View>
               <View style={s.recommendationFooter}>
                 <View style={s.recommendationMetadata}>
@@ -81,94 +115,90 @@ export default function HomeScreen() {
                   {Number.isFinite(next.quest.xp) && <XpBadge xp={next.quest.xp} />}
                 </View>
                 <View style={s.recommendationActions}>
-                  <PixelButton layout="wrap" label="View quest" onPress={() => {
+                  <PixelButton layout="wrap" label={START_QUEST} onPress={() => {
                     measurement.action(next, 1, 'selection');
                     router.push({ pathname: '/quests', params: { questId: next.quest.id } });
                   }} style={s.recommendationAction} />
-                  {expanded && whyButton}
+                  {largeText && whyButton}
                 </View>
               </View>
             </View> : <View style={s.emptyRecommendation}>
-              <ThemedText type="item" accessibilityRole="header" accessibilityLiveRegion="polite" style={s.emptyRecommendationTitle}>{emptyRecommendationTitle}</ThemedText>
+              <ThemedText type="label" accessibilityRole="header" accessibilityLiveRegion="polite" style={s.emptyRecommendationTitle}>{emptyRecommendationTitle}</ThemedText>
               <View style={s.recommendationActions}>
                 <Button intent="quiet" label="Explore quests" icon="arrow-forward" style={s.exploreQuests} onPress={() => router.push('/quests')} />
                 {contextError && <IconButton icon="information-circle-outline" label="Recommendation status" onPress={() => setWhyOpen(true)} />}
               </View>
             </View>}
           </View>
-          {lastSnoozedId && <View accessibilityLiveRegion="polite"><ThemedText type="small">Quest snoozed for one hour.</ThemedText><Button intent="quiet" label="Undo" onPress={undoSnooze}/></View>}
+          {lastSnoozedId && <View accessibilityLiveRegion="polite"><ThemedText style={s.metadata}>Quest snoozed for one hour.</ThemedText><Button intent="quiet" label="Undo" onPress={undoSnooze}/></View>}
           {snoozedCount > 0 && <Button intent="quiet" label="Restore snoozed quests" onPress={restoreSnoozes}/>}
           {workspaceErrors.quests && <View accessibilityLiveRegion="polite">
-            <ThemedText type="small" style={{ color: c.danger }}>{workspaceErrors.quests}</ThemedText>
+            <ThemedText style={[s.metadata, { color: c.danger }]}>{workspaceErrors.quests}</ThemedText>
             <Button intent="quiet" label="Retry quests" onPress={() => void retryWorkspace('quests')} />
           </View>}
         </View>
         <View style={s.section}>
-          <View style={[s.divider, { backgroundColor: c.surfaceMuted }]} />
-          <View style={s.heading}>
-            <ThemedText type="subtitle">Your progress</ThemedText>
-            <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={'Open Skill Tree, level ' + levelProgress.level} onPress={() => router.push('/skill-tree')} style={({ pressed }) => [s.levelLink, { opacity: pressed ? States.pressedOpacity : 1 }]}>
-              <Ionicons name="ribbon" size={Controls.iconSize} color={c.primary} accessible={false} />
-              <ThemedText type="item">Account level {levelProgress.level}</ThemedText>
-              <Ionicons name="chevron-forward" size={16} color={c.muted} accessible={false} />
-            </Pressable>
-          </View>
-          <XpProgress progress={levelProgress} compact />
-          <View style={s.stats}>
-            <Surface style={[s.stat, expanded && s.statExpanded]}>
-              <View style={s.statValue}><PixelGlyph name="streak" /><ThemedText type="subtitle" accessibilityLabel={'Current streak: ' + (profile?.current_streak ?? 0) + ((profile?.current_streak ?? 0) === 1 ? ' day' : ' days')}>{profile?.current_streak ?? 0}</ThemedText></View>
-              <ThemedText type="small" style={{ color: c.muted, textAlign: 'center' }}>Current streak</ThemedText>
-            </Surface>
-            <Surface style={[s.stat, expanded && s.statExpanded]}>
-              <View style={s.statValue}><PixelGlyph name="leaf" /><ThemedText type="subtitle">{progressSummary.totalCompleted}</ThemedText></View>
-              <ThemedText type="small" style={{ color: c.muted, textAlign: 'center' }}>Quests completed</ThemedText>
-            </Surface>
+          <XpProgress progress={levelProgress} scope="Account" layout="summary" captionStyle={[s.metadata, { color: c.foreground }]} />
+          <View accessible accessibilityRole="text" accessibilityLabel={`${streakSummary}. ${completionCopy}`}>
+            <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" aria-hidden style={s.streak}>
+              <View style={s.streakCells}>
+                {Array.from({ length: WEEK_DAYS }, (_, index) =>
+                  <Svg key={index} width={STREAK_CELL_SIZE} height={STREAK_CELL_SIZE + PixelSpacing.px1} viewBox="0 0 10 11">
+                    <Path d={HONEYCOMB} fill={index < filledCells ? c.accent : c.surfaceMuted} />
+                  </Svg>
+                )}
+              </View>
+              <ThemedText style={s.metadata}>{streakCopy} · {completionCopy}</ThemedText>
+            </View>
           </View>
           {(workspaceErrors.profile || workspaceErrors.streak || workspaceErrors.progress) && <View accessibilityLiveRegion="polite">
-            <ThemedText type="small" style={{ color: c.danger }}>Some progress could not be refreshed. Your saved information is still shown.</ThemedText>
+            <ThemedText style={[s.metadata, { color: c.danger }]}>Some progress could not be refreshed. Your saved information is still shown.</ThemedText>
             <Button intent="quiet" label="Retry progress" onPress={() => { for (const slice of ['profile', 'streak', 'progress'] as const) if (workspaceErrors[slice]) void retryWorkspace(slice); }} />
           </View>}
         </View>
-        <View style={s.section}>
-          <View style={[s.divider, { backgroundColor: c.surfaceMuted }]} />
-          <View style={[s.shortcuts, expanded && { flexDirection: 'column' }]}>
-            <Shortcut icon="person-outline" label="Profile" onPress={() => router.push('/profile')} />
-            <Shortcut icon="bookmark-outline" label="Save Places" onPress={() => router.push('/manage-locations')} />
-            <Shortcut icon="git-network-outline" label="Skill Tree" onPress={() => router.push('/skill-tree')} />
+        <View style={[s.divided, { borderColor: c.border }]}>
+          <View style={s.checkInHeader}>
+            <ThemedText type="label" accessibilityRole="header" style={s.sectionTitle}>How are you feeling?</ThemedText>
+            <HomeTextAction label="Full check-in" onPress={() => openCheckIn()} />
+          </View>
+          <View style={s.moods}>
+            {MOODS.map(({ label, score }) =>
+              <MoodButton key={score} label={label} onPress={() => openCheckIn(undefined, score)} />
+            )}
           </View>
         </View>
-        {!MOBILE_WELLNESS_AND_SUPPORT_ENABLED && <View style={s.section}>
-          <View style={[s.divider, { backgroundColor: c.surfaceMuted }]} />
-          <HomeEntry icon="heart-outline" title="Daily check-in" description="Optional well-being, stress, and energy ratings" onPress={() => openCheckIn()} />
-        </View>}
+        <View style={[s.divided, { borderColor: c.border }]}>
+          <HomeEntry title="Skill Tree" description={`${branches} branches`} role="link" onPress={() => router.push('/skill-tree')} />
+        </View>
         {MOBILE_WELLNESS_AND_SUPPORT_ENABLED && <View style={s.section}>
-          <ThemedText type="subtitle">A moment for you</ThemedText>
+          <ThemedText type="label">A moment for you</ThemedText>
           <HomeEntry icon="heart-outline" title="Wellness" description="Optional, private check-ins and reflections" onPress={() => setWellnessOpen(true)} />
           <HomeEntry icon="people-outline" title="Request OSAS support" description="Choose to contact authorized support personnel" onPress={() => router.push('/support-requests')} />
         </View>}
       </>}
       <Sheet title={next ? 'Why this quest' : 'Recommendation status'} visible={whyOpen} onClose={() => setWhyOpen(false)}>
         {next && <>
-          <ThemedText type="item">{next.quest.title}</ThemedText>
-          <ThemedText type="small">{GROUP_LABELS[recommendationGroup(next)]}</ThemedText>
-          {recommendationGroup(next) !== 'now' && <ThemedText type="small">This is an alternative to a recommendation for right now.</ThemedText>}
-          {next.reasons.map(reason => <ThemedText key={reason} type="small">{reason}</ThemedText>)}
-          {next.constraints.map(reason => <ThemedText key={reason} type="small">{reason}</ThemedText>)}
-          {place && <ThemedText type="small">Saved place: {place.name}</ThemedText>}
-          {!!next.quest.description?.trim() && <ThemedText type="small">{next.quest.description}</ThemedText>}
+          <ThemedText type="label">{next.quest.title}</ThemedText>
+          <ThemedText style={s.metadata}>{questContext}</ThemedText>
+          <CategoryBadge label={next.quest.category} />
+          {group !== 'now' && <ThemedText>This is an alternative to a recommendation for right now.</ThemedText>}
+          {next.reasons.map(reason => <ThemedText key={reason}>{reason}</ThemedText>)}
+          {next.constraints.map(reason => <ThemedText key={reason}>{reason}</ThemedText>)}
+          {place && <ThemedText>Saved place: {place.name}</ThemedText>}
+          {!!next.quest.description?.trim() && <ThemedText>{next.quest.description}</ThemedText>}
         </>}
         {(contextError || (next && !next.fresh)) && <>
-          {(!contextError || !next?.constraints.includes(contextError)) && <ThemedText type="small">{contextError || 'Recommendation context is out of date.'}</ThemedText>}
+          {(!contextError || !next?.constraints.includes(contextError)) && <ThemedText>{contextError || 'Recommendation context is out of date.'}</ThemedText>}
           <Button intent="quiet" label="Retry context" onPress={retryContext} />
         </>}
       </Sheet>
       {MOBILE_WELLNESS_AND_SUPPORT_ENABLED && <Sheet title="Wellness" visible={wellnessOpen} onClose={() => setWellnessOpen(false)}>
-        <ThemedText type="small" style={{ color: c.muted }}>These records are optional and private to you.</ThemedText>
+        <ThemedText>These records are optional and private to you.</ThemedText>
         {[{ label: 'Daily check-in', route: '/wellness-check-in' }, { label: 'Self-management reflection', route: '/self-management-reflection' }, { label: 'My history and trends', route: '/wellness-history' }].map(item => <Button key={item.route} intent="secondary" label={item.label} onPress={() => { setWellnessOpen(false); router.push(item.route as '/wellness-check-in'); }} />)}
       </Sheet>}
     </ScreenFrame>
     <Sheet title="Daily check-in" visible={!!checkInDay} onClose={closeCheckIn} adjustKeyboardInsets expanded>
-      {user && checkInDay && <DailyCheckIn key={`${user.id}:${checkInDateKey(checkInDay)}`} studentId={user.id} day={checkInDay}
+      {user && checkInDay && <DailyCheckIn key={`${user.id}:${checkInDateKey(checkInDay)}`} studentId={user.id} day={checkInDay} initialWellbeing={initialWellbeing}
         onClose={closeCheckIn} onHistory={() => {
           closeCheckIn();
           router.push('/wellness-history');
@@ -178,49 +208,84 @@ export default function HomeScreen() {
   </>;
 }
 
-function Shortcut({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
-  const c = useBeePalette(), [focused, setFocused] = useState(false);
-  return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.shortcut, { backgroundColor: pressed ? c.surfaceMuted : c.card, borderColor: focused ? c.focus : 'transparent' }]}>
-    <View style={[s.shortcutIcon, { backgroundColor: c.surface }]}><Ionicons name={icon} size={Controls.iconSize} color={c.foreground} accessible={false} /></View>
-    <View style={s.shortcutLabel}><ThemedText style={s.shortcutText}>{label}</ThemedText><Ionicons name="chevron-forward" size={12} color={c.muted} accessible={false} /></View>
+function HomeTextAction({ label, onPress }: { label: string; onPress: () => void }) {
+  const c = useBeePalette();
+  const [focused, setFocused] = useState(false);
+  return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
+    onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+    style={({ pressed }) => [s.textAction, {
+      borderColor: focused ? c.focus : 'transparent',
+      backgroundColor: pressed ? c.surfaceMuted : 'transparent',
+    }]}>
+    <ThemedText style={[s.metadata, s.actionLabel, { color: c.foreground }]}>{label}</ThemedText>
+    <Ionicons name="chevron-forward" size={PixelSpacing.px4} color={c.foreground} accessible={false} />
   </Pressable>;
 }
 
-function HomeEntry({ icon, title, description, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string; onPress: () => void }) {
+function MoodButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  return <Pressable cssInterop={false} accessibilityRole="button"
+    accessibilityLabel={`${label} well-being, open daily check-in`} onPress={onPress}
+    onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={s.mood}>
+    {({ pressed }) => {
+      const tone = pressed ? 'border' : 'surfaceMuted';
+      return <PixelFrame {...OUTLINE} fill={tone} border={tone} focused={focused}>
+        <View style={s.moodContent}>
+          <ThemedText type="label" style={s.moodLabel}>{label}</ThemedText>
+        </View>
+      </PixelFrame>;
+    }}
+  </Pressable>;
+}
+
+function HomeEntry({ icon, title, description, onPress, role = 'button' }: {
+  icon?: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  onPress: () => void;
+  role?: 'button' | 'link';
+}) {
   const c = useBeePalette();
   const [focused, setFocused] = useState(false);
-  return <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel={title} accessibilityHint={description} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.entry, { borderColor: focused ? c.focus : 'transparent', backgroundColor: pressed ? c.surfaceMuted : 'transparent' }]}>
-    <Ionicons name={icon} size={Controls.iconSize} color={c.foreground} accessible={false} />
-    <View style={s.copy}><ThemedText type="item">{title}</ThemedText><ThemedText type="small" style={{ color: c.muted }}>{description}</ThemedText></View>
-    <Ionicons name="chevron-forward" size={Controls.iconSize} color={c.muted} accessible={false} />
+  return <Pressable cssInterop={false} accessibilityRole={role} accessibilityLabel={`${title}, ${description}`} onPress={onPress} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [s.entry, !icon && s.inlineEntry, { borderColor: focused ? c.focus : 'transparent', backgroundColor: pressed ? c.surfaceMuted : 'transparent' }]}>
+    {icon && <Ionicons name={icon} size={Controls.iconSize} color={c.foreground} accessible={false} />}
+    <View style={[s.copy, !icon && s.inlineCopy]}>
+      <ThemedText type="label">{title}</ThemedText>
+      <ThemedText style={s.metadata}>{description}</ThemedText>
+    </View>
+    <Ionicons name="chevron-forward" size={icon ? Controls.iconSize : PixelSpacing.px4} color={c.foreground} accessible={false} />
   </Pressable>;
 }
 
 const s = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  identity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  content: { gap: PixelSpacing.px8, paddingHorizontal: PixelSpacing.px8, paddingTop: PixelSpacing.px6 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: PixelSpacing.px2 },
+  headerLarge: { flexWrap: 'wrap', justifyContent: 'space-between' },
+  greetingLarge: { flexBasis: '100%' },
   copy: { flex: 1, minWidth: 0 },
-  section: { gap: Spacing.md },
-  heading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  divider: { height: Borders.default },
-  levelLink: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, minHeight: Controls.minHeight, paddingHorizontal: Spacing.xs },
+  metadata: Typography.homeMetadata,
+  section: { gap: PixelSpacing.px3 },
   recommendation: { borderStartWidth: PixelBorders.default, paddingStart: PixelSpacing.px4, gap: PixelSpacing.px2 },
   recommendationHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: PixelSpacing.px2 },
   recommendationFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: PixelSpacing.px2 },
   recommendationMetadata: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', maxWidth: '100%', columnGap: PixelSpacing.px4, rowGap: PixelSpacing.px2 },
   recommendationActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', maxWidth: '100%', gap: PixelSpacing.px2 },
   recommendationAction: { flexShrink: 1, maxWidth: '100%' },
+  textAction: { minHeight: Controls.minHeight, minWidth: Controls.minHeight, maxWidth: '100%', borderWidth: PixelBorders.default, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: PixelSpacing.px1 },
+  actionLabel: { flexShrink: 1 },
   emptyRecommendation: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: PixelSpacing.px2 },
-  emptyRecommendationTitle: { flexGrow: 1, flexShrink: 1, flexBasis: 144 },
+  emptyRecommendationTitle: { flexGrow: 1, flexShrink: 1, flexBasis: Controls.minHeight * 3 },
   exploreQuests: { paddingHorizontal: PixelSpacing.px2 },
-  stats: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  stat: { flexGrow: 1, flexBasis: '45%', minWidth: 0, minHeight: Controls.minHeight * 2 + Spacing.lg, alignItems: 'center', justifyContent: 'center', padding: Spacing.md, gap: Spacing.sm },
-  statValue: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
-  statExpanded: { flexBasis: '100%' },
-  shortcuts: { flexDirection: 'row', gap: Spacing.sm },
-  shortcut: { flex: 1, minWidth: 0, minHeight: Controls.minHeight, padding: Spacing.sm, gap: Spacing.sm, borderRadius: Radii.lg, borderWidth: Borders.focus },
-  shortcutIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.pill },
-  shortcutLabel: { minHeight: (Typography.metadata.lineHeight ?? 20) * 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.xs },
-  shortcutText: { ...Typography.label, flex: 1, minWidth: 0 },
-  entry: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.sm, borderWidth: Borders.focus, borderRadius: Radii.md },
+  streak: { gap: PixelSpacing.px3, paddingTop: PixelSpacing.px2 },
+  streakCells: { flexDirection: 'row', flexWrap: 'wrap', gap: PixelSpacing.px2 },
+  divided: { borderTopWidth: PixelBorders.default, paddingTop: PixelSpacing.px3, gap: PixelSpacing.px1 },
+  checkInHeader: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: PixelSpacing.px3 },
+  sectionTitle: { flexShrink: 1, maxWidth: '100%' },
+  moods: { flexDirection: 'row', flexWrap: 'wrap', gap: PixelSpacing.px2 },
+  mood: { flexGrow: 1, flexBasis: PixelSpacing.px16, minWidth: Controls.minHeight, minHeight: Controls.minHeight },
+  moodContent: { minHeight: Controls.minHeight, justifyContent: 'center', paddingHorizontal: PixelSpacing.px2, paddingVertical: PixelSpacing.px3 },
+  moodLabel: { textAlign: 'center' },
+  entry: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'center', gap: PixelSpacing.px3, padding: PixelSpacing.px3, borderWidth: PixelBorders.default },
+  inlineEntry: { padding: 0, gap: PixelSpacing.px1 },
+  inlineCopy: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', columnGap: PixelSpacing.px3 },
 });

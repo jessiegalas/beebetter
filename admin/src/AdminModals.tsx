@@ -6,6 +6,7 @@ import type { Admin, Quest, QuestDraft, User } from './admin-types'
 import { getQuestActivityCode, searchActiveStudents } from './admin-data'
 import { initials } from './AdminShell'
 import { Status, questStatusLabel } from './AdminTables'
+import { WorkspaceDialog } from './WorkspaceDialog'
 
 export function AdminModal({ onClose, onSave }: { onClose: () => void; onSave: (id: string, role: Admin['role']) => Promise<void> }) {
   const busy = useRef(false)
@@ -70,26 +71,128 @@ export function UserActions({ user, onClose, onOpenProfile, onToggleStatus }: { 
   return <Drawer label="Student account actions" onClose={onClose}><span className="eyebrow">USER ACTIONS</span><h2>{user.name || 'Student ' + user.studentNumber}</h2><p className="drawer-muted">Choose an available account-management action.</p><button className="drawer-action" onClick={onOpenProfile}>View profile</button><button className="drawer-action danger" onClick={onToggleStatus}>{user.status === 'Active' ? 'Set account inactive' : 'Reactivate account'}</button></Drawer>
 }
 
-export function QuestModal({ initialQuest, users, onClose, onSave }: { initialQuest: Quest | null; users: User[]; onClose: () => void; onSave: (quest: QuestDraft) => Promise<void> }) {
-  const editing = Boolean(initialQuest)
-  const [assigneeSearch,setAssigneeSearch]=useState('')
-  const [assigneeOptions,setAssigneeOptions]=useState(users.filter(user=>user.status==='Active').map(user=>({id:user.id,name:user.name,studentNumber:user.studentNumber})))
-  const [assigneeError,setAssigneeError]=useState('')
-  useEffect(()=>{ if(editing)return; const timer=setTimeout(()=>{void searchActiveStudents(assigneeSearch).then(setAssigneeOptions).catch(reason=>setAssigneeError(reason instanceof Error?reason.message:'Could not search students.'))},300); return()=>clearTimeout(timer) },[assigneeSearch,editing])
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+type Assignee = Awaited<ReturnType<typeof searchActiveStudents>>[number]
+
+export function QuestModal({ initialQuest, onClose, onSave }: {
+  initialQuest: Quest | null
+  onClose: () => void
+  onSave: (quest: QuestDraft) => Promise<void>
+}) {
+  const [audience, setAudience] = useState('everyone')
+  const [search, setSearch] = useState('')
+  const [result, setResult] = useState<{ options: Assignee[] } | { error: string } | null>(null)
+  const [retry, setRetry] = useState(0)
+  const [student, setStudent] = useState<Assignee | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const busy = useRef(false)
+  const individual = !initialQuest && audience === 'student'
+  const query = search.trim()
+
+  useEffect(() => {
+    if (!individual) return
+    let active = true
+    const timer = setTimeout(() => {
+      void searchActiveStudents(query).then(options => {
+        if (active) setResult({ options })
+      }).catch(() => {
+        if (active) setResult({ error: 'Could not search for active students.' })
+      })
+    }, 300)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [individual, query, retry])
+
+  const matches = result && 'options' in result ? result.options : []
+  const options = student && !matches.some(item => item.id === student.id) ? [student, ...matches] : matches
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (busy.current || (individual && !student)) return
     const data = new FormData(event.currentTarget)
     const submitter = (event.nativeEvent as SubmitEvent).submitter
-    void onSave({
-      title: String(data.get('title')),
-      description: String(data.get('description') || ''),
-      category: String(data.get('category')) as QuestDraft['category'],
-      difficulty: String(data.get('difficulty')) as QuestDraft['difficulty'],
-      assigneeId: editing ? initialQuest!.ownerId : String(data.get('assignee') || '') || null,
-      publish: editing ? data.get('status') === 'active' : submitter?.getAttribute('value') === 'publish',
-    })
+    busy.current = true
+    setSaving(true)
+    setSaveError('')
+    try {
+      await onSave({
+        title: String(data.get('title')),
+        description: String(data.get('description') || ''),
+        category: String(data.get('category')) as QuestDraft['category'],
+        difficulty: String(data.get('difficulty')) as QuestDraft['difficulty'],
+        assigneeId: initialQuest ? initialQuest.ownerId : individual ? student!.id : null,
+        publish: initialQuest ? data.get('status') === 'active' : submitter?.getAttribute('value') === 'publish',
+      })
+    } catch (reason) {
+      setSaveError(reason instanceof Error ? reason.message : 'Could not save the quest. Try again.')
+    } finally {
+      busy.current = false
+      setSaving(false)
+    }
   }
-  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}>x</button><span className="eyebrow">QUEST STUDIO</span><h2>{editing ? 'Edit quest assignment' : 'Create a new quest'}</h2><p>{editing ? `Update the assignment for ${initialQuest!.assignee}. This will not create another quest.` : "Create a quest that appears in the selected student's mobile quest board."}</p><form onSubmit={submit}><label>Quest title<input name="title" required maxLength={100} defaultValue={initialQuest?.title} placeholder="e.g. Take a mindful break" /></label><label>Description<textarea name="description" rows={3} defaultValue={initialQuest?.description} placeholder="What should the student do?" /></label>{editing ? <div className="assignment-note">Assigned to {initialQuest!.assignee}</div> : <><label>Find a student<input value={assigneeSearch} onChange={event=>setAssigneeSearch(event.target.value)} placeholder="Name, student number, or email" /></label>{assigneeError&&<small className="form-error">{assigneeError}</small>}<label>Send this quest to<select name="assignee" defaultValue=""><option value="">Everyone</option>{assigneeOptions.map((user) => <option key={user.id} value={user.id}>{user.name ? user.name + ' / ' + user.studentNumber : user.studentNumber}</option>)}</select></label><div className="assignment-note">Search returns up to 50 active students. Everyone assigns one copy to every active student account.</div></>}<label>Category<select name="category" defaultValue={initialQuest?.category || 'Habits'}><option>Academics</option><option>Habits</option><option>Social</option><option>Health</option></select></label><label>Difficulty<select name="difficulty" defaultValue={initialQuest?.difficulty || 'Easy'}><option>Easy</option><option>Medium</option><option>Hard</option></select></label>{editing ? <label>Status<select name="status" defaultValue={initialQuest?.status === 'active' ? 'active' : 'pending'}><option value="pending">Draft</option><option value="active">Published</option></select></label> : null}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button>{editing ? <button className="primary-button" type="submit">Save changes</button> : <><button className="secondary-button" type="submit" value="draft">Save draft</button><button className="primary-button" type="submit" value="publish">Publish quest</button></>}</div></form></div></div>
+
+  return <WorkspaceDialog title={initialQuest ? 'Edit quest assignment' : 'Create quest'}
+    description={initialQuest ? 'Assigned to ' + initialQuest.assignee + '.' : 'Published quests appear on the recipients’ mobile quest boards.'}
+    busy={saving} onClose={onClose}>
+    <form className="workspace-dialog-form" onSubmit={submit} aria-busy={saving}>
+      <div className="workspace-dialog-body">
+        <fieldset disabled={saving}>
+          <label>Quest title<input name="title" required maxLength={100} defaultValue={initialQuest?.title} placeholder="e.g. Take a mindful break" /></label>
+          <label>Description (optional)<textarea name="description" rows={3} defaultValue={initialQuest?.description} /></label>
+          <div className="quest-dialog-fields">
+            <label>Category<select name="category" defaultValue={initialQuest?.category || 'Habits'}>
+              <option>Academics</option><option>Habits</option><option>Social</option><option>Health</option>
+            </select></label>
+            <label>Difficulty<select name="difficulty" defaultValue={initialQuest?.difficulty || 'Easy'}>
+              <option>Easy</option><option>Medium</option><option>Hard</option>
+            </select></label>
+          </div>
+          {initialQuest ? <label>Status<select name="status" defaultValue={initialQuest.status === 'active' ? 'active' : 'pending'}>
+            <option value="pending">Draft</option><option value="active">Published</option>
+          </select></label> : <>
+            <label>Assign to<select value={audience} onChange={event => { setAudience(event.target.value); setResult(null) }}>
+              <option value="everyone">Everyone (all active students)</option>
+              <option value="student">One student</option>
+            </select></label>
+            {individual && <>
+              <label>Find a student<input type="search" value={search} onChange={event => {
+                const next = event.target.value
+                if (next.trim() !== query) setResult(null)
+                setSearch(next)
+              }} placeholder="Name, student number, or email" /></label>
+              <label>Student<select value={student?.id ?? ''} required onChange={event => {
+                setStudent(options.find(item => item.id === event.target.value) ?? null)
+              }}>
+                <option value="">Choose an active student</option>
+                {options.map(item => <option key={item.id} value={item.id}>
+                  {item.name ? item.name + ' / ' + item.studentNumber : item.studentNumber}
+                </option>)}
+              </select></label>
+              {!result && <p className="overview-muted" role="status">Searching for active students…</p>}
+              {result && 'error' in result && <div className="admin-alert admin-alert-actions" data-tone="error">
+                <p role="alert">{result.error}</p>
+                <button type="button" className="secondary-button" onClick={() => { setResult(null); setRetry(value => value + 1) }}>Retry</button>
+              </div>}
+              {result && 'options' in result && !matches.length && <p className="overview-muted" role="status">No active students match this search.</p>}
+            </>}
+          </>}
+        </fieldset>
+      </div>
+      <div className="workspace-dialog-footer">
+        {saveError && <p className="form-error" role="alert">{saveError}</p>}
+        {saving && <p className="overview-muted" role="status">Saving quest…</p>}
+        <div className="workspace-dialog-actions">
+          <button type="button" className="secondary-button" onClick={onClose} disabled={saving}>Cancel</button>
+          {initialQuest ? <button className="primary-button" type="submit" disabled={saving}>Save changes</button> : <>
+            <button className="secondary-button" type="submit" value="draft" disabled={saving || (individual && !student)}>Save draft</button>
+            <button className="primary-button" type="submit" value="publish" disabled={saving || (individual && !student)}>Publish quest</button>
+          </>}
+        </div>
+      </div>
+    </form>
+  </WorkspaceDialog>
 }
 
 export function StudentModal({ user, onClose, onSave }: { user: User; onClose: () => void; onSave: (user: User) => Promise<void> }) {

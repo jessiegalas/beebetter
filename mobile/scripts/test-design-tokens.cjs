@@ -17,6 +17,8 @@ for (const scheme of ['light', 'dark']) {
   const pairs = [
     ...['background', 'card', 'surface', 'surfaceMuted'].flatMap(bg => [['foreground', bg], ['muted', bg]]),
     ['primaryForeground', 'primary'], ['primaryForeground', 'primaryPressed'], ['accentForeground', 'accent'],
+    ['questHeroForeground', 'questHero'], ['questHeroReward', 'questHero'],
+    ['foreground', 'border'],
     ['disabledForeground', 'disabled'], ['success', 'successSurface'], ['warning', 'warningSurface'], ['danger', 'dangerSurface'],
     ['dangerForeground', 'danger'], ['dangerForeground', 'dangerPressed'], ['danger', 'background'], ['danger', 'card'], ['danger', 'surface'],
   ];
@@ -73,6 +75,16 @@ for (const deviceScheme of ['light', 'dark']) {
     }
   }
   assert.equal(style(text.ThemedText({})).color, theme.useBeePalette().foreground);
+  const title = text.ThemedText({ type: 'title' });
+  assert.equal(title.props.accessibilityRole, 'header');
+  assert.equal(style(title).fontFamily, tokens.typographySpec.fontFamily);
+  assert.equal(style(title).fontSize, tokens.typography.heading.fontSize);
+  assert.equal(style(title).lineHeight, tokens.typography.heading.lineHeight);
+  assert.equal(style(title).fontWeight, undefined);
+  for (const type of ['default', 'subtitle', 'item', 'label', 'small', 'code']) {
+    assert.equal(style(text.ThemedText({ type })).fontFamily, tokens.typographySpec.fontFamily);
+    assert.equal(style(text.ThemedText({ type })).fontWeight, undefined);
+  }
   assert.equal(style(view.ThemedView({})).backgroundColor, theme.useBeePalette().background);
   const navigation = load('src/lib/theme.ts', {
     '@/constants/theme': theme, '@/constants/design-tokens.json': tokens,

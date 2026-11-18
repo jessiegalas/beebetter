@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { hooks, load } = require('./test-harness.cjs');
 const tokens = require('../src/constants/design-tokens.json');
+const { TypographyRoles, AppFont } = load('src/constants/tokens.ts', { './design-tokens.json': tokens });
 const nodes = value => !value || typeof value !== 'object' ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)];
 const find = (tree, type) => nodes(tree).find(node => node.type === type);
 const flush = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
@@ -14,11 +15,17 @@ function luminance(hex) {
   }, 0);
 }
 
+function contrast(a, b) {
+  const foreground = luminance(a);
+  const background = luminance(b);
+  return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+}
+
 (async () => {
   let buttonRenders = 0, frameRenders = 0;
   for (const scheme of ['light', 'dark']) {
     const h = hooks();
-    const theme = { ...tokens, PixelSpacing: tokens.pixel.spacing, TypographyRoles: tokens.typographyRoles, useAppColorScheme: () => scheme, Controls: tokens.controls, Spacing: tokens.spacing, Typography: tokens.typography, Fonts: tokens.fonts.default, useBeePalette: () => tokens[scheme] };
+    const theme = { ...tokens, PixelSpacing: tokens.pixel.spacing, TypographyRoles, useAppColorScheme: () => scheme, Controls: tokens.controls, Spacing: tokens.spacing, Typography: TypographyRoles, AppFont, useBeePalette: () => tokens[scheme] };
     const react = { ...h.react, memo: fn => fn };
     const { PixelButtonSvg } = load('src/components/pixel/pixel-button-svg.tsx', {
       react, 'react-native': native, 'react-native-svg': svg, '@/constants/theme': theme, '@/constants/design-tokens.json': tokens,
@@ -34,6 +41,14 @@ function luminance(hex) {
     for (const intent of ['primary', 'secondary', 'quiet', 'destructive', 'accent', 'accent-quiet']) {
       props = { ...props, intent }; h.render();
       const ramps = tokens.pixel.button.ramps[scheme][intent];
+      if (intent === 'accent-quiet') {
+        for (const state of ['normal', 'pressed']) {
+          for (const surface of ['background', 'card', 'surface', 'surfaceMuted']) {
+            assert.ok(contrast(ramps[state].outline, tokens[scheme][surface]) >= 3,
+              `${scheme} ${intent} ${state} outline contrast against ${surface}`);
+          }
+        }
+      }
       assert.deepEqual(find(h.value, 'Frame').props.ramp, ramps.normal);
       h.value.props.onPressIn(); await flush();
       assert.equal(find(h.value, 'Frame').props.pressed, true);
@@ -44,9 +59,9 @@ function luminance(hex) {
       h.value.props.onPressOut(); await flush();
       assert.equal(find(h.value, 'Frame').props.pressed, false);
       props = { ...props, disabled: true }; h.render();
-      const disabledInk = luminance(find(h.value, 'Text').props.style[2].color);
-      const disabledFace = luminance(ramps.disabled.base ?? tokens[scheme].background);
-      assert.ok((Math.max(disabledInk, disabledFace) + 0.05) / (Math.min(disabledInk, disabledFace) + 0.05) >= 4.5,
+      const disabledInk = find(h.value, 'Text').props.style[2].color;
+      const disabledFace = ramps.disabled.base ?? tokens[scheme].background;
+      assert.ok(contrast(disabledInk, disabledFace) >= 4.5,
         `${scheme} ${intent} disabled label contrast`);
       props = { ...props, disabled: false }; h.render();
     }

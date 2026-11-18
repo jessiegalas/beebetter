@@ -1,7 +1,8 @@
-import { useState, type ComponentProps } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useContext, useState, type ComponentProps } from 'react';
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, type Tabs } from 'expo-router';
+import { BottomTabBarHeightCallbackContext } from 'expo-router/js-tabs';
 
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Polygon } from 'react-native-svg';
@@ -11,20 +12,22 @@ import { Borders, Controls, Layout, Radii, Spacing, useBeePalette } from '@/cons
 type BottomTabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>>[0];
 
 export function AppBottomBar({ state, navigation }: BottomTabBarProps) {
+  const reportHeight = useContext(BottomTabBarHeightCallbackContext);
   const navigate = (name: string) => {
     const route = state.routes.find(item => item.name === name);
     if (!route) return;
     const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
     if (!event.defaultPrevented) navigation.navigate(route.name, route.params);
   };
-  return <BottomNavigation active={state.routes[state.index]?.name} onHome={() => navigate('index')} onQuests={() => navigate('quests')} onCreate={() => router.push('/add-quest')} />;
+  return <BottomNavigation active={state.routes[state.index]?.name} onHome={() => navigate('index')} onQuests={() => navigate('quests')} onCreate={() => router.push('/add-quest')}
+    onLayout={event => reportHeight?.(event.nativeEvent.layout.height)} />;
 }
 
 /** Shared native/web presentation; the navigator continues owning route state. */
-export function BottomNavigation({ active, onHome, onQuests, onCreate }: { active?: string; onHome: () => void; onQuests: () => void; onCreate: () => void }) {
+export function BottomNavigation({ active, onHome, onQuests, onCreate, onLayout }: { active?: string; onHome: () => void; onQuests: () => void; onCreate: () => void; onLayout?: (event: LayoutChangeEvent) => void }) {
   const c = useBeePalette();
   const [createFocused, setCreateFocused] = useState(false);
-  return <SafeAreaView edges={['bottom']} style={s.safeArea}>
+  return <SafeAreaView edges={['bottom']} onLayout={onLayout} style={s.safeArea}>
     <View style={[s.bar, { backgroundColor: c.card }]}>
       <NavigationItem label="Home" icon="home" active={active === 'index'} onPress={onHome} />
       <Pressable cssInterop={false} accessibilityRole="button" accessibilityLabel="Create quest" onPress={onCreate} onFocus={() => setCreateFocused(true)} onBlur={() => setCreateFocused(false)} style={({ pressed }) => [s.create, { backgroundColor: pressed ? c.surface : 'transparent', borderColor: createFocused ? c.focus : 'transparent' }]}>

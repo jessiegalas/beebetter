@@ -4,7 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Redirect, useFocusEffect } from 'expo-router';
 import { Button, IconButton, ScreenFrame, Sheet, useReducedMotion } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
-import { PixelSpacing, TypographyRoles } from '@/constants/tokens';
+import { PixelSpacing, TouchTarget, TypographyRoles } from '@/constants/tokens';
 import { generatedTreeFixtures } from '@/prototypes/skill-tree/generated-tree-fixtures';
 import { CAMERA_MS, GROWTH_MS, clampTreeCamera, layoutGeneratedTree, semanticTreeFocus, treeArtwork, treeScene, zoomTreeAt, type Camera, type TreeFocus, type TreeTarget } from '@/prototypes/skill-tree/generated-tree-layout';
 import { GeneratedTreeSvg, targetLabel } from '@/prototypes/skill-tree/generated-tree-svg';
@@ -155,9 +155,9 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { gap: PixelSpacing.px3 },
   viewport: { flex: 1, overflow: 'hidden' },
-  overflow: { minHeight: 48 },
+  overflow: { minHeight: TouchTarget.minHeight },
   heading: { gap: PixelSpacing.px2 },
-  breadcrumb: { flexDirection: 'row', alignItems: 'center', minHeight: 48 },
+  breadcrumb: { flexDirection: 'row', alignItems: 'center', minHeight: TouchTarget.minHeight },
   breadcrumbTitle: { flex: 1 },
   backSlot: { width: 48 },
   controls: { flexDirection: 'row', flexWrap: 'wrap', gap: PixelSpacing.px2 },

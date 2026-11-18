@@ -1,11 +1,13 @@
-import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useLocationContext } from '@/context/location-context';
-import { BeeBetterColors as COLORS, BeeBetterShadow } from '@/constants/theme';
+import { ThemedText } from '@/components/themed-text';
+import { type BeePalette, Controls, Radii, Spacing, useBeePalette, useBeeStyles } from '@/constants/theme';
 
 export function GeofenceIndicator({ style, compact = false }: { style?: StyleProp<ViewStyle>; compact?: boolean }) {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   const { currentLocationName, isInsideGeofence } = useLocationContext();
 
   if (!isInsideGeofence || !currentLocationName) {
@@ -15,41 +17,45 @@ export function GeofenceIndicator({ style, compact = false }: { style?: StylePro
   if (compact) {
     return (
       <TouchableOpacity
+        accessibilityRole="button"
         style={[styles.compactContainer, style]}
-        onPress={() => router.push({ pathname: '/manage-locations' } as any)}
+        onPress={() => router.push('/manage-locations')}
         activeOpacity={0.8}
         accessibilityLabel={`Currently at ${currentLocationName}`}
       >
         <View style={styles.compactDot} />
-        <Text style={styles.compactText} numberOfLines={1}>
+        <ThemedText type="label" style={styles.compactText} numberOfLines={1}>
           {currentLocationName}
-        </Text>
+        </ThemedText>
       </TouchableOpacity>
     );
   }
 
   return (
     <TouchableOpacity
-      style={[styles.container, style]}
-      onPress={() => router.push({ pathname: '/manage-locations' } as any)}
+      accessibilityRole="button"
+        style={[styles.container, style]}
+      onPress={() => router.push('/manage-locations')}
       activeOpacity={0.8}
       accessibilityLabel={`Currently at ${currentLocationName}. Tap to manage places.`}
     >
       <View style={styles.iconWrapper}>
-        <Ionicons name="location" size={14} color={COLORS.honeyDark} />
+        <Ionicons name="location" size={Controls.iconSize} color={COLORS.honeyDark} />
       </View>
       <View style={styles.textContainer}>
-        <Text style={styles.label}>At</Text>
-        <Text style={styles.name} numberOfLines={1}>
+        <ThemedText type="label" style={styles.label}>At</ThemedText>
+        <ThemedText type="label" style={styles.name} numberOfLines={1}>
           {currentLocationName}
-        </Text>
+        </ThemedText>
       </View>
-      <Ionicons name="chevron-forward" size={14} color={COLORS.muted} />
+      <Ionicons name="chevron-forward" size={Controls.iconSize} color={COLORS.muted} />
     </TouchableOpacity>
   );
 }
 
 export function GeofenceStatusBadge({ style }: { style?: StyleProp<ViewStyle> }) {
+  const COLORS = useBeePalette();
+  const styles = useBeeStyles(makeStyles);
   const { isInsideGeofence, currentLocationName, permissionStatus } = useLocationContext();
 
   if (!permissionStatus) {
@@ -59,12 +65,13 @@ export function GeofenceStatusBadge({ style }: { style?: StyleProp<ViewStyle> })
   if (permissionStatus !== 'granted') {
     return (
       <TouchableOpacity
+        accessibilityRole="button"
         style={[styles.permissionContainer, style]}
-        onPress={() => router.push({ pathname: '/manage-locations' } as any)}
+        onPress={() => router.push('/manage-locations')}
         activeOpacity={0.8}
       >
-        <Ionicons name="location-outline" size={14} color={COLORS.danger} />
-        <Text style={styles.permissionText}>Location off</Text>
+        <Ionicons name="location-outline" size={Controls.iconSize} color={COLORS.danger} />
+        <ThemedText type="label" style={styles.permissionText}>Location off</ThemedText>
       </TouchableOpacity>
     );
   }
@@ -73,38 +80,38 @@ export function GeofenceStatusBadge({ style }: { style?: StyleProp<ViewStyle> })
     return (
       <View style={[styles.outsideContainer, style]}>
         <View style={styles.outsideDot} />
-        <Text style={styles.outsideText}>No place nearby</Text>
+        <ThemedText type="label" style={styles.outsideText}>No place nearby</ThemedText>
       </View>
     );
   }
 
   return (
     <TouchableOpacity
-      style={[styles.activeContainer, style]}
-      onPress={() => router.push({ pathname: '/manage-locations' } as any)}
+      accessibilityRole="button"
+        style={[styles.activeContainer, style]}
+      onPress={() => router.push('/manage-locations')}
       activeOpacity={0.8}
     >
       <View style={styles.activeDot} />
-      <Text style={styles.activeText}>{currentLocationName}</Text>
+      <ThemedText type="label" style={styles.activeText}>{currentLocationName}</ThemedText>
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: Spacing.sm,
     backgroundColor: COLORS.honeySoft,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    ...BeeBetterShadow,
+    borderRadius: Radii.xl,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   iconWrapper: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: Spacing.xl,
+    height: Spacing.xl,
+    borderRadius: Radii.md,
     backgroundColor: COLORS.card,
     alignItems: 'center',
     justifyContent: 'center',
@@ -113,92 +120,76 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   label: {
-    fontSize: 9,
-    fontWeight: '800',
     color: COLORS.muted,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   name: {
-    fontSize: 12,
-    fontWeight: '800',
     color: COLORS.ink,
   },
   compactContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: Spacing.xs,
     backgroundColor: COLORS.honeySoft,
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    ...BeeBetterShadow,
+    borderRadius: Radii.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
   },
   compactDot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
+    borderRadius: Radii.pill,
     backgroundColor: COLORS.honeyDark,
   },
   compactText: {
-    fontSize: 11,
-    fontWeight: '700',
     color: COLORS.ink,
   },
   permissionContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FDEDEC',
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    ...BeeBetterShadow,
+    gap: Spacing.sm,
+    backgroundColor: COLORS.dangerSurface,
+    borderRadius: Radii.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
   },
   permissionText: {
-    fontSize: 11,
-    fontWeight: '700',
     color: COLORS.danger,
   },
   outsideContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: Spacing.sm,
     backgroundColor: COLORS.surfaceMuted,
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderRadius: Radii.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
   },
   outsideDot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
+    borderRadius: Radii.pill,
     backgroundColor: COLORS.muted,
   },
   outsideText: {
-    fontSize: 11,
-    fontWeight: '700',
     color: COLORS.muted,
   },
   activeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: Spacing.sm,
     backgroundColor: COLORS.honeySoft,
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    ...BeeBetterShadow,
+    borderRadius: Radii.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
   },
   activeDot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
+    borderRadius: Radii.pill,
     backgroundColor: COLORS.honeyDark,
   },
   activeText: {
-    fontSize: 11,
-    fontWeight: '700',
     color: COLORS.ink,
   },
 });

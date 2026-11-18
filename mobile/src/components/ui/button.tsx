@@ -5,9 +5,9 @@ import { Platform, Pressable } from 'react-native';
 
 const buttonVariants = cva(
   cn(
-    'group shrink-0 flex-row items-center justify-center gap-2 rounded-md shadow-none',
+    'group min-h-control min-w-control flex-row flex-wrap items-center justify-center gap-sm rounded-md shadow-none',
     Platform.select({
-      web: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+      web: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive outline-none transition-all focus-visible:ring-[3px] disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
     })
   ),
   {
@@ -40,10 +40,10 @@ const buttonVariants = cva(
         link: '',
       },
       size: {
-        default: cn('h-10 px-4 py-2 sm:h-9', Platform.select({ web: 'has-[>svg]:px-3' })),
-        sm: cn('h-9 gap-1.5 rounded-md px-3 sm:h-8', Platform.select({ web: 'has-[>svg]:px-2.5' })),
-        lg: cn('h-11 rounded-md px-6 sm:h-10', Platform.select({ web: 'has-[>svg]:px-4' })),
-        icon: 'h-10 w-10 sm:h-9 sm:w-9',
+        default: 'px-lg py-sm',
+        sm: 'gap-xs px-md py-xs',
+        lg: 'px-xl py-md',
+        icon: 'p-xs',
       },
     },
     defaultVariants: {
@@ -55,14 +55,14 @@ const buttonVariants = cva(
 
 const buttonTextVariants = cva(
   cn(
-    'text-foreground text-sm font-medium',
+    'shrink text-center text-foreground text-label',
     Platform.select({ web: 'pointer-events-none transition-colors' })
   ),
   {
     variants: {
       variant: {
         default: 'text-primary-foreground',
-        destructive: 'text-white',
+        destructive: 'text-destructive-foreground',
         outline: cn(
           'group-active:text-accent-foreground',
           Platform.select({ web: 'group-hover:text-accent-foreground' })

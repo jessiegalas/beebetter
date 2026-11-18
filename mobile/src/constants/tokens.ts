@@ -23,13 +23,12 @@ export const ArtPixelDp = PixelGrid.dpPerArtPixel;
 // Existing atlas inventory only; approved regeneration targets live in the spec.
 // Primary colors are confirmed, but asset regeneration is not yet authorized.
 export const DerivedRamps = source.pixel.derivedRamps;
-export const FontFamilies = source.fonts;
-// Existing general type metrics are retained for compatibility. They are not
-// an approved pixel display scale and are not automatically applied to VT323.
-export const TypographyScale = source.typography;
-// Provisional VT323 roles deliberately omit weights (the font is single-weight).
-export const TypographyRoles = source.typographyRoles;
 export const TypographySpec = source.typographySpec;
+export const AppFont = TypographySpec.fontFamily;
+export type TypographyRole = keyof typeof source.typography;
+export const TypographyRoles = Object.fromEntries(
+  Object.entries(source.typography).map(([role, metrics]) => [role, { ...metrics, fontFamily: AppFont }]),
+) as Record<TypographyRole, { fontSize: number; lineHeight: number; fontFamily: string }>;
 
 export function isOnPixelGrid(dp: number): boolean {
   return Number.isFinite(dp) && dp >= 0 && Number.isSafeInteger(dp / ArtPixelDp);
@@ -57,9 +56,8 @@ export const DesignTokens = {
   pixel: Pixel,
   derivedRamps: DerivedRamps,
   typography: {
-    families: FontFamilies,
+    fontFamily: AppFont,
     roles: TypographyRoles,
-    scale: TypographyScale,
     status: TypographySpec.status,
     minimumFontSize: TypographySpec.minimumFontSize,
   },
@@ -70,7 +68,6 @@ export type DesignScheme = keyof typeof Palettes;
 export type ColorToken = keyof typeof source.light;
 export type SpacingToken = keyof typeof Spacing;
 export type PixelSpacingToken = keyof typeof PixelSpacing;
-export type TypographyRole = keyof typeof TypographyRoles;
 
 // App theme adapters retain access to existing layout/radius/state tokens.
 export default source;

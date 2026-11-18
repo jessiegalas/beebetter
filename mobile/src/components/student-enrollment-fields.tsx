@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { Button, ChoiceChip, Sheet, StatusMessage } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
+import { Spacing } from '@/constants/theme';
 import { enrollmentFields, type EnrollmentField, type useRegistrationForm } from '@/hooks/use-registration-form';
 import type { useEnrollmentOptions } from '@/hooks/use-enrollment-options';
 
@@ -17,17 +18,17 @@ export function StudentEnrollmentFields({ form, catalogue, busy }: {
   const [open, setOpen] = useState<EnrollmentField | null>(null);
   const semester = catalogue.options[0];
   if (catalogue.loading) return <ThemedText accessibilityLiveRegion="polite">Loading enrollment choices…</ThemedText>;
-  if (!catalogue.ready) return <View style={{ gap: 12 }}>
+  if (!catalogue.ready) return <View style={{ gap: Spacing.md }}>
     <StatusMessage error={!!catalogue.error} message={catalogue.error ?? 'No sections are open for enrollment. Check with your school administrator.'} />
     <Button label="Refresh enrollment choices" intent="secondary" onPress={catalogue.retry} />
   </View>;
 
-  return <View style={{ gap: 12 }}>
+  return <View style={{ gap: Spacing.md }}>
     <ThemedText type="label">{semester.academic_year} · {semester.term}</ThemedText>
     {enrollmentFields.map(field => {
       const value = form.labels[field];
       const choices = form.choicesFor(field);
-      return <View key={field} style={{ gap: 4 }}>
+      return <View key={field} style={{ gap: Spacing.xs }}>
         <ThemedText type="label">{labels[field]}</ThemedText>
         <Button label={value || 'Select'} accessibilityLabel={labels[field] + (value ? ': ' + value : ', select')}
           intent="secondary" icon="chevron-down" disabled={busy || !choices.length} onPress={() => setOpen(field)} />

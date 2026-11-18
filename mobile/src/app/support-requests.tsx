@@ -1,13 +1,13 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 
-import { Button } from '@/components/mobile-ui';
+import { Badge, Button, ChoiceChip, Field, Surface } from '@/components/mobile-ui';
 import { ThemedText } from '@/components/themed-text';
 import { InlineMessage, PrivacyNote, WellnessHeader } from '@/components/wellness-ui';
-import { Fonts, useBeePalette, useBeeStyles, type BeePalette, Radii } from '@/constants/theme';
+import { useBeePalette, useBeeStyles, type BeePalette, Borders, Controls, Radii, SectionColumn, Spacing, Typography } from '@/constants/theme';
 import { useUserData } from '@/hooks/use-user-data';
 import { createMySupportRequest, listMySupportRequests, withdrawMySupportRequest, type SupportRequest } from '@/lib/wellbeing-data';
 
@@ -83,25 +83,29 @@ export default function SupportRequestsScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <PrivacyNote>A request shares your identity, student information, concern, contact preference, and contact detail with personnel authorized to manage OSAS support cases. It does not share your private check-ins, reflections, quests, or location.</PrivacyNote>
         <View style={styles.notice}><Ionicons name="time-outline" size={20} color={COLORS.honeyDeep} /><ThemedText style={styles.noticeText}>Submitting is voluntary and does not guarantee an immediate response. If you are in immediate danger, contact local emergency services or a trusted campus office directly.</ThemedText></View>
-        <View style={styles.card}>
-          <ThemedText style={styles.title}>New request</ThemedText>
+        <Surface>
+          <ThemedText type="subtitle">New request</ThemedText>
           <ChoiceGroup title="Concern category" options={CATEGORIES} value={category} onChange={value => setCategory(value as SupportRequest['category'])} />
-          <View><ThemedText style={styles.label}>Describe your concern</ThemedText><ThemedText style={styles.hint}>Share only what authorized OSAS personnel need to understand your request.</ThemedText></View>
-          <TextInput style={styles.textArea} value={message} onChangeText={setMessage} maxLength={2000} multiline textAlignVertical="top" placeholder="How can OSAS support you?" placeholderTextColor={COLORS.muted} accessibilityLabel="Describe your concern" />
+          <Field label="Describe your concern" hint="Share only what authorized OSAS personnel need to understand your request."
+            value={message} onChangeText={setMessage} maxLength={2000} multiline textAlignVertical="top" placeholder="How can OSAS support you?" />
           <ThemedText style={styles.counter}>{message.length}/2000</ThemedText>
           <ChoiceGroup title="Preferred contact" options={CONTACTS} value={contact} onChange={value => setContact(value as SupportRequest['preferred_contact'])} />
-          <ThemedText style={styles.hint}>{CONTACTS.find(item => item.value === contact)?.hint}</ThemedText>
-          <TextInput style={styles.input} value={contactDetail} onChangeText={setContactDetail} maxLength={254} placeholder={contact === 'phone' ? 'Phone number' : contact === 'email' ? profile?.email || 'Email address' : 'Optional contact detail'} placeholderTextColor={COLORS.muted} accessibilityLabel="Contact detail" />
+          <Field label="Contact detail" hint={CONTACTS.find(item => item.value === contact)?.hint}
+            value={contactDetail} onChangeText={setContactDetail} maxLength={254}
+            placeholder={contact === 'phone' ? 'Phone number' : contact === 'email' ? profile?.email || 'Email address' : 'Optional contact detail'} />
           <ChoiceGroup title="Requested response" options={PRIORITIES} value={priority} onChange={value => setPriority(value as SupportRequest['priority'])} />
           <TouchableOpacity style={styles.consentRow} onPress={() => setConsent(value => !value)} accessibilityRole="checkbox" accessibilityState={{ checked: consent }}>
-            <View style={[styles.checkbox, consent && styles.checkboxChecked]}>{consent && <Ionicons name="checkmark" size={20} color="#2D241D" />}</View>
+            <View style={[styles.checkbox, consent && styles.checkboxChecked]}>{consent && <Ionicons name="checkmark" size={20} color={COLORS.accentForeground} />}</View>
             <ThemedText style={styles.consentText}>I voluntarily consent to OSAS receiving my identifiable request and contacting me using my selected preference.</ThemedText>
           </TouchableOpacity>
           {feedback && <InlineMessage {...feedback} />}
           <Button label={'Submit request'} loading={saving} onPress={() => void submit()} />
-        </View>
+        </Surface>
         <View style={styles.resourceCard}><Ionicons name="information-circle-outline" size={22} color={COLORS.honeyDeep} /><View style={styles.flex}><ThemedText style={styles.sectionTitle}>Institutional resources</ThemedText><ThemedText style={styles.body}>No verified institutional resource links are configured in BeeBetter yet. Contact your campus OSAS office directly for currently approved services and contact details.</ThemedText></View></View>
-        <View style={styles.historyHeader}><ThemedText style={styles.sectionTitle}>My requests</ThemedText><TouchableOpacity accessibilityRole="button" accessibilityLabel="Refresh support requests" style={{ minHeight: 48, justifyContent: 'center' }} onPress={() => void load()}><ThemedText style={styles.refresh}>Refresh</ThemedText></TouchableOpacity></View>
+        <View style={styles.historyHeader}>
+          <ThemedText type="subtitle">My requests</ThemedText>
+          <Button label="Refresh" intent="quiet" accessibilityLabel="Refresh support requests" onPress={() => void load()} />
+        </View>
         {loading ? <View style={styles.loading}><ActivityIndicator color={COLORS.honeyDark} /><ThemedText style={styles.body}>Loading your requests…</ThemedText></View> : requests.length ? requests.map(request => <RequestCard key={request.id} request={request} withdrawing={withdrawing === request.id} onWithdraw={() => withdraw(request)} />) : <View style={styles.empty}><Ionicons name="chatbox-ellipses-outline" size={28} color={COLORS.muted} /><ThemedText style={styles.sectionTitle}>No support requests</ThemedText><ThemedText style={styles.body}>Requests you choose to submit will appear here.</ThemedText></View>}
       </ScrollView>
     </KeyboardAvoidingView>
@@ -110,22 +114,49 @@ export default function SupportRequestsScreen() {
 
 function ChoiceGroup({ title, options, value, onChange }: { title: string; options: { value: string; label: string }[]; value: string; onChange: (value: string) => void }) {
   const styles = useBeeStyles(makeStyles);
-  return <View><ThemedText style={styles.label}>{title}</ThemedText><View style={styles.choices}>{options.map(option => <TouchableOpacity key={option.value} style={[styles.choice, value === option.value && styles.choiceSelected]} onPress={() => onChange(option.value)} accessibilityRole="radio" accessibilityState={{ selected: value === option.value }}><ThemedText style={[styles.choiceText, value === option.value && styles.choiceTextSelected]}>{option.label}</ThemedText></TouchableOpacity>)}</View></View>;
+  return <View>
+    <ThemedText type="label">{title}</ThemedText>
+    <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel={title}>
+      {options.map(option => <ChoiceChip key={option.value} role="radio" label={option.label}
+        selected={value === option.value} onPress={() => onChange(option.value)} />)}
+    </View>
+  </View>;
 }
 function RequestCard({ request, withdrawing, onWithdraw }: { request: SupportRequest; withdrawing: boolean; onWithdraw: () => void }) {
   const styles = useBeeStyles(makeStyles);
   const eligible = ['submitted', 'acknowledged', 'in_progress'].includes(request.status);
-  return <View style={styles.requestCard}><View style={styles.requestTop}><View style={styles.flex}><ThemedText style={styles.requestTitle}>{CATEGORIES.find(item => item.value === request.category)?.label ?? request.category} support</ThemedText><ThemedText style={styles.body}>{new Date(request.created_at).toLocaleString()}</ThemedText></View><View style={styles.status}><ThemedText style={styles.statusText}>{STATUS_LABELS[request.status]}</ThemedText></View></View><ThemedText style={styles.message}>{request.message}</ThemedText><View style={styles.meta}><ThemedText style={styles.body}>Contact: {CONTACTS.find(item => item.value === request.preferred_contact)?.label}</ThemedText><ThemedText style={styles.body}>Priority: {request.priority}</ThemedText></View>{request.resolution_note && <View style={styles.followUp}><ThemedText style={styles.label}>OSAS follow-up</ThemedText><ThemedText style={styles.body}>{request.resolution_note}</ThemedText>{request.resolved_at && <ThemedText style={styles.hint}>Resolved {new Date(request.resolved_at).toLocaleString()}</ThemedText>}</View>}{eligible && <TouchableOpacity style={styles.withdrawButton} onPress={onWithdraw} disabled={withdrawing}><ThemedText style={styles.withdrawText}>{withdrawing ? 'Withdrawing…' : 'Withdraw request'}</ThemedText></TouchableOpacity>}</View>;
+  return <Surface>
+    <View style={styles.requestTop}>
+      <View style={styles.flex}>
+        <ThemedText type="item">{CATEGORIES.find(item => item.value === request.category)?.label ?? request.category} support</ThemedText>
+        <ThemedText style={styles.body}>{new Date(request.created_at).toLocaleString()}</ThemedText>
+      </View>
+      <Badge label={STATUS_LABELS[request.status]} />
+    </View>
+    <ThemedText>{request.message}</ThemedText>
+    <View style={styles.meta}>
+      <ThemedText style={styles.body}>Contact: {CONTACTS.find(item => item.value === request.preferred_contact)?.label}</ThemedText>
+      <ThemedText style={styles.body}>Priority: {request.priority}</ThemedText>
+    </View>
+    {request.resolution_note && <View style={styles.followUp}>
+      <ThemedText type="label">OSAS follow-up</ThemedText>
+      <ThemedText style={styles.body}>{request.resolution_note}</ThemedText>
+      {request.resolved_at && <ThemedText style={styles.hint}>Resolved {new Date(request.resolved_at).toLocaleString()}</ThemedText>}
+    </View>}
+    {eligible && <Button label={withdrawing ? 'Withdrawing…' : 'Withdraw request'} intent="destructive" loading={withdrawing} onPress={onWithdraw} />}
+  </Surface>;
 }
 const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' }, safeArea: { flex: 1 }, flex: { flex: 1, minWidth: 0 },
-  content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 48, gap: 32 },
-  card: { padding: 20, borderRadius: 24, backgroundColor: COLORS.card, gap: 15 }, title: { color: COLORS.ink, fontSize: 28, lineHeight: 34, fontWeight: '700' },
-  label: { color: COLORS.ink, fontSize: 14, lineHeight: 20, fontWeight: '700' }, hint: { color: COLORS.muted, fontSize: 14, lineHeight: 20, marginTop: 2 }, body: { color: COLORS.muted, fontSize: 16, lineHeight: 24 },
-  notice: { flexDirection: 'row', gap: 10, padding: 14, borderRadius: Radii.md, backgroundColor: COLORS.surfaceWarm }, noticeText: { flex: 1, color: COLORS.ink, fontSize: 14, lineHeight: 20 },
-  choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 }, choice: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderRadius: Radii.pill, borderWidth: 1, borderColor: COLORS.surfaceMuted, backgroundColor: COLORS.background }, choiceSelected: { borderColor: COLORS.honeyDark, backgroundColor: COLORS.honeySoft }, choiceText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20}, choiceTextSelected: { color: COLORS.ink },
-  input: { fontFamily: Fonts.sans, minHeight: 48, borderWidth: 1, borderColor: COLORS.surfaceMuted, borderRadius: Radii.md, backgroundColor: COLORS.background, color: COLORS.ink, paddingHorizontal: 13, fontSize: 16 , lineHeight: 24}, textArea: { fontFamily: Fonts.sans, minHeight: 120, borderWidth: 1, borderColor: COLORS.surfaceMuted, borderRadius: Radii.md, backgroundColor: COLORS.background, color: COLORS.ink, padding: 13, fontSize: 16 , lineHeight: 24}, counter: { color: COLORS.muted, fontSize: 14, textAlign: 'right', marginTop: -11 , lineHeight: 20},
-  consentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 13, borderRadius: Radii.md, backgroundColor: COLORS.surfaceWarm }, checkbox: { width: 23, height: 23, borderRadius: 6, borderWidth: 1, borderColor: COLORS.muted, alignItems: 'center', justifyContent: 'center' }, checkboxChecked: { backgroundColor: COLORS.honey, borderColor: COLORS.honeyDark }, consentText: { flex: 1, color: COLORS.ink, fontSize: 14, lineHeight: 20 },
-  resourceCard: { flexDirection: 'row', gap: 11, padding: 20, borderRadius: 24, backgroundColor: COLORS.card, borderWidth: 0, borderColor: COLORS.surfaceMuted }, sectionTitle: { color: COLORS.ink, fontSize: 20, lineHeight: 28, fontWeight: '700' }, historyHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }, refresh: { color: COLORS.honeyDeep, fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  loading: { minHeight: 130, alignItems: 'center', justifyContent: 'center', gap: 10 }, empty: { alignItems: 'center', gap: 7, padding: 28, borderRadius: Radii.lg, backgroundColor: COLORS.card },
-  requestCard: { padding: 20, gap: 11, borderRadius: 24, backgroundColor: COLORS.card, borderWidth: 0, borderColor: COLORS.surfaceMuted }, requestTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 }, requestTitle: { color: COLORS.ink, fontSize: 17, lineHeight: 24, fontWeight: '700' }, status: { paddingVertical: 5, paddingHorizontal: 9, borderRadius: Radii.pill, backgroundColor: COLORS.honeySoft }, statusText: { color: COLORS.ink, fontSize: 14, fontWeight: '700' , lineHeight: 20}, message: { color: COLORS.ink, fontSize: 16, lineHeight: 24 }, meta: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }, followUp: { gap: 3, padding: 12, borderRadius: Radii.md, backgroundColor: COLORS.surfaceWarm }, withdrawButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: Radii.md, borderWidth: 1, borderColor: '#D99A91' }, withdrawText: { color: COLORS.danger, fontSize: 14, fontWeight: '700' , lineHeight: 20} });
+  content: SectionColumn,
+  hint: { ...Typography.metadata, color: COLORS.muted, marginTop: Spacing.half }, body: { ...Typography.body, color: COLORS.muted },
+  notice: { flexDirection: 'row', gap: Spacing.md, padding: Spacing.lg, borderRadius: Radii.md, backgroundColor: COLORS.surfaceWarm }, noticeText: { ...Typography.metadata, flex: 1, color: COLORS.ink },
+  choices: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.sm },
+  counter: { ...Typography.metadata, color: COLORS.muted, textAlign: 'right' },
+  consentRow: { minHeight: Controls.minHeight, flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, padding: Spacing.md, borderRadius: Radii.md, backgroundColor: COLORS.surfaceWarm }, checkbox: { width: Spacing.xl, height: Spacing.xl, borderRadius: Radii.sm, borderWidth: Borders.default, borderColor: COLORS.muted, alignItems: 'center', justifyContent: 'center' }, checkboxChecked: { backgroundColor: COLORS.honey, borderColor: COLORS.honeyDark }, consentText: { ...Typography.metadata, flex: 1, color: COLORS.ink },
+  resourceCard: { flexDirection: 'row', gap: Spacing.md, padding: Spacing.gutter, borderRadius: Radii.xl, backgroundColor: COLORS.card, borderWidth: 0, borderColor: COLORS.surfaceMuted }, sectionTitle: { ...Typography.section, color: COLORS.ink }, historyHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.sm },
+  loading: { minHeight: 130, alignItems: 'center', justifyContent: 'center', gap: Spacing.md }, empty: { alignItems: 'center', gap: Spacing.sm, padding: Spacing.section, borderRadius: Radii.lg, backgroundColor: COLORS.card },
+  requestTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: Spacing.md },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: Spacing.sm },
+  followUp: { gap: Spacing.xs, padding: Spacing.md, borderRadius: Radii.md, backgroundColor: COLORS.surface },
+});

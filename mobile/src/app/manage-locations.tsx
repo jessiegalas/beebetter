@@ -5,17 +5,16 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
   View,
   Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, Field, IconButton } from '@/components/mobile-ui';
+import { Button, Field, IconButton, ScreenHeader } from '@/components/mobile-ui';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Circle, Marker, type MapPressEvent } from 'react-native-maps';
 import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { Fonts, useBeePalette, useBeeStyles, type BeePalette } from '@/constants/theme';
+import { useBeePalette, useBeeStyles, type BeePalette, Controls, ContentColumn, Radii, SectionColumn, Spacing, Typography } from '@/constants/theme';
 import { useLocationContext } from '@/context/location-context';
 import type { UserLocation } from '@/hooks/use-user-locations';
 
@@ -202,11 +201,11 @@ export default function ManageLocationsScreen() {
 
       <View style={styles.cardDetails}>
         <ThemedText style={styles.detailText}>
-          <Ionicons name="pin-outline" size={12} color={COLORS.muted} style={{ marginRight: 4 }} />
+          <Ionicons name="pin-outline" size={12} color={COLORS.muted} style={{ marginRight: Spacing.xs }} />
           {loc.latitude.toFixed(6)}, {loc.longitude.toFixed(6)}
         </ThemedText>
         <ThemedText style={styles.detailText}>
-          <Ionicons name="resize-outline" size={12} color={COLORS.muted} style={{ marginRight: 4 }} />
+          <Ionicons name="resize-outline" size={12} color={COLORS.muted} style={{ marginRight: Spacing.xs }} />
           Radius: {loc.radius}m
         </ThemedText>
       </View>
@@ -223,26 +222,11 @@ export default function ManageLocationsScreen() {
     </View>
   );
 
-  const submitButtonStyle = [
-    styles.submitButton,
-    isSubmitting && styles.submitButtonDisabled,
-    editingId && styles.submitButtonEditing,
-  ];
-
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <IconButton icon="chevron-back" label="Back from Saved Places" onPress={() => router.back()} />
-          <View style={styles.headerCenter}>
-            <ThemedText style={styles.headerTitle}>My Places</ThemedText>
-            <ThemedText style={styles.headerSubtitle}>
-              {activeLocations.length} active, {locations.length} total
-            </ThemedText>
-          </View>
-          <View style={styles.headerSpacer} />
-        </View>
+        <ScreenHeader title="My Places" subtitle={activeLocations.length + ' active, ' + locations.length + ' total'}
+          leading={<IconButton icon="chevron-back" label="Back from Saved Places" onPress={() => router.back()} />} style={styles.header} />
 
         <ScrollView
           contentContainerStyle={styles.content}
@@ -304,8 +288,8 @@ export default function ManageLocationsScreen() {
                   <Circle
                     center={{ latitude: mapLatitude, longitude: mapLongitude }}
                     radius={mapRadius}
-                    strokeColor="#2E9B62"
-                    fillColor="rgba(46, 155, 98, 0.22)"
+                    strokeColor={COLORS.success}
+                    fillColor={COLORS.mapRadiusFill}
                     strokeWidth={2}
                   />
                   <Marker coordinate={{ latitude: mapLatitude, longitude: mapLongitude }} title={form.name || 'Saved place'} />
@@ -313,19 +297,11 @@ export default function ManageLocationsScreen() {
               )}
             </MapView>
 
-            <TouchableOpacity style={styles.currentLocationButton} onPress={useCurrentLocation} activeOpacity={0.8}>
-              <ThemedText style={styles.currentLocationButtonText}>Use Current Location</ThemedText>
-            </TouchableOpacity>
+            <Button label="Use Current Location" intent="secondary" icon="locate-outline" onPress={useCurrentLocation} />
 
             <ThemedText style={styles.label}>Radius (meters) *</ThemedText>
             <View style={styles.radiusControl}>
-              <TouchableOpacity
-                style={styles.radiusButton}
-                onPress={() => adjustRadius(-RADIUS_STEP)}
-                accessibilityLabel="Decrease radius"
-                activeOpacity={0.75}>
-                <Ionicons name="remove" size={20} color={COLORS.ink} />
-              </TouchableOpacity>
+              <IconButton icon="remove" label="Decrease radius" onPress={() => adjustRadius(-RADIUS_STEP)} />
               <TextInput accessibilityLabel="Radius in meters, required" style={styles.radiusInput}
                 placeholder="100"
                 value={form.radius}
@@ -334,13 +310,7 @@ export default function ManageLocationsScreen() {
                 maxLength={4}
                 textAlign="center"
               />
-              <TouchableOpacity
-                style={styles.radiusButton}
-                onPress={() => adjustRadius(RADIUS_STEP)}
-                accessibilityLabel="Increase radius"
-                activeOpacity={0.75}>
-                <Ionicons name="add" size={20} color={COLORS.ink} />
-              </TouchableOpacity>
+              <IconButton icon="add" label="Increase radius" onPress={() => adjustRadius(RADIUS_STEP)} />
             </View>
             <View style={styles.radiusHintRow}>
               <View style={styles.radiusLegend}>
@@ -351,24 +321,9 @@ export default function ManageLocationsScreen() {
             </View>
 
             <View style={styles.formActions}>
-              {editingId && (
-                <TouchableOpacity style={styles.cancelButton} onPress={resetForm} activeOpacity={0.8}>
-                  <ThemedText style={styles.cancelButtonText}>Cancel</ThemedText>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={submitButtonStyle}
-                onPress={handleSubmit}
-                disabled={isSubmitting}
-                activeOpacity={0.8}>
-                {isSubmitting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <ThemedText style={styles.submitButtonText}>
-                    {editingId ? 'Save Changes' : 'Add Place'}
-                  </ThemedText>
-                )}
-              </TouchableOpacity>
+              {editingId && <Button label="Cancel" intent="secondary" onPress={resetForm} />}
+              <Button label={editingId ? 'Save Changes' : 'Add Place'} intent="accent"
+                loading={isSubmitting} onPress={handleSubmit} style={styles.submitButton} />
             </View>
           </View>
 
@@ -402,56 +357,41 @@ const makeStyles = (COLORS: BeePalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
   safeArea: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 12 },
-  headerCenter: { flex: 1 },
-  headerTitle: { fontSize: 28, fontWeight: '700', color: COLORS.ink , lineHeight: 34},
-  headerSubtitle: { fontSize: 14, color: COLORS.muted, marginTop: 2 , lineHeight: 20},
-  headerSpacer: { width: 40 },
-  content: { paddingHorizontal: 20, paddingBottom: 40, gap: 32 , width: '100%', maxWidth: 720, alignSelf: 'center'},
-  formCard: { backgroundColor: COLORS.card, borderRadius: 24, padding: 20, gap: 14 },
+    ...ContentColumn,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.lg },
+  content: SectionColumn,
+  formCard: { backgroundColor: COLORS.card, borderRadius: Radii.xl, padding: Spacing.gutter, gap: Spacing.lg },
   formCardEditing: { borderWidth: 1.5, borderColor: COLORS.honey },
-  formTitle: { fontSize: 17, fontWeight: '700', color: COLORS.ink , lineHeight: 24},
-  feedback: { fontSize: 14, lineHeight: 20 },
+  formTitle: { ...Typography.item, color: COLORS.ink },
+  feedback: { ...Typography.metadata },
   feedbackError: { color: COLORS.danger },
   feedbackWarning: { color: COLORS.honeyDark },
-  label: { fontSize: 14, fontWeight: '700', color: COLORS.ink, marginTop: 4 , lineHeight: 20},
-  map: { height: 190, borderRadius: 14, overflow: 'hidden' },
-  radiusControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  radiusButton: { width: 48, height: 48, borderRadius: 12, backgroundColor: COLORS.honeySoft, alignItems: 'center', justifyContent: 'center' },
-  radiusInput: { fontFamily: Fonts.sans, flex: 1, backgroundColor: COLORS.surfaceMuted, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 16, fontWeight: '700', color: COLORS.ink , lineHeight: 24},
-  radiusHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: -6 },
-  radiusLegend: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  radiusLegendDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2E9B62' },
-  radiusHint: { fontSize: 14, color: COLORS.muted , lineHeight: 20},
-  coordsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  label: { ...Typography.label, color: COLORS.ink, marginTop: Spacing.xs },
+  map: { height: 190, borderRadius: Radii.lg, overflow: 'hidden' },
+  radiusControl: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  radiusInput: { ...Typography.body, flex: 1, minWidth: 0, minHeight: Controls.minHeight, backgroundColor: COLORS.surfaceMuted, borderRadius: Radii.md, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, color: COLORS.ink },
+  radiusHintRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.xs },
+  radiusLegend: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  radiusLegendDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.success },
+  radiusHint: { ...Typography.metadata, color: COLORS.muted },
+  coordsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
   coordInputWrapper: { flex: 1, minWidth: 140 },
-  currentLocationButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: COLORS.honeySoft, borderRadius: 12 },
-  currentLocationButtonText: { color: COLORS.honeyDark, fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  formActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  cancelButton: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: COLORS.surfaceMuted },
-  cancelButtonText: { color: COLORS.muted, fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  submitButton: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: COLORS.honey },
-  submitButtonEditing: { flex: 1 },
-  submitButtonDisabled: { opacity: 0.65 },
-  submitButtonText: { color: '#2D241D', fontSize: 14, fontWeight: '700' , lineHeight: 20},
-  sectionTitle: { fontSize: 20, fontWeight: '700', color: COLORS.ink, marginTop: 8 , lineHeight: 28},
-  locationCard: { backgroundColor: COLORS.card, borderRadius: 24, padding: 20, gap: 10 },
+  formActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md, marginTop: Spacing.xs },
+  submitButton: { flexGrow: 1 },
+  sectionTitle: { ...Typography.section, color: COLORS.ink, marginTop: Spacing.sm },
+  locationCard: { backgroundColor: COLORS.card, borderRadius: Radii.xl, padding: Spacing.gutter, gap: Spacing.md },
   locationCardInactive: { opacity: 0.6, borderWidth: 1, borderColor: COLORS.surfaceMuted },
-  cardHeader: { gap: 2 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardName: { fontSize: 14, fontWeight: '700', color: COLORS.ink , lineHeight: 20},
-  inactiveBadge: { fontSize: 14, fontWeight: '700', color: COLORS.muted, backgroundColor: COLORS.surfaceMuted, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 , lineHeight: 20},
-  cardLabel: { fontSize: 14, color: COLORS.muted , lineHeight: 20},
-  cardDetails: { gap: 4, paddingTop: 2 },
-  detailText: { fontSize: 14, color: COLORS.muted, flexDirection: 'row', alignItems: 'center' , lineHeight: 20},
-  cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  loadingContainer: { alignItems: 'center', paddingVertical: 40, gap: 10 },
-  loadingText: { color: COLORS.muted, fontSize: 14 , lineHeight: 20},
-  emptyState: { alignItems: 'center', paddingVertical: 40, gap: 10 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: COLORS.ink , lineHeight: 24},
-  emptySubtitle: { color: COLORS.muted, fontSize: 14, textAlign: 'center', paddingHorizontal: 20 , lineHeight: 20} });
+  cardHeader: { gap: Spacing.half },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  cardName: { ...Typography.label, color: COLORS.ink },
+  inactiveBadge: { ...Typography.label, color: COLORS.muted, backgroundColor: COLORS.surfaceMuted, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.half, borderRadius: Radii.sm },
+  cardLabel: { ...Typography.metadata, color: COLORS.muted },
+  cardDetails: { gap: Spacing.xs, paddingTop: Spacing.half },
+  detailText: { ...Typography.metadata, color: COLORS.muted, flexDirection: 'row', alignItems: 'center' },
+  cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.xs },
+  loadingContainer: { alignItems: 'center', paddingVertical: Spacing.page, gap: Spacing.md },
+  loadingText: { ...Typography.metadata, color: COLORS.muted },
+  emptyState: { alignItems: 'center', paddingVertical: Spacing.page, gap: Spacing.md },
+  emptyTitle: { ...Typography.item, color: COLORS.ink },
+  emptySubtitle: { ...Typography.metadata, color: COLORS.muted, textAlign: 'center', paddingHorizontal: Spacing.gutter } });
