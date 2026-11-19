@@ -8,7 +8,7 @@ Read for quest creation/editing, proof Storage, completion, XP/levels/streaks, o
 - Clients still send category text. Migration 026 resolves authorized server-controlled `category_id`; unmatched legacy categories may retain null IDs. Do not impose NOT NULL without reviewed correction.
 - Quest location/prerequisite ownership and cycle checks are server-enforced. New/changed schedule dates use server time; unchanged overdue dates remain valid for completion.
 - `mobile/src/lib/quest-time.ts` converts local schedule/deadline inputs to timestamps. Preferred time follows the device clock and does not create recurrence. Schedule/location affect ranking, not completion authorization.
-- Admin creation uses four default categories and active/pending publication states. Everyone assignment inserts one owned quest per eligible active student, excluding admin identities. `admin_update_quest` cannot reassign owners and edits only active/pending quests; it does not review proof or award completion.
+- Admin creation uses four default categories and active/pending publication states. Everyone assignment inserts one owned quest per eligible active student, excluding admin identities. Admin create/edit also supports an optional deadline through guarded RPCs; it reuses `mobile/src/lib/quest-time.ts` for local-time conversion and client validation, while the database date trigger remains authoritative. Existing overdue deadlines are preserved when unchanged. `admin_update_quest` cannot reassign owners and edits only active/pending quests; it does not review proof or award completion.
 
 ## Completion and history
 

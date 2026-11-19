@@ -1,6 +1,11 @@
 import { supabase } from './supabase';
 import type { Admin, PageResult, Quest, QuestDraft, QuestListQuery, StudentListQuery, User } from './admin-types';
 
+export function isMissingAdminRpc(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error &&
+    (error.code === 'PGRST202' || error.code === '42883');
+}
+
 export async function listStudents(query: StudentListQuery): Promise<PageResult<User>> {
   const { data,error }=await supabase.rpc('admin_list_students_page',{page_size:query.pageSize,page_offset:query.page*query.pageSize,search_query:query.search.trim()||null,status_filter:query.status==='All'?null:query.status});
   if(error) throw error;
@@ -8,16 +13,22 @@ export async function listStudents(query: StudentListQuery): Promise<PageResult<
   return {rows,total:Number(data?.[0]?.total_count??0)};
 }
 export async function listQuests(query: QuestListQuery):Promise<PageResult<Quest>> {
-  const {data,error}=await supabase.rpc('admin_list_quests_page',{
+  const args = {
     page_size:query.pageSize,
     page_offset:query.page*query.pageSize,
     search_query:query.search.trim()||null,
     status_filter:query.status==='All'?null:query.status,
     difficulty_filter:query.difficulty==='All'?null:query.difficulty,
-  });
-  if(error) throw error;
-  const rows=(data??[]).map((quest:any):Quest=>({id:quest.id,ownerId:quest.owner_id,title:quest.title,description:quest.description??'',category:quest.category,xp:quest.xp,difficulty:quest.xp>=50?'Hard':quest.xp>=30?'Medium':'Easy',completions:String(quest.completions??0),status:quest.status,assignee:quest.assignee}));
-  return {rows,total:Number(data?.[0]?.total_count??0)};
+  };
+  let result = await supabase.rpc('admin_list_quests_page_with_deadline',args);
+  let deadlineSupported = true;
+  if (result.error && isMissingAdminRpc(result.error)) {
+    result = await supabase.rpc('admin_list_quests_page',args);
+    deadlineSupported = false;
+  }
+  if(result.error) throw new Error(result.error.message);
+  const rows=(result.data??[]).map((quest:any):Quest=>({id:quest.id,ownerId:quest.owner_id,title:quest.title,description:quest.description??'',category:quest.category,xp:quest.xp,difficulty:quest.xp>=50?'Hard':quest.xp>=30?'Medium':'Easy',deadlineAt:deadlineSupported?quest.deadline_at??null:null,deadlineSupported,completions:String(quest.completions??0),status:quest.status,assignee:quest.assignee}));
+  return {rows,total:Number(result.data?.[0]?.total_count??0)};
 }
 export async function getQuestActivityCode(questId: string): Promise<string | null> {
   const { data, error } = await supabase.rpc('admin_get_quest_activity_code', { quest_id_value: questId });

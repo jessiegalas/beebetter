@@ -424,7 +424,7 @@ function RecentAssignments({ revision, onOpenQuest, onCreateQuest }: {
   onCreateQuest: () => void
 }) {
   const [rows, setRows] = useState<Quest[] | null>(null)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
 
   useEffect(() => {
@@ -432,10 +432,10 @@ function RecentAssignments({ revision, onOpenQuest, onCreateQuest }: {
     void listQuests({ page: 0, pageSize: 5, search: '', status: 'All', difficulty: 'All' }).then(result => {
       if (active) {
         setRows(result.rows)
-        setError(false)
+        setError(null)
       }
-    }).catch(() => {
-      if (active) setError(true)
+    }).catch(reason => {
+      if (active) setError(reason instanceof Error ? reason.message : 'Unknown error')
     })
     return () => { active = false }
   }, [revision, retry])
@@ -443,8 +443,8 @@ function RecentAssignments({ revision, onOpenQuest, onCreateQuest }: {
   return <section className="report-section" aria-labelledby="assignments-heading">
     <h2 id="assignments-heading">Recent OSAS assignments</h2>
     <p className="overview-muted">Latest assignments across all dates</p>
-    {error && <SectionError message="Could not load recent assignments." onRetry={() => {
-      setError(false)
+    {error && <SectionError message={`Could not load recent assignments: ${error}`} onRetry={() => {
+      setError(null)
       setRetry(value => value + 1)
     }} />}
     {!rows && !error && <TableLoading label="Loading assignments" />}

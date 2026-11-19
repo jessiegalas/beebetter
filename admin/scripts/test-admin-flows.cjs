@@ -268,6 +268,88 @@ async function semesters() {
   h.unmount();
 }
 
+async function questDeadlines() {
+  const timeHarness = hookHarness();
+  const time = load('mobile/src/lib/quest-time.ts', timeHarness).exports;
+  const modal = (initialQuest, onSave) => {
+    const h = hookHarness();
+    const mod = load('admin/src/AdminModals.tsx', h, {
+      '../../mobile/src/lib/student-validation': {},
+      '../../mobile/src/lib/quest-time': time,
+      './supabase': { supabase: {} },
+      './admin-data': { searchActiveStudents: async () => [] },
+      './AdminShell': { initials: () => '' },
+      './AdminTables': { Status: 'Status', questStatusLabel: value => value },
+      './WorkspaceDialog': { WorkspaceDialog: ({ children }) => jsx('section', {}, children) },
+    });
+    h.mount(() => mod.exports.QuestModal({ initialQuest, onClose() {}, onSave }));
+    return h;
+  };
+  const deadlineInput = (offsetMs) => time.formatLocalDateTime(new Date(Date.now() + offsetMs).toISOString()).replace(' ', 'T');
+  const values = deadline_at => ({
+    title: 'Review notes', description: '', category: 'Habits', difficulty: 'Easy',
+    deadline_at, status: 'active',
+  });
+  const saved = [];
+  const createHarness = modal(null, async draft => saved.push(draft));
+  const form = () => find(createHarness.value, 'form', node => node.props.className === 'workspace-dialog-form');
+  const future = deadlineInput(60 * 60 * 1000);
+  await form().props.onSubmit(event(values(future)));
+  assert.equal(saved[0].deadlineAt, time.parseLocalDateTime(future));
+  await form().props.onSubmit(event(values('')));
+  assert.equal(saved[1].deadlineAt, null, 'Deadline remains optional');
+  createHarness.unmount();
+
+  const originalDeadline = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const existing = {
+    id: 'quest-a', ownerId: 'student-a', title: 'Review notes', description: '',
+    category: 'Habits', xp: 20, difficulty: 'Easy', deadlineAt: originalDeadline,
+    completions: '0', status: 'active', assignee: 'Student A',
+  };
+  const edited = [];
+  const editHarness = modal(existing, async draft => edited.push(draft));
+  await find(editHarness.value, 'form', node => node.props.className === 'workspace-dialog-form')
+    .props.onSubmit(event(values(time.formatLocalDateTime(originalDeadline).replace(' ', 'T'))));
+  assert.equal(edited[0].deadlineAt, originalDeadline, 'Unchanged overdue deadline keeps its exact stored value');
+  editHarness.unmount();
+
+  const rejected = [];
+  const futureQuest = { ...existing, deadlineAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() };
+  const invalidHarness = modal(futureQuest, async draft => rejected.push(draft));
+  await find(invalidHarness.value, 'form', node => node.props.className === 'workspace-dialog-form')
+    .props.onSubmit(event(values(deadlineInput(-60 * 60 * 1000))));
+  assert.equal(rejected.length, 0, 'Changed deadline in the past is rejected');
+  assert(nodes(invalidHarness.value).some(node => node.props?.role === 'alert' && text(node).includes('Deadline cannot be in the past')));
+  invalidHarness.unmount();
+
+  const unavailableHarness = modal({ ...existing, deadlineAt: null, deadlineSupported: false }, async () => {});
+  const deadlineField = find(unavailableHarness.value, 'input', node => node.props.name === 'deadline_at');
+  assert.equal(deadlineField.props.disabled, true, 'Do not imply deadlines are editable when the database RPC is missing');
+  assert(text(find(unavailableHarness.value, 'small')).includes('database update'));
+  unavailableHarness.unmount();
+  timeHarness.unmount();
+}
+
+async function questListCompatibility() {
+  const calls = [];
+  const mod = load('admin/src/admin-data.ts', hookHarness(), {
+    './supabase': { supabase: { rpc: async name => {
+      calls.push(name);
+      if (name === 'admin_list_quests_page_with_deadline') return { data: null, error: { code: 'PGRST202', message: 'Function not found' } };
+      return { data: [{
+        id: 'quest-a', owner_id: 'student-a', title: 'Review notes', description: '',
+        category: 'Habits', xp: 20, status: 'active', completions: 0,
+        assignee: 'Student A', total_count: 1,
+      }], error: null };
+    } } },
+  });
+  const result = await mod.exports.listQuests({ page: 0, pageSize: 5, search: '', status: 'All', difficulty: 'All' });
+  assert.deepEqual(calls, ['admin_list_quests_page_with_deadline', 'admin_list_quests_page']);
+  assert.equal(result.rows.length, 1, 'Legacy list RPC keeps the quest table and recent assignments available');
+  assert.equal(result.rows[0].deadlineAt, null);
+  assert.equal(result.rows[0].deadlineSupported, false);
+}
+
 async function main() {
   await test('reports reject stale results, audit matching filters and cancel changed exports', reports);
   await test('student search, filters and pagination preserve query and retry behavior', tables);
@@ -275,6 +357,8 @@ async function main() {
   await test('student drafts survive failed saves and duplicate submissions are blocked', studentSave);
   await test('OSAS access is included for active admins without capability controls', capabilities);
   await test('semester switch resets section edits and activation uses explicit sections', semesters);
+  await test('admin quest deadlines use mobile time rules and preserve unchanged overdue assignments', questDeadlines);
+  await test('quest lists fall back safely when the optional deadline RPC is not deployed', questListCompatibility);
   console.log(count + ' admin flow regressions passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

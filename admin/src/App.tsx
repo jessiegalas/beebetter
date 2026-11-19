@@ -3,7 +3,7 @@ import { Dialog } from 'radix-ui'
 import './App.css'
 import { supabase } from './supabase'
 import type { Admin, AdminAccessRequest, Quest, QuestDraft, QuestListQuery, Section, StudentListQuery, User } from './admin-types'
-import { listAdminAccessRequests, listAdmins, listQuests, listStudents, questXp, reviewAdminAccessRequest } from './admin-data'
+import { isMissingAdminRpc, listAdminAccessRequests, listAdmins, listQuests, listStudents, questXp, reviewAdminAccessRequest } from './admin-data'
 import { AccessScreen, AdminInfoPanel, AuthScreen, Brand, ProfileBadge } from './AdminShell'
 import { AdminAccessRequests, AdminTable, DataTable } from './AdminTables'
 import { AdminModal, QuestDetails, QuestModal, StudentModal, UserActions, UserDetails } from './AdminModals'
@@ -297,16 +297,28 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
 
   const createQuest = async (draft: QuestDraft) => {
     const xp = questXp(draft.difficulty)
-    const { data, error } = await supabase.rpc('admin_create_quest', {
+    let result = await supabase.rpc('admin_create_quest_with_deadline', {
       title_value: draft.title,
       description_value: draft.description,
       category_value: draft.category,
       xp_value: xp,
       status_value: draft.publish ? 'active' : 'pending',
       assignee_id: draft.assigneeId,
+      deadline_at_value: draft.deadlineAt,
     })
-    if (error) throw new Error(`Could not assign quest. ${error.message}`)
-    if (!data?.length) throw new Error('No eligible active students were available. Check the recipient and try again.')
+    if (result.error && isMissingAdminRpc(result.error)) {
+      if (draft.deadlineAt !== null) throw new Error('Quest deadline support is unavailable until database migration 047 is applied.')
+      result = await supabase.rpc('admin_create_quest', {
+        title_value: draft.title,
+        description_value: draft.description,
+        category_value: draft.category,
+        xp_value: xp,
+        status_value: draft.publish ? 'active' : 'pending',
+        assignee_id: draft.assigneeId,
+      })
+    }
+    if (result.error) throw new Error(`Could not assign quest. ${result.error.message}`)
+    if (!result.data?.length) throw new Error('No eligible active students were available. Check the recipient and try again.')
     if (!mounted.current) return
     if (section === 'Quests') await loadQuests()
     setAssignmentRevision(value => value + 1)
@@ -319,15 +331,27 @@ function AdminWorkspace({ access, adminRole, dark, toggleTheme }: { access: Retu
 
   const updateQuest = async (quest: Quest, draft: QuestDraft) => {
     const xp = questXp(draft.difficulty)
-    const { error } = await supabase.rpc('admin_update_quest', {
+    let result = await supabase.rpc('admin_update_quest_with_deadline', {
       quest_id_value: quest.id,
       title_value: draft.title,
       description_value: draft.description,
       category_value: draft.category,
       xp_value: xp,
       status_value: draft.publish ? 'active' : 'pending',
+      deadline_at_value: draft.deadlineAt,
     })
-    if (error) throw new Error(`Could not update quest. ${error.message}`)
+    if (result.error && isMissingAdminRpc(result.error)) {
+      if (draft.deadlineAt !== quest.deadlineAt) throw new Error('Quest deadline support is unavailable until database migration 047 is applied.')
+      result = await supabase.rpc('admin_update_quest', {
+        quest_id_value: quest.id,
+        title_value: draft.title,
+        description_value: draft.description,
+        category_value: draft.category,
+        xp_value: xp,
+        status_value: draft.publish ? 'active' : 'pending',
+      })
+    }
+    if (result.error) throw new Error(`Could not update quest. ${result.error.message}`)
     if (!mounted.current) return
     if (section === 'Quests') await loadQuests()
     setAssignmentRevision(value => value + 1)

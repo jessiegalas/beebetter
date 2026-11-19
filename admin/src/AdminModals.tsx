@@ -1,4 +1,5 @@
 import { PROGRAMS, YEARS, LIMITS, cleanName, cleanStudentNumber, normalizeProgram, normalizeYear, validateStudent, studentPayload, type StudentFields, type EnrollmentOption } from '../../mobile/src/lib/student-validation'
+import { formatLocalDateTime, parseLocalDateTime, validateQuestDates } from '../../mobile/src/lib/quest-time'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { supabase } from './supabase'
@@ -64,7 +65,7 @@ export function QuestDetails({ quest, onClose, onEdit }: { quest: Quest; onClose
   }, [quest.id])
   const activity = activityCode?.questId === quest.id ? activityCode : null
   const editable = quest.status === 'active' || quest.status === 'pending'
-  return <Drawer label={quest.title} onClose={onClose}><span className="eyebrow">QUEST DETAILS</span><div className="drawer-quest-icon">Q</div><h2>{quest.title}</h2><p className="drawer-muted">{quest.description || 'No description provided.'}</p><p className="drawer-muted">{quest.category} / {quest.difficulty} / {quest.xp} XP</p><Status status={questStatusLabel(quest.status)} /><div className="detail-grid"><div><small>COMPLETION</small><b>{quest.completions === '1' ? 'Completed' : 'Not completed'}</b></div><div><small>ASSIGNED TO</small><b>{quest.assignee}</b></div></div>{activity?.value && <p className="drawer-muted">Activity code <code style={{ overflowWrap: 'anywhere' }}>{activity.value}</code></p>}{activity?.failed && <p className="drawer-muted" role="status">Activity code unavailable.</p>}<h3>Quest actions</h3>{editable ? <button className="drawer-action" onClick={onEdit}>Edit this assignment</button> : <p className="drawer-muted">Completed and rejected assignments cannot be edited.</p>}</Drawer>
+  return <Drawer label={quest.title} onClose={onClose}><span className="eyebrow">QUEST DETAILS</span><div className="drawer-quest-icon">Q</div><h2>{quest.title}</h2><p className="drawer-muted">{quest.description || 'No description provided.'}</p><p className="drawer-muted">{quest.category} / {quest.difficulty} / {quest.xp} XP</p><Status status={questStatusLabel(quest.status)} /><div className="detail-grid"><div><small>COMPLETION</small><b>{quest.completions === '1' ? 'Completed' : 'Not completed'}</b></div><div><small>ASSIGNED TO</small><b>{quest.assignee}</b></div><div><small>DEADLINE</small><b>{quest.deadlineSupported === false ? 'Unavailable until database update' : quest.deadlineAt ? new Date(quest.deadlineAt).toLocaleString() : 'No deadline'}</b></div></div>{activity?.value && <p className="drawer-muted">Activity code <code style={{ overflowWrap: 'anywhere' }}>{activity.value}</code></p>}{activity?.failed && <p className="drawer-muted" role="status">Activity code unavailable.</p>}<h3>Quest actions</h3>{editable ? <button className="drawer-action" onClick={onEdit}>Edit this assignment</button> : <p className="drawer-muted">Completed and rejected assignments cannot be edited.</p>}</Drawer>
 }
 
 export function UserActions({ user, onClose, onOpenProfile, onToggleStatus }: { user: User; onClose: () => void; onOpenProfile: () => void; onToggleStatus: () => void }) {
@@ -113,15 +114,22 @@ export function QuestModal({ initialQuest, onClose, onSave }: {
     if (busy.current || (individual && !student)) return
     const data = new FormData(event.currentTarget)
     const submitter = (event.nativeEvent as SubmitEvent).submitter
+    const deadlineInput = String(data.get('deadline_at') || '')
+    const originalDeadline = initialQuest?.deadlineAt ?? null
+    const deadlineUnchanged = !!initialQuest &&
+      deadlineInput === formatLocalDateTime(originalDeadline).replace(' ', 'T')
     busy.current = true
     setSaving(true)
     setSaveError('')
     try {
+      const deadlineAt = deadlineUnchanged ? originalDeadline : parseLocalDateTime(deadlineInput)
+      if (!deadlineUnchanged) validateQuestDates(null, deadlineAt)
       await onSave({
         title: String(data.get('title')),
         description: String(data.get('description') || ''),
         category: String(data.get('category')) as QuestDraft['category'],
         difficulty: String(data.get('difficulty')) as QuestDraft['difficulty'],
+        deadlineAt,
         assigneeId: initialQuest ? initialQuest.ownerId : individual ? student!.id : null,
         publish: initialQuest ? data.get('status') === 'active' : submitter?.getAttribute('value') === 'publish',
       })
@@ -149,6 +157,10 @@ export function QuestModal({ initialQuest, onClose, onSave }: {
               <option>Easy</option><option>Medium</option><option>Hard</option>
             </select></label>
           </div>
+          <label>Deadline (optional)<input name="deadline_at" type="datetime-local" disabled={initialQuest?.deadlineSupported === false}
+            defaultValue={initialQuest ? formatLocalDateTime(initialQuest.deadlineAt).replace(' ', 'T') : ''} />
+            <small className="workspace-dialog-hint">{initialQuest?.deadlineSupported === false ? 'Deadline editing is unavailable until the database update is applied.' : 'Enter the deadline in your local time.'}</small>
+          </label>
           {initialQuest ? <label>Status<select name="status" defaultValue={initialQuest.status === 'active' ? 'active' : 'pending'}>
             <option value="pending">Draft</option><option value="active">Published</option>
           </select></label> : <>
